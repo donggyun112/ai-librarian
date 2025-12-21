@@ -1,27 +1,33 @@
-[project]
-name = "ai-research-project"
-version = "0.1.0"
-description = "PDF RAG System with Vector Search"
-requires-python = ">=3.9, !=3.9.7, <4.0"
-readme = "README.md"
-dependencies = [
-    "openai>=1.98.0,<2.0.0",
-    "langgraph>=0.6.2,<0.7.0",
-    "langchain>=0.3.27,<0.4.0",
-    "langchain-openai>=0.3.28,<0.4.0",
-    "python-dotenv>=1.0.0,<2.0.0",
-    "pymilvus>=2.5.14,<3.0.0",
-    "pydantic>=2.0.0,<3.0.0",
-    "numpy>=1.24.0,<2.0.0",
-    "requests>=2.31.0,<3.0.0",
-    "streamlit>=1.28.0,<2.0.0",
-    "plotly>=5.17.0,<6.0.0",
-    "pandas>=2.0.0,<3.0.0",
-]
+[tool.poetry]
+name = "ai-librarian"
+version = "2.0.0"
+description = "Supervisor Pattern based RAG System"
+authors = ["Your Name"]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# Core
+langchain = "^0.3.0"
+langchain-openai = "^0.3.0"
+langgraph = "^0.2.0"
+openai = "^1.50.0"
+
+# Vector DB
+pymilvus = "^2.5.0"
+
+# Web Search
+ddgs = "^5.0.0"
+
+# Data
+pydantic = "^2.0"
+
+# UI
+streamlit = "^1.40.0"
+
+# Utils
+python-dotenv = "^1.0.0"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
