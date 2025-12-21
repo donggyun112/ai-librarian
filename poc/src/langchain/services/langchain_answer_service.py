@@ -13,6 +13,7 @@ from ...services.vector_store import VectorStore
 from ...services.embedding_service import EmbeddingService
 from ..graphs.question_answering_graph import QuestionAnsweringGraph
 from ..graphs.selective_question_answering_graph import SelectiveQuestionAnsweringGraph
+from ..graphs.autonomous_question_answering_graph import AutonomousQuestionAnsweringGraph
 from ...services.routing_service import RoutingService, RoutingDecision, DataSource, RoutingStrategy
 
 logger = logging.getLogger(__name__)
@@ -33,32 +34,37 @@ class LangChainAnswerService:
                  openai_api_key: Optional[str] = None,
                  vector_db_threshold: float = 0.7,
                  web_search_threshold: float = 0.6,
-                 llm_direct_threshold: float = 0.5):
+                 llm_direct_threshold: float = 0.5,
+                 use_autonomous_routing: bool = True,
+                 enable_reflection: bool = False):
         """
         Initialize LangChain answer service.
-        
+
         Args:
             vector_store: Vector store for document search
             embedding_service: Embedding service for query processing
             openai_api_key: OpenAI API key (will use env var if not provided)
             vector_db_threshold: Threshold for vector DB confidence
-            web_search_threshold: Threshold for web search confidence  
+            web_search_threshold: Threshold for web search confidence
             llm_direct_threshold: Threshold for LLM direct confidence
+            use_autonomous_routing: Use LLM-based autonomous routing (default: True)
+            enable_reflection: Enable reflection for retry on failure (default: False)
         """
         self.vector_store = vector_store
         self.embedding_service = embedding_service
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
-        
+        self.use_autonomous_routing = use_autonomous_routing
+
         if not self.openai_api_key:
             raise ValueError("OpenAI API key is required")
-        
+
         # Initialize routing service
         self.routing_service = RoutingService(
             vector_db_threshold=vector_db_threshold,
             web_search_threshold=web_search_threshold,
             llm_direct_threshold=llm_direct_threshold
         )
-        
+
         # Initialize LangGraph workflows
         self.graph = QuestionAnsweringGraph(
             vector_store=vector_store,
@@ -68,14 +74,23 @@ class LangChainAnswerService:
             web_search_threshold=web_search_threshold,
             llm_direct_threshold=llm_direct_threshold
         )
-        
+
         self.selective_graph = SelectiveQuestionAnsweringGraph(
             vector_store=vector_store,
             embedding_service=embedding_service,
             openai_api_key=self.openai_api_key,
             routing_service=self.routing_service
         )
-        
+
+        # NEW: Autonomous graph with LLM-based routing
+        self.autonomous_graph = AutonomousQuestionAnsweringGraph(
+            vector_store=vector_store,
+            embedding_service=embedding_service,
+            openai_api_key=self.openai_api_key,
+            router_model="gpt-4o-mini",
+            enable_reflection=enable_reflection
+        )
+
         # Statistics tracking
         self.stats = {
             'total_questions': 0,
@@ -87,47 +102,72 @@ class LangChainAnswerService:
                 'web_search': 0,
                 'llm_direct': 0,
                 'hybrid': 0
-            }
+            },
+            'routing_mode': 'autonomous' if use_autonomous_routing else 'rule_based'
         }
     
     def get_answer(self, question: Question) -> Optional[Answer]:
         """
         Get answer for a question using LangGraph workflow.
-        
+
+        Uses autonomous LLM-based routing by default, or falls back to rule-based routing.
+
         Args:
             question: Question object to answer
-            
+
         Returns:
             Answer object or None if failed
         """
         start_time = datetime.now()
-        
+
         try:
             logger.info(f"Processing question via LangGraph: {question.content[:50]}...")
-            
-            # Run LangGraph workflow
-            result = self.graph.run(question.content)
-            
+
+            # Choose routing mode
+            if self.use_autonomous_routing:
+                logger.info("Using AUTONOMOUS LLM-based routing")
+                result = self.autonomous_graph.run(question.content)
+            else:
+                logger.info("Using RULE-based routing")
+                result = self.graph.run(question.content)
+
             if not result.get('success'):
                 logger.error(f"LangGraph workflow failed: {result.get('error')}")
                 self._update_stats(False, 0)
                 return None
-            
+
             # Extract answer data
             answer_data = result.get('answer', {})
             metadata = result.get('metadata', {})
-            
+            routing_info = result.get('routing_info', {})
+
             # Convert to Answer object
             answer = self._convert_to_answer_object(answer_data, metadata, question)
-            
+
+            # Add routing info to answer metadata
+            if self.use_autonomous_routing:
+                answer.metadata.update({
+                    'routing_mode': 'autonomous_llm',
+                    'selected_tool': routing_info.get('selected_tool'),
+                    'routing_confidence': routing_info.get('routing_confidence'),
+                    'routing_reasoning': routing_info.get('routing_reasoning'),
+                    'attempt_count': routing_info.get('attempt_count', 1),
+                    'reflection_used': routing_info.get('reflection_used', False)
+                })
+
             # Update statistics
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
             self._update_stats(True, processing_time)
-            self._update_source_usage(metadata.get('routing_strategy', 'unknown'))
-            
-            logger.info(f"Question answered successfully in {processing_time:.0f}ms via {metadata.get('routing_strategy')}")
+
+            if self.use_autonomous_routing:
+                tool_used = routing_info.get('selected_tool', 'unknown')
+                self._update_source_usage(tool_used)
+            else:
+                self._update_source_usage(metadata.get('routing_strategy', 'unknown'))
+
+            logger.info(f"Question answered successfully in {processing_time:.0f}ms")
             return answer
-            
+
         except Exception as e:
             logger.error(f"LangChain answer service error: {str(e)}")
             processing_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -153,8 +193,13 @@ class LangChainAnswerService:
                 # Get answers from all sources
                 return self._get_all_source_answers(question, force_hybrid)
             else:
-                # Use normal routing
-                result = self.graph.run(question.content)
+                # Use routing based on configuration
+                if self.use_autonomous_routing:
+                    logger.info("Using AUTONOMOUS routing in comprehensive answer")
+                    result = self.autonomous_graph.run(question.content)
+                else:
+                    logger.info("Using RULE-BASED routing in comprehensive answer")
+                    result = self.graph.run(question.content)
                 
                 processing_time = (datetime.now() - start_time).total_seconds() * 1000
                 
@@ -167,21 +212,43 @@ class LangChainAnswerService:
                 
                 answer_data = result.get('answer', {})
                 metadata = result.get('metadata', {})
-                
+
                 # Get individual source answers from graph results
                 individual_answers = self._extract_individual_answers_from_graph(result, question)
-                
-                # Format comprehensive response
-                comprehensive_answer = {
-                    'success': True,
-                    'final_answer': self._convert_to_answer_object(answer_data, metadata, question),
-                    'individual_answers': individual_answers,
-                    'routing_info': {
+
+                # Build routing info based on routing mode
+                if self.use_autonomous_routing:
+                    routing_info_dict = result.get('routing_info', {})
+                    routing_info_dict['total_processing_time'] = processing_time
+                else:
+                    routing_info_dict = {
                         'strategy': metadata.get('routing_strategy'),
                         'source_confidences': metadata.get('source_confidences', {}),
                         'question_type': metadata.get('question_type'),
                         'total_processing_time': processing_time
-                    },
+                    }
+
+                # Format comprehensive response
+                final_answer_obj = self._convert_to_answer_object(answer_data, metadata, question)
+
+                # Add autonomous routing metadata if applicable
+                if self.use_autonomous_routing:
+                    final_answer_obj.metadata.update({
+                        'routing_mode': 'autonomous_llm',
+                        'selected_tool': routing_info_dict.get('selected_tool'),
+                        'routing_confidence': routing_info_dict.get('routing_confidence'),
+                        'routing_reasoning': routing_info_dict.get('routing_reasoning'),
+                        'attempt_count': routing_info_dict.get('attempt_count', 1),
+                        'reflection_used': routing_info_dict.get('reflection_used', False)
+                    })
+                else:
+                    final_answer_obj.metadata['routing_mode'] = 'rule_based'
+
+                comprehensive_answer = {
+                    'success': True,
+                    'final_answer': final_answer_obj,
+                    'individual_answers': individual_answers,
+                    'routing_info': routing_info_dict,
                     'performance_metrics': {
                         'total_time': processing_time,
                         'agent_times': metadata.get('agent_execution_times', {}),
@@ -198,7 +265,13 @@ class LangChainAnswerService:
                 
                 # Update statistics
                 self._update_stats(True, processing_time)
-                self._update_source_usage(metadata.get('routing_strategy', 'unknown'))
+
+                # Update source usage based on routing mode
+                if self.use_autonomous_routing:
+                    tool_used = routing_info_dict.get('selected_tool', 'unknown')
+                    self._update_source_usage(tool_used)
+                else:
+                    self._update_source_usage(metadata.get('routing_strategy', 'unknown'))
                 
                 return comprehensive_answer
                 
