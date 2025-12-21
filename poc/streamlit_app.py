@@ -46,7 +46,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-@st.cache_resource
+# Cache disabled to allow autonomous routing updates
+# @st.cache_resource
 def initialize_services():
     """Initialize all required services (cached)."""
     try:
@@ -69,14 +70,16 @@ def initialize_services():
             collection_name=config.milvus_collection_name
         )
         
-        # Initialize LangChain answer service
+        # Initialize LangChain answer service with AUTONOMOUS routing
         langchain_service = LangChainAnswerService(
             vector_store=vector_store,
             embedding_service=embedding_service,
             openai_api_key=config.openai_api_key,
             vector_db_threshold=0.7,
             web_search_threshold=0.6,
-            llm_direct_threshold=0.5
+            llm_direct_threshold=0.5,
+            use_autonomous_routing=True,  # 🆕 LLM-based autonomous routing
+            enable_reflection=False       # Optional: retry on failure
         )
         
         return config, embedding_service, vector_store, langchain_service
@@ -199,10 +202,16 @@ def main():
         st.header("🚀 LangChain/LangGraph 질의응답")
         
         st.info("""
-        **LangChain/LangGraph 기반 지능형 질의응답 시스템**
-        
-        이 시스템은 질문 유형을 자동으로 분석하여 최적의 답변 소스를 선택하고, 
-        필요시 여러 소스를 조합하여 포괄적인 답변을 제공합니다.
+        **🤖 LLM 기반 자율적 질의응답 시스템**
+
+        ✨ **새로운 기능**: LLM이 질문을 분석하고 스스로 최적의 도구를 선택합니다!
+
+        - 📚 **Vector DB**: 저장된 문서 검색
+        - 🌐 **Web Search**: 최신 정보 검색
+        - 🤖 **LLM Direct**: LLM 지식 기반 답변
+        - 🔀 **Hybrid**: 다중 소스 통합
+
+        💡 **효율성**: 불필요한 도구는 실행하지 않아 비용과 시간을 절약합니다.
         """)
         
         # Question input
@@ -279,14 +288,52 @@ def main():
                                     # Show routing info
                                     st.subheader("🧠 라우팅 정보")
                                     routing_info = result.get('routing_info', {})
-                                    
-                                    col1, col2, col3 = st.columns(3)
-                                    with col1:
-                                        st.metric("라우팅 전략", routing_info.get('strategy', 'N/A'))
-                                    with col2:
-                                        st.metric("질문 유형", str(routing_info.get('question_type', 'N/A')))
-                                    with col3:
-                                        st.metric("처리 시간", f"{routing_info.get('total_processing_time', 0):.0f}ms")
+
+                                    # Check if autonomous routing was used
+                                    routing_mode = final_answer.metadata.get('routing_mode', 'unknown')
+
+                                    # DEBUG: Show metadata for troubleshooting
+                                    with st.expander("🔍 DEBUG: Metadata"):
+                                        st.json(final_answer.metadata)
+
+                                    if routing_mode == 'autonomous_llm':
+                                        # NEW: Autonomous routing info
+                                        st.info("🤖 **LLM 기반 자율적 도구 선택 활성화**")
+
+                                        col1, col2, col3, col4 = st.columns(4)
+                                        with col1:
+                                            selected_tool = routing_info.get('selected_tool', 'N/A')
+                                            tool_emoji = {'vector_db': '📚', 'web_search': '🌐', 'llm_direct': '🤖', 'hybrid': '🔀'}.get(selected_tool, '❓')
+                                            st.metric("선택된 도구", f"{tool_emoji} {selected_tool}")
+                                        with col2:
+                                            confidence = routing_info.get('routing_confidence', 0)
+                                            st.metric("선택 신뢰도", f"{confidence:.2f}")
+                                        with col3:
+                                            attempts = final_answer.metadata.get('attempt_count', 1)
+                                            st.metric("시도 횟수", str(attempts))
+                                        with col4:
+                                            st.metric("처리 시간", f"{routing_info.get('total_processing_time', 0):.0f}ms")
+
+                                        # Show LLM's reasoning
+                                        reasoning = routing_info.get('routing_reasoning', '')
+                                        if reasoning:
+                                            with st.expander("🔍 LLM의 선택 이유 보기"):
+                                                st.write(reasoning)
+
+                                        # Show if reflection was used
+                                        if final_answer.metadata.get('reflection_used', False):
+                                            st.warning("🔄 Reflection 활성화: 첫 번째 도구 실패 후 다른 도구로 재시도했습니다.")
+                                    else:
+                                        # OLD: Rule-based routing info
+                                        st.warning("⚙️ **규칙 기반 라우팅** (기존 방식)")
+
+                                        col1, col2, col3 = st.columns(3)
+                                        with col1:
+                                            st.metric("라우팅 전략", routing_info.get('strategy', 'N/A'))
+                                        with col2:
+                                            st.metric("질문 유형", str(routing_info.get('question_type', 'N/A')))
+                                        with col3:
+                                            st.metric("처리 시간", f"{routing_info.get('total_processing_time', 0):.0f}ms")
                                     
                                     # Show confidence scores
                                     confidences = routing_info.get('source_confidences', {})
