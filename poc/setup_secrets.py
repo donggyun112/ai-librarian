@@ -7,8 +7,8 @@ try:
     from dotenv import load_dotenv
 except ImportError:
     print("❌ Error: 'python-dotenv' is not installed.")
-    print("👉 Please run: pip install python-dotenv")
-    print("   Or run inside your environment: poetry run python setup_secrets.py")
+    print("👉 Please run: uv add python-dotenv")
+    print("   Or run inside your environment: uv run python setup_secrets.py")
     sys.exit(1)
 
 
