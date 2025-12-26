@@ -8,7 +8,6 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.supervisor import Supervisor
-from src.schemas.models import SupervisorResponse
 
 
 # 페이지 설정
@@ -26,19 +25,9 @@ def init_supervisor():
     return st.session_state.supervisor
 
 
-def run_async(coro):
-    """비동기 함수 실행 헬퍼"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(coro)
-    finally:
-        loop.close()
-
-
-def main():
+async def main():
     st.title("📚 AI Librarian (ReAct Pattern)")
-    st.caption("Ask → Think → Act → Observe Loop")
+    st.caption("Ask → Think → Act → Observe Loop (Streaming)")
 
     # 사이드바
     with st.sidebar:
@@ -73,29 +62,61 @@ def main():
 
     # 질문 처리
     if submit and question:
-        with st.spinner("🤔 생각하고 행동하는 중..."):
-            response: SupervisorResponse = run_async(
-                supervisor.process(question)
-            )
-        
-        # 답변 표시
         st.divider()
-        st.subheader("💡 답변")
-        st.markdown(response.answer)
 
-        # 실행 로그 (Think/Act/Observe)
-        if show_log and response.execution_log:
-            with st.expander("🕵️ 에이전트 생각 흐름 (Trace)", expanded=True):
-                for log in response.execution_log:
-                    if "도구 호출" in log:
-                        st.markdown(f"**🛠️ {log}**")
-                    elif "Call:" in log:
-                        st.code(log, language="python")
-                    elif "Observe:" in log:
-                        st.caption(log)
-                    else:
-                        st.text(log)
+        # 상태 컨테이너
+        status_container = st.container()
+        answer_container = st.container()
+
+        with status_container:
+            status = st.status("🤔 생각하고 행동하는 중...", expanded=True)
+            with status:
+                logs_placeholder = st.container()
+
+        with answer_container:
+            answer_placeholder = st.empty()
+
+        try:
+            full_answer = ""
+            
+            async for event in supervisor.process_stream(question):
+                event_type = event["type"]
+
+                # Think - 생각 과정
+                if event_type == "think":
+                    with logs_placeholder:
+                        st.markdown(f"🧠 **Think:** {event['content']}")
+
+                # Act - 도구 호출
+                elif event_type == "act":
+                    with logs_placeholder:
+                        st.markdown(f"🔧 **Act:** `{event['tool']}`")
+                        with st.expander("Arguments", expanded=False):
+                            st.json(event['args'])
+
+                # Observe - 도구 결과
+                elif event_type == "observe":
+                    content = event['content']
+                    preview = content[:300] + "..." if len(content) > 300 else content
+                    with logs_placeholder:
+                        st.info(f"👁️ **Observe:** {preview}")
+
+                # Token - 최종 답변 (실시간 스트리밍)
+                elif event_type == "token":
+                    full_answer += event["content"]
+                    answer_placeholder.markdown(full_answer + "▌")
+
+            # 최종 완성 (커서 제거)
+            if full_answer:
+                answer_placeholder.markdown(full_answer)
+
+            status.update(label="완료!", state="complete", expanded=False)
+
+        except Exception as e:
+            st.error(f"오류 발생: {str(e)}")
+            if 'status' in locals():
+                status.update(label="오류 발생", state="error")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
