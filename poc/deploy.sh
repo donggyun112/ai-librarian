@@ -64,14 +64,6 @@ echo -e "${YELLOW}📋 Setting GCP project...${NC}"
 gcloud config set project ${PROJECT_ID}
 
 # Build the Docker image
-echo -e "${YELLOW}📦 Exporting requirements from uv...${NC}"
-# Use uv to export requirements.txt for the Docker build
-if uv export --format requirements-txt --output-file requirements.txt; then
-    echo -e "${GREEN}✅ Requirements exported successfully${NC}"
-else
-    echo -e "${RED}❌ uv export failed.${NC}"
-    exit 1
-fi
 
 # Build and Push image using Google Cloud Build
 echo -e "${YELLOW}☁️  Building and Pushing image via Cloud Build...${NC}"
