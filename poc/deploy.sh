@@ -3,7 +3,9 @@
 # GCP Cloud Run Deployment Script
 # This script deploys the AI Librarian Streamlit app to Google Cloud Run
 
-set -e  # Exit on error
+set -e          # Exit on error
+set -o pipefail # Exit if any command in a pipe fails
+
 
 # Colors for output
 RED='\033[0;31m'

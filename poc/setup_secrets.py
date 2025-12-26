@@ -2,7 +2,15 @@
 import os
 import subprocess
 import sys
-from dotenv import load_dotenv
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    print("❌ Error: 'python-dotenv' is not installed.")
+    print("👉 Please run: pip install python-dotenv")
+    print("   Or run inside your environment: poetry run python setup_secrets.py")
+    sys.exit(1)
+
 
 def run_command(command, input_text=None):
     """Run a shell command and return output."""
