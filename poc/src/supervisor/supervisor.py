@@ -23,7 +23,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from src.schemas.models import SupervisorResponse
+from src.schemas.models import SupervisorResponse, StreamEventType, LangGraphEventName
 from .prompts import get_system_prompt
 from .tools import TOOLS
 from config import config
@@ -36,6 +36,11 @@ SEARCH_TOOLS = ["arag_search", "aweb_search"]
 THINK_TOOL = "think"
 DEFAULT_MAX_TOKENS = 4096
 DEFAULT_MAX_STEPS = 10
+
+# LangGraph 이벤트 타입 (타입 안전)
+EVENT_CHAT_MODEL_STREAM: LangGraphEventName = "on_chat_model_stream"
+EVENT_TOOL_START: LangGraphEventName = "on_tool_start"
+EVENT_TOOL_END: LangGraphEventName = "on_tool_end"
 
 
 # ============================================================
@@ -174,35 +179,35 @@ class Supervisor:
             data = event.get("data", {})
 
             # 1. LLM 토큰 스트리밍 (최종 답변)
-            if event_type == "on_chat_model_stream":
+            if event_type == EVENT_CHAT_MODEL_STREAM:
                 chunk = data.get("chunk")
                 if chunk and chunk.content:
-                    yield {"type": "token", "content": chunk.content}
+                    yield {"type": StreamEventType.TOKEN, "content": chunk.content}
 
             # 2. 도구 호출 시작
-            elif event_type == "on_tool_start":
+            elif event_type == EVENT_TOOL_START:
                 tool_name = event.get("name", "")
                 tool_input = data.get("input", {})
 
                 # think 도구 → 생각 표시
                 if tool_name == THINK_TOOL:
                     thought = tool_input.get("thought", "")
-                    yield {"type": "think", "content": thought}
+                    yield {"type": StreamEventType.THINK, "content": thought}
 
                 # 검색 도구 → 액션 표시
                 elif tool_name in SEARCH_TOOLS:
                     yield {
-                        "type": "act",
+                        "type": StreamEventType.ACT,
                         "tool": tool_name,
                         "args": tool_input
                     }
 
             # 3. 도구 결과 반환 (검색 도구만)
-            elif event_type == "on_tool_end":
+            elif event_type == EVENT_TOOL_END:
                 tool_name = event.get("name", "")
                 if tool_name in SEARCH_TOOLS:
                     yield {
-                        "type": "observe",
+                        "type": StreamEventType.OBSERVE,
                         "content": str(data.get("output", ""))
                     }
 

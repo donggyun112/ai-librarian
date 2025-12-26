@@ -1,11 +1,45 @@
 """Pydantic 모델 정의"""
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from pydantic import BaseModel, Field
 from enum import Enum
 
 class WorkerType(str, Enum):
     RAG = "rag"
     WEB_SEARCH = "web_search"
+
+
+class StreamEventType(str, Enum):
+    """스트리밍 이벤트 타입 (우리 앱 출력용)"""
+    TOKEN = "token"      # LLM 토큰 출력
+    THINK = "think"      # think 도구 호출
+    ACT = "act"          # 검색 도구 호출
+    OBSERVE = "observe"  # 도구 결과 반환
+
+
+# LangGraph astream_events 이벤트 이름 (타입 안전성)
+LangGraphEventName = Literal[
+    # LLM
+    "on_llm_start",
+    "on_llm_stream",
+    "on_llm_end",
+    "on_llm_error",
+    # Chat Model
+    "on_chat_model_start",
+    "on_chat_model_stream",
+    "on_chat_model_end",
+    # Tool
+    "on_tool_start",
+    "on_tool_end",
+    "on_tool_error",
+    # Chain
+    "on_chain_start",
+    "on_chain_stream",
+    "on_chain_end",
+    "on_chain_error",
+    # Custom
+    "on_custom_event",
+]
+
 
 class WorkerResult(BaseModel):
     """워커 실행 결과"""
