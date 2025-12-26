@@ -114,10 +114,7 @@ ZILLIZ_TOKEN=your-zilliz-token
 
 ```bash
 # Streamlit 앱 실행
-uv run streamlit run streamlit_app.py
-
-# 또는 간편 실행
-python3 run_streamlit.py
+uv run streamlit run app.py
 ```
 
 브라우저에서 `http://localhost:8501` 접속
