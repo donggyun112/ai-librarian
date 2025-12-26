@@ -49,11 +49,28 @@ def rag_search(query: str) -> str:
     return loop.run_until_complete(worker.execute(query)).content
 
 @tool
+async def think(thought: str) -> str:
+    """
+    생각을 기록합니다. 도구를 호출하거나 답변하기 전에 반드시 이 도구로 생각을 먼저 말하세요.
+
+    Args:
+        thought: 현재 상황 분석, 다음 행동 계획, 또는 판단 근거
+
+    예시:
+        - "최신 정보가 필요하므로 웹 검색을 해야겠다"
+        - "검색 결과에서 A 정보는 얻었지만 B 정보가 부족하다. 추가 검색이 필요하다"
+        - "충분한 정보를 얻었다. 이제 답변을 작성하자"
+    """
+    return thought
+
+
+@tool
 async def arag_search(query: str) -> str:
     """내부 문서에서 정보를 검색합니다 (비동기)."""
     worker = _get_rag_worker()
     result = await worker.execute(query)
     return f"[RAG 검색 결과]\n{result.content}"
+
 
 @tool
 async def aweb_search(query: str) -> str:
@@ -62,5 +79,6 @@ async def aweb_search(query: str) -> str:
     result = await worker.execute(query)
     return f"[웹 검색 결과]\n{result.content}"
 
+
 # Supervisor에서 사용할 도구 목록
-TOOLS = [arag_search, aweb_search]
+TOOLS = [think, arag_search, aweb_search]
