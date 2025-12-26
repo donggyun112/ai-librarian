@@ -1,5 +1,8 @@
-# Use Python 3.11 slim image (Cloud Run compatible)
-FROM python:3.11-slim
+# Use Python 3.12 slim image
+FROM python:3.12-slim
+
+# Install uv for fast package management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Set working directory
 WORKDIR /app
@@ -12,8 +15,8 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies using uv (much faster than pip)
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Copy application code
 COPY . .

@@ -64,12 +64,13 @@ echo -e "${YELLOW}📋 Setting GCP project...${NC}"
 gcloud config set project ${PROJECT_ID}
 
 # Build the Docker image
-echo -e "${YELLOW}📦 Exporting requirements...${NC}"
-# Try to export, but proceed if it fails (fallback to existing requirements.txt)
-if poetry export -f requirements.txt --output requirements.txt --without-hashes 2>/dev/null; then
+echo -e "${YELLOW}📦 Exporting requirements from uv...${NC}"
+# Use uv to export requirements.txt for the Docker build
+if uv export --format requirements-txt --output-file requirements.txt; then
     echo -e "${GREEN}✅ Requirements exported successfully${NC}"
 else
-    echo -e "${YELLOW}⚠️  Poetry export failed or plugin missing. Using existing requirements.txt${NC}"
+    echo -e "${RED}❌ uv export failed.${NC}"
+    exit 1
 fi
 
 # Build and Push image using Google Cloud Build
