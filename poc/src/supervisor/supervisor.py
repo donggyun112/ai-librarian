@@ -7,11 +7,14 @@ Supervisor - LangGraph 기반 ReAct Agent
 스트리밍:
     - on_chat_model_stream: LLM 토큰 실시간 출력
     - on_tool_start/end: 도구 호출/결과 출력
+
+Adapter 패턴:
+    - 프로바이더별 차이점(청크 형식, 인스턴스 전략)을 Adapter로 캡슐화
+    - Supervisor는 Adapter 인터페이스만 사용
 """
 
 from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
-from langchain_openai import ChatOpenAI
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
@@ -25,6 +28,7 @@ from langgraph.prebuilt import ToolNode
 
 from src.schemas.models import SupervisorResponse, StreamEventType, LangGraphEventName
 from src.memory import ChatMemory, InMemoryChatMemory
+from src.adapters import get_adapter, BaseLLMAdapter
 from .prompts import get_system_prompt
 from .tools import TOOLS
 from config import config
@@ -62,10 +66,14 @@ class Supervisor:
     - Tool Calling으로 도구 호출
     - astream_events로 토큰 스트리밍
     - 교체 가능한 메모리 백엔드 (기본: InMemory)
+    - Adapter 패턴으로 멀티 프로바이더 지원
 
     사용 예시:
-        # 기본 (In-Memory)
+        # 기본 (OpenAI)
         supervisor = Supervisor()
+
+        # Gemini 사용
+        supervisor = Supervisor(provider="gemini")
 
         # SQL 메모리로 교체
         from src.memory.sql import SQLChatMemory
@@ -78,30 +86,23 @@ class Supervisor:
         model: str = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         max_tokens: int = DEFAULT_MAX_TOKENS,
-        memory: ChatMemory = None
+        memory: ChatMemory = None,
+        provider: str = None
     ):
-        self.model = model or config.OPENAI_MODEL
+        self.model = model
         self.max_steps = max_steps
         self.max_tokens = max_tokens
         self.memory = memory or InMemoryChatMemory()
 
-        # LLM 초기화 (스트리밍 활성화)
-        self.llm = ChatOpenAI(
-            model=self.model,
-            temperature=0.7,
-            api_key=config.OPENAI_API_KEY,
-            max_tokens=self.max_tokens,
-            streaming=True
-        )
+        # Adapter 초기화
+        provider_name = provider or config.LLM_PROVIDER
+        self.adapter: BaseLLMAdapter = get_adapter(provider_name)
 
-        # Tool Binding
-        self.llm_with_tools = self.llm.bind_tools(TOOLS)
-
-        # ToolNode
+        # ToolNode (프로바이더 무관하게 공유)
         self.tool_node = ToolNode(TOOLS)
 
-        # Graph 빌드
-        self.graph = self._build_graph()
+        # Graph 캐시
+        self._cached_graph = None
 
     def _build_graph(self) -> StateGraph:
         """
@@ -109,10 +110,24 @@ class Supervisor:
             START → supervisor → (tool_calls?) → tools → supervisor
                             └── (no tools) → END
         """
+        # Adapter를 통해 LLM 생성
+        llm = self.adapter.create_llm(
+            model=self.model,
+            temperature=0.7,
+            max_tokens=self.max_tokens
+        )
+        llm_with_tools = llm.bind_tools(TOOLS)
+
+        async def supervisor_node(state: AgentState) -> dict:
+            """Supervisor 노드: LLM 호출"""
+            messages = state["messages"]
+            response = await llm_with_tools.ainvoke(messages)
+            return {"messages": [response]}
+
         workflow = StateGraph(AgentState)
 
         # 노드 추가
-        workflow.add_node("supervisor", self._supervisor_node)
+        workflow.add_node("supervisor", supervisor_node)
         workflow.add_node("tools", self.tool_node)
 
         # 엣지 연결
@@ -126,11 +141,11 @@ class Supervisor:
 
         return workflow.compile()
 
-    async def _supervisor_node(self, state: AgentState) -> dict:
-        """Supervisor 노드: LLM 호출"""
-        messages = state["messages"]
-        response = await self.llm_with_tools.ainvoke(messages)
-        return {"messages": [response]}
+    def _get_graph(self):
+        """Graph 반환 (캐싱)"""
+        if self._cached_graph is None:
+            self._cached_graph = self._build_graph()
+        return self._cached_graph
 
     def _should_continue(self, state: AgentState) -> Literal["continue", "end"]:
         """도구 호출 여부에 따라 분기"""
@@ -144,7 +159,8 @@ class Supervisor:
     # ============================================================
     def _build_messages(self, session_id: str, question: str) -> List[BaseMessage]:
         """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성"""
-        messages = [SystemMessage(content=get_system_prompt())]
+        # 도구 정보를 동적으로 주입하여 프롬프트 생성
+        messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))]
         messages.extend(self.memory.get_messages(session_id))  # 이전 대화 히스토리
         messages.append(HumanMessage(content=question))
         return messages
@@ -174,12 +190,13 @@ class Supervisor:
         if session_id:
             messages = self._build_messages(session_id, question)
         else:
+            # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [
-                SystemMessage(content=get_system_prompt()),
+                SystemMessage(content=get_system_prompt(tools=TOOLS)),
                 HumanMessage(content=question)
             ]
 
-        final_state = await self.graph.ainvoke(
+        final_state = await self._get_graph().ainvoke(
             {"messages": messages},
             config={"recursion_limit": self.max_steps * 2}
         )
@@ -187,7 +204,12 @@ class Supervisor:
         result_messages = final_state["messages"]
         last_message = result_messages[-1]
 
-        answer = str(last_message.content) if isinstance(last_message, AIMessage) else ""
+        # Adapter로 응답 정규화
+        if isinstance(last_message, AIMessage):
+            normalized = self.adapter.normalize_chunk(last_message)
+            answer = normalized.text
+        else:
+            answer = ""
 
         # 히스토리에 저장
         if session_id:
@@ -223,15 +245,16 @@ class Supervisor:
         if session_id:
             messages = self._build_messages(session_id, question)
         else:
+            # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [
-                SystemMessage(content=get_system_prompt()),
+                SystemMessage(content=get_system_prompt(tools=TOOLS)),
                 HumanMessage(content=question)
             ]
 
         # 답변 수집용 (히스토리 저장을 위해)
         collected_answer = []
 
-        async for event in self.graph.astream_events(
+        async for event in self._get_graph().astream_events(
             {"messages": messages},
             config={"recursion_limit": self.max_steps * 2},
             version="v2"
@@ -243,8 +266,11 @@ class Supervisor:
             if event_type == EVENT_CHAT_MODEL_STREAM:
                 chunk = data.get("chunk")
                 if chunk and chunk.content:
-                    collected_answer.append(chunk.content)
-                    yield {"type": StreamEventType.TOKEN, "content": chunk.content}
+                    # Adapter로 청크 정규화
+                    normalized = self.adapter.normalize_chunk(chunk)
+                    if normalized.text:
+                        collected_answer.append(normalized.text)
+                        yield {"type": StreamEventType.TOKEN, "content": normalized.text}
 
             # 2. 도구 호출 시작
             elif event_type == EVENT_TOOL_START:
@@ -296,7 +322,9 @@ class Supervisor:
         for msg in messages:
             if isinstance(msg, AIMessage):
                 if msg.content:
-                    log.append(f"Response: {str(msg.content)[:100]}...")
+                    # Adapter로 정규화하여 로그 추출
+                    normalized = self.adapter.normalize_chunk(msg)
+                    log.append(f"Response: {normalized.text[:100]}...")
                 if msg.tool_calls:
                     for tc in msg.tool_calls:
                         log.append(f"Tool: {tc['name']}({tc['args']})")

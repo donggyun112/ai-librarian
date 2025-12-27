@@ -7,12 +7,14 @@ from src.supervisor.tools import think, arag_search, aweb_search, TOOLS
 class TestThinkTool:
     """think 도구 테스트"""
 
+    @pytest.mark.asyncio
     async def test_returns_input_thought(self):
         """입력한 생각을 그대로 반환하는지 확인"""
         thought = "이것은 테스트 생각입니다."
         result = await think.ainvoke({"thought": thought})
         assert result == thought
 
+    @pytest.mark.asyncio
     async def test_empty_thought(self):
         """빈 생각도 처리하는지 확인"""
         result = await think.ainvoke({"thought": ""})
@@ -37,6 +39,7 @@ class TestToolsList:
 class TestAragSearch:
     """arag_search 도구 테스트"""
 
+    @pytest.mark.asyncio
     async def test_returns_rag_result_format(self):
         """RAG 검색 결과 포맷 확인"""
         with patch("src.supervisor.tools._get_rag_worker") as mock_get_worker:
@@ -55,6 +58,7 @@ class TestAragSearch:
 class TestAwebSearch:
     """aweb_search 도구 테스트"""
 
+    @pytest.mark.asyncio
     async def test_returns_web_result_format(self):
         """웹 검색 결과 포맷 확인"""
         with patch("src.supervisor.tools._get_web_worker") as mock_get_worker:

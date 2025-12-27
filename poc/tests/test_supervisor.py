@@ -1,7 +1,10 @@
 """supervisor.py 테스트"""
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+# pytest-asyncio STRICT mode에서 async 테스트 마킹
+pytest_plugins = ('pytest_asyncio',)
 
 from src.supervisor.supervisor import (
     Supervisor,
@@ -35,51 +38,58 @@ class TestSupervisorConstants:
 class TestSupervisorInit:
     """Supervisor 초기화 테스트"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_default_initialization(self, mock_chat):
         """기본 초기화 테스트"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         assert supervisor.max_steps == DEFAULT_MAX_STEPS
         assert supervisor.max_tokens == DEFAULT_MAX_TOKENS
+        assert supervisor.adapter.provider_name == "openai"
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_custom_initialization(self, mock_chat):
         """커스텀 파라미터 초기화 테스트"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor(max_steps=5, max_tokens=2048)
+        supervisor = Supervisor(max_steps=5, max_tokens=2048, provider="openai")
 
         assert supervisor.max_steps == 5
         assert supervisor.max_tokens == 2048
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
-    def test_temperature_is_0_7(self, mock_chat):
-        """temperature가 0.7인지 확인"""
+    @patch("src.adapters.openai.ChatOpenAI")
+    def test_openai_adapter_selected(self, mock_chat):
+        """provider=openai일 때 OpenAI Adapter 선택"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        Supervisor()
+        supervisor = Supervisor(provider="openai")
+        assert supervisor.adapter.provider_name == "openai"
 
-        # ChatOpenAI 호출 시 temperature=0.7 확인
-        call_kwargs = mock_chat.call_args.kwargs
-        assert call_kwargs["temperature"] == 0.7
+    @patch("src.adapters.gemini.ChatGoogleGenerativeAI")
+    def test_gemini_adapter_selected(self, mock_chat):
+        """provider=gemini일 때 Gemini Adapter 선택"""
+        mock_chat.return_value = MagicMock()
+        mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
+
+        supervisor = Supervisor(provider="gemini")
+        assert supervisor.adapter.provider_name == "gemini"
 
 
 class TestSupervisorShouldContinue:
     """_should_continue 메서드 테스트"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_continue_when_tool_calls_exist(self, mock_chat):
         """tool_calls가 있으면 continue 반환"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         mock_message = MagicMock()
         mock_message.tool_calls = [{"name": "think", "args": {}}]
@@ -88,13 +98,13 @@ class TestSupervisorShouldContinue:
         result = supervisor._should_continue(state)
         assert result == "continue"
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_end_when_no_tool_calls(self, mock_chat):
         """tool_calls가 없으면 end 반환"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         mock_message = MagicMock()
         mock_message.tool_calls = []
@@ -107,13 +117,13 @@ class TestSupervisorShouldContinue:
 class TestSupervisorExtractSources:
     """_extract_sources 메서드 테스트"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_extracts_tool_names(self, mock_chat):
         """도구 이름들을 추출하는지 확인"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         messages = [
             AIMessage(content="", tool_calls=[{"name": "think", "args": {}, "id": "1"}]),
@@ -125,13 +135,13 @@ class TestSupervisorExtractSources:
         assert "think" in sources
         assert "aweb_search" in sources
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_returns_unique_sources(self, mock_chat):
         """중복 없이 반환하는지 확인"""
         mock_chat.return_value = MagicMock()
         mock_chat.return_value.bind_tools = MagicMock(return_value=MagicMock())
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         messages = [
             AIMessage(content="", tool_calls=[{"name": "think", "args": {}, "id": "1"}]),
@@ -146,14 +156,15 @@ class TestSupervisorExtractSources:
 class TestSupervisorProcessStream:
     """process_stream 메서드 테스트"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_yields_events(self, mock_chat):
         """스트리밍이 이벤트를 yield하는지 확인"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         # Mock graph의 astream_events
         async def mock_stream_events(*args, **kwargs):
@@ -181,8 +192,8 @@ class TestSupervisorProcessStream:
                 "data": {"output": "검색 결과..."}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("테스트 질문"):
@@ -195,14 +206,15 @@ class TestSupervisorProcessStream:
         assert StreamEventType.ACT in event_types
         assert StreamEventType.OBSERVE in event_types
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_token_event_format(self, mock_chat):
         """토큰 이벤트 포맷 확인"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {
@@ -210,8 +222,8 @@ class TestSupervisorProcessStream:
                 "data": {"chunk": MagicMock(content="테스트")}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("질문"):
@@ -221,14 +233,15 @@ class TestSupervisorProcessStream:
         assert events[0]["type"] == StreamEventType.TOKEN
         assert events[0]["content"] == "테스트"
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_think_event_format(self, mock_chat):
         """think 이벤트 포맷 확인"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {
@@ -237,8 +250,8 @@ class TestSupervisorProcessStream:
                 "data": {"input": {"thought": "생각 내용"}}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("질문"):
@@ -248,14 +261,15 @@ class TestSupervisorProcessStream:
         assert events[0]["type"] == StreamEventType.THINK
         assert events[0]["content"] == "생각 내용"
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_act_event_format(self, mock_chat):
         """act 이벤트 포맷 확인"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {
@@ -264,8 +278,8 @@ class TestSupervisorProcessStream:
                 "data": {"input": {"query": "검색어"}}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("질문"):
@@ -276,14 +290,15 @@ class TestSupervisorProcessStream:
         assert events[0]["tool"] == "aweb_search"
         assert events[0]["args"] == {"query": "검색어"}
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_observe_event_format(self, mock_chat):
         """observe 이벤트 포맷 확인"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {
@@ -292,8 +307,8 @@ class TestSupervisorProcessStream:
                 "data": {"output": "RAG 결과"}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("질문"):
@@ -303,14 +318,15 @@ class TestSupervisorProcessStream:
         assert events[0]["type"] == StreamEventType.OBSERVE
         assert "RAG 결과" in events[0]["content"]
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_ignores_non_search_tool_end(self, mock_chat):
         """검색 도구가 아닌 도구의 on_tool_end는 무시"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {
@@ -319,8 +335,8 @@ class TestSupervisorProcessStream:
                 "data": {"output": "생각 결과"}
             }
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         events = []
         async for event in supervisor.process_stream("질문"):
@@ -329,21 +345,22 @@ class TestSupervisorProcessStream:
         # think의 on_tool_end는 무시되어야 함
         assert len(events) == 0
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_stream_saves_to_history(self, mock_chat):
         """스트리밍 완료 후 히스토리에 저장"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_stream_events(*args, **kwargs):
             yield {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="Hello ")}}
             yield {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="World")}}
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.astream_events = mock_stream_events
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
         # 스트리밍 실행
         async for _ in supervisor.process_stream("테스트", session_id="test-session"):
@@ -359,7 +376,8 @@ class TestSupervisorProcessStream:
 class TestSupervisorProcess:
     """process 메서드 테스트 (Non-streaming)"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_returns_supervisor_response(self, mock_chat):
         """process가 SupervisorResponse를 반환"""
         from src.schemas.models import SupervisorResponse
@@ -368,7 +386,7 @@ class TestSupervisorProcess:
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         # Mock graph의 ainvoke
         async def mock_ainvoke(*args, **kwargs):
@@ -378,22 +396,23 @@ class TestSupervisorProcess:
                 AIMessage(content="답변입니다")
             ]}
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.ainvoke = mock_ainvoke
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.ainvoke = mock_ainvoke
 
         result = await supervisor.process("테스트 질문")
 
         assert isinstance(result, SupervisorResponse)
         assert result.answer == "답변입니다"
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_extracts_sources(self, mock_chat):
         """process가 사용된 도구를 sources에 포함"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_ainvoke(*args, **kwargs):
             return {"messages": [
@@ -401,47 +420,49 @@ class TestSupervisorProcess:
                 AIMessage(content="최종 답변")
             ]}
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.ainvoke = mock_ainvoke
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.ainvoke = mock_ainvoke
 
         result = await supervisor.process("질문")
 
         assert "aweb_search" in result.sources
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_saves_to_history_with_session(self, mock_chat):
         """session_id가 있으면 히스토리에 저장"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_ainvoke(*args, **kwargs):
             return {"messages": [AIMessage(content="답변")]}
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.ainvoke = mock_ainvoke
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.ainvoke = mock_ainvoke
 
         await supervisor.process("질문", session_id="test-session")
 
         messages = supervisor.memory.get_messages("test-session")
         assert len(messages) == 2
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
     async def test_process_no_history_without_session(self, mock_chat):
         """session_id가 없으면 히스토리 저장 안 함"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         async def mock_ainvoke(*args, **kwargs):
             return {"messages": [AIMessage(content="답변")]}
 
-        supervisor.graph = MagicMock()
-        supervisor.graph.ainvoke = mock_ainvoke
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.ainvoke = mock_ainvoke
 
         await supervisor.process("질문")  # session_id 없음
 
@@ -452,14 +473,14 @@ class TestSupervisorProcess:
 class TestSupervisorParseExecutionLog:
     """_parse_execution_log 메서드 테스트"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_parse_ai_message_content(self, mock_chat):
         """AIMessage content를 로그에 포함"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         messages = [AIMessage(content="긴 응답 내용입니다" * 20)]
         log = supervisor._parse_execution_log(messages)
@@ -468,14 +489,14 @@ class TestSupervisorParseExecutionLog:
         assert "Response:" in log[0]
         assert "..." in log[0]  # 100자 초과 시 truncate
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_parse_tool_calls(self, mock_chat):
         """tool_calls를 로그에 포함"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         messages = [
             AIMessage(content="", tool_calls=[
@@ -486,7 +507,7 @@ class TestSupervisorParseExecutionLog:
 
         assert any("Tool: aweb_search" in entry for entry in log)
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
+    @patch("src.adapters.openai.ChatOpenAI")
     def test_parse_tool_message(self, mock_chat):
         """ToolMessage를 로그에 포함"""
         from langchain_core.messages import ToolMessage
@@ -495,7 +516,7 @@ class TestSupervisorParseExecutionLog:
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
         messages = [ToolMessage(content="결과 데이터" * 100, tool_call_id="1")]
         log = supervisor._parse_execution_log(messages)
@@ -505,26 +526,62 @@ class TestSupervisorParseExecutionLog:
         assert "chars" in log[0]
 
 
-class TestSupervisorNode:
-    """_supervisor_node 메서드 테스트"""
+class TestChunkNormalization:
+    """청크 정규화 테스트 (Adapter 통합)"""
 
-    @patch("src.supervisor.supervisor.ChatOpenAI")
-    async def test_supervisor_node_calls_llm(self, mock_chat):
-        """_supervisor_node가 LLM을 호출"""
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
+    async def test_openai_chunk_normalized(self, mock_chat):
+        """OpenAI 청크가 정규화되어 스트리밍됨"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor()
+        supervisor = Supervisor(provider="openai")
 
-        # Mock LLM response
-        mock_response = AIMessage(content="응답")
-        supervisor.llm_with_tools = MagicMock()
-        supervisor.llm_with_tools.ainvoke = AsyncMock(return_value=mock_response)
+        async def mock_stream_events(*args, **kwargs):
+            # OpenAI 형식: chunk.content = str
+            yield {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": MagicMock(content="안녕하세요")}
+            }
 
-        state = {"messages": [HumanMessage(content="질문")]}
-        result = await supervisor._supervisor_node(state)
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
 
-        assert "messages" in result
-        assert len(result["messages"]) == 1
-        assert result["messages"][0].content == "응답"
+        events = []
+        async for event in supervisor.process_stream("질문"):
+            events.append(event)
+
+        assert events[0]["content"] == "안녕하세요"
+
+    @pytest.mark.asyncio
+    @patch("src.adapters.gemini.ChatGoogleGenerativeAI")
+    async def test_gemini_chunk_normalized(self, mock_chat):
+        """Gemini 청크가 정규화되어 스트리밍됨"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor(provider="gemini")
+
+        async def mock_stream_events(*args, **kwargs):
+            # Gemini 형식: chunk.content = list[dict]
+            chunk = MagicMock()
+            chunk.content = [{"type": "text", "text": "안녕"}, {"type": "text", "text": "하세요"}]
+            yield {
+                "event": "on_chat_model_stream",
+                "data": {"chunk": chunk}
+            }
+
+        # Gemini는 매번 새로 생성하므로 _build_graph를 mock
+        mock_graph = MagicMock()
+        mock_graph.astream_events = mock_stream_events
+        supervisor._build_graph = MagicMock(return_value=mock_graph)
+
+        events = []
+        async for event in supervisor.process_stream("질문"):
+            events.append(event)
+
+        # Gemini list 형식이 str로 정규화됨
+        assert events[0]["content"] == "안녕하세요"
