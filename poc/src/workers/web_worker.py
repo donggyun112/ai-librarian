@@ -8,9 +8,9 @@ from src.workers.base import BaseWorker
 class WebSearchWorker(BaseWorker):
     """웹 검색을 수행하는 워커 (DuckDuckGo)"""
 
-    def __init__(self):
+    def __init__(self, max_results: int = 10):
         self.ddgs = DDGS()
-        self.max_results = 5
+        self.max_results = max_results
 
     @property
     def worker_type(self) -> WorkerType:
@@ -35,12 +35,12 @@ class WebSearchWorker(BaseWorker):
             content_parts = []
             sources = []
 
-            for result in results:
+            for i, result in enumerate(results, 1):
                 title = result.get("title", "")
                 body = result.get("body", "")
                 url = result.get("href", "")
 
-                content_parts.append(f"[{title}]\n{body}")
+                content_parts.append(f"[{i}] {title}\n{body}\n출처: {url}")
                 sources.append(url)
 
             content = "\n\n".join(content_parts)
