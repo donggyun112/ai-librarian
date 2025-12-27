@@ -5,6 +5,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class Config:
+    # LLM Provider: "openai" or "gemini"
+    LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
+
     # OpenAI
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o")
@@ -22,5 +25,13 @@ class Config:
     # Supervisor 설정
     MAX_RETRIES = 2
     CONFIDENCE_THRESHOLD = 0.7
+
+    # 프롬프트 설정
+    RESPONSE_LANGUAGE = os.getenv("RESPONSE_LANGUAGE", "Korean")
+    AGENT_PERSONA = os.getenv("AGENT_PERSONA", "AI Librarian")
+    AGENT_DESCRIPTION = os.getenv(
+        "AGENT_DESCRIPTION",
+        "an AI assistant that helps users find information by searching internal documents and the web"
+    )
 
 config = Config()
