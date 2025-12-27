@@ -1,16 +1,16 @@
 """Streamlit UI - 슈퍼바이저 ReAct 데모"""
 import asyncio
+import uuid
 import streamlit as st
 import sys
 import os
 
-# Add src to python path to allow imports if running directly from poc/
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from src.supervisor import Supervisor
 
 
-# 페이지 설정
+
 st.set_page_config(
     page_title="AI Librarian",
     page_icon="📚",
@@ -18,104 +18,112 @@ st.set_page_config(
 )
 
 
-def init_supervisor():
-    """슈퍼바이저 초기화 (캐싱)"""
+def load_css():
+    """커스텀 CSS 로드"""
+    css_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles.css")
+    if os.path.exists(css_file):
+        with open(css_file) as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+
+
+load_css()
+
+
+def init_session():
+    """세션 초기화"""
+    if "session_id" not in st.session_state:
+        st.session_state.session_id = str(uuid.uuid4())
     if "supervisor" not in st.session_state:
         st.session_state.supervisor = Supervisor()
-    return st.session_state.supervisor
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+
+def clear_chat():
+    """대화 히스토리 초기화"""
+    st.session_state.supervisor.clear_history(st.session_state.session_id)
+    st.session_state.messages = []
+    st.session_state.session_id = str(uuid.uuid4())
 
 
 async def main():
-    st.title("📚 AI Librarian (ReAct Pattern)")
-    st.caption("Ask → Think → Act → Observe Loop (Streaming)")
+    init_session()
+
+    st.title("📚 AI Librarian")
+    st.caption("ReAct Pattern with Conversation Memory")
 
     # 사이드바
     with st.sidebar:
-        st.header("⚙️ 설정")
-        show_log = st.checkbox("실행 로그 표시", value=True)
-        
-    # 메인 컨텐츠
-    supervisor = init_supervisor()
-
-    # 질문 입력
-    question = st.text_input(
-        "질문을 입력하세요",
-        placeholder="예: 2024년 AI 트렌드는?"
-    )
-
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        submit = st.button("질문하기", type="primary", use_container_width=True)
-
-    # 예시 질문
-    examples = [
-        "LangChain이 무엇인가요?",
-        "2024년 AI 트렌드는?",
-        "RAG와 파인튜닝의 차이점은?"
-    ]
-    
-    cols = st.columns(len(examples))
-    for i, ex in enumerate(examples):
-        if cols[i].button(ex, key=f"ex_{i}"):
-            question = ex
-            submit = True
-
-    # 질문 처리
-    if submit and question:
+        st.header("Settings")
+        show_log = st.checkbox("Show execution log", value=True)
         st.divider()
 
-        # 상태 컨테이너
-        status_container = st.container()
-        answer_container = st.container()
+        st.caption(f"Session: `{st.session_state.session_id[:8]}...`")
+        if st.button("Clear Chat", use_container_width=True):
+            clear_chat()
+            st.rerun()
 
-        with status_container:
-            status = st.status("🤔 생각하고 행동하는 중...", expanded=True)
-            with status:
-                logs_placeholder = st.container()
+    supervisor = st.session_state.supervisor
+    session_id = st.session_state.session_id
 
-        with answer_container:
+    # 이전 대화 표시
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # 질문 입력
+    question = st.chat_input("Ask a question...")
+
+    if question:
+        # 사용자 메시지 표시
+        st.session_state.messages.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
+
+        # AI 응답
+        with st.chat_message("assistant"):
+            if show_log:
+                status = st.status("Thinking...", expanded=True)
+                logs_placeholder = status.container()
             answer_placeholder = st.empty()
 
-        try:
-            full_answer = ""
-            
-            async for event in supervisor.process_stream(question):
-                event_type = event["type"]
+            try:
+                full_answer = ""
 
-                # Think - 생각 과정
-                if event_type == "think":
-                    with logs_placeholder:
-                        st.markdown(f"🧠 **Think:** {event['content']}")
+                async for event in supervisor.process_stream(question, session_id=session_id):
+                    event_type = event["type"]
 
-                # Act - 도구 호출
-                elif event_type == "act":
-                    with logs_placeholder:
-                        st.markdown(f"🔧 **Act:** `{event['tool']}`")
-                        with st.expander("Arguments", expanded=False):
-                            st.json(event['args'])
+                    if event_type == "think" and show_log:
+                        with logs_placeholder:
+                            st.markdown(f"🧠 **Think:** {event['content']}")
 
-                # Observe - 도구 결과
-                elif event_type == "observe":
-                    content = event['content']
-                    preview = content[:300] + "..." if len(content) > 300 else content
-                    with logs_placeholder:
-                        st.info(f"👁️ **Observe:** {preview}")
+                    elif event_type == "act" and show_log:
+                        with logs_placeholder:
+                            st.markdown(f"🔧 **Act:** `{event['tool']}`")
+                            with st.expander("Arguments", expanded=False):
+                                st.json(event['args'])
 
-                # Token - 최종 답변 (실시간 스트리밍)
-                elif event_type == "token":
-                    full_answer += event["content"]
-                    answer_placeholder.markdown(full_answer + "▌")
+                    elif event_type == "observe" and show_log:
+                        content = event['content']
+                        preview = content[:300] + "..." if len(content) > 300 else content
+                        with logs_placeholder:
+                            st.info(f"👁️ **Observe:** {preview}")
 
-            # 최종 완성 (커서 제거)
-            if full_answer:
-                answer_placeholder.markdown(full_answer)
+                    elif event_type == "token":
+                        full_answer += event["content"]
+                        answer_placeholder.markdown(full_answer + "▌")
 
-            status.update(label="완료!", state="complete", expanded=False)
+                if full_answer:
+                    answer_placeholder.markdown(full_answer)
+                    st.session_state.messages.append({"role": "assistant", "content": full_answer})
 
-        except Exception as e:
-            st.error(f"오류 발생: {str(e)}")
-            if 'status' in locals():
-                status.update(label="오류 발생", state="error")
+                if show_log:
+                    status.update(label="Done", state="complete", expanded=False)
+
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+                if show_log and 'status' in locals():
+                    status.update(label="Error", state="error")
 
 
 if __name__ == "__main__":

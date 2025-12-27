@@ -1,0 +1,14 @@
+/* Streamlit stale content dimming 방지 */
+[data-stale="true"] {
+    opacity: 1 !important;
+}
+
+/* 채팅 메시지가 흐려지는 것 방지 */
+.stChatMessage {
+    opacity: 1 !important;
+}
+
+/* 스트리밍 중에도 이전 콘텐츠 선명하게 유지 */
+.element-container {
+    opacity: 1 !important;
+}
