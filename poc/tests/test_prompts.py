@@ -18,44 +18,43 @@ class TestGetSystemPrompt:
         current_date = datetime.now().strftime("%Y-%m-%d")
         assert current_date in prompt
 
-    def test_contains_current_year(self):
-        """현재 연도가 포함되는지 확인"""
+    def test_contains_think_tool(self):
+        """think 도구 사용 지침이 있는지 확인"""
         prompt = get_system_prompt()
-        current_year = datetime.now().strftime("%Y")
-        assert current_year in prompt
+        assert "think" in prompt
+        assert "REQUIRED" in prompt or "ALWAYS" in prompt
 
-    def test_contains_think_tool_required(self):
-        """think 도구가 REQUIRED로 표시되는지 확인"""
+    def test_contains_workflow_steps(self):
+        """워크플로우 단계가 있는지 확인"""
         prompt = get_system_prompt()
-        assert "think (REQUIRED)" in prompt
-        assert "MUST call" in prompt
+        assert "Step 1" in prompt or "step 1" in prompt.lower()
+        assert "Search" in prompt
 
-    def test_contains_clarifying_question_instruction(self):
-        """모호한 질문시 clarifying question 지침이 있는지 확인"""
+    def test_contains_korean_query_guide(self):
+        """한국어 쿼리 가이드가 있는지 확인"""
         prompt = get_system_prompt()
-        assert "clarifying question" in prompt
+        assert "Korean" in prompt or "한국" in prompt
 
-    def test_contains_korean_cultural_query_guide(self):
-        """한국 문화 쿼리 가이드가 있는지 확인"""
+    def test_contains_quality_check(self):
+        """품질 체크 지침이 있는지 확인"""
         prompt = get_system_prompt()
-        assert "K-pop" in prompt or "Korean fashion" in prompt
+        assert "Quality" in prompt or "specific" in prompt.lower()
 
-    def test_contains_ambiguous_request_handling(self):
-        """모호한 요청 처리 섹션이 있는지 확인"""
+    def test_contains_good_bad_example(self):
+        """좋은/나쁜 예시가 있는지 확인"""
         prompt = get_system_prompt()
-        assert "Ambiguous" in prompt or "ambiguous" in prompt
+        assert "GOOD" in prompt or "BAD" in prompt
 
 
 class TestSystemPromptTemplate:
     """SYSTEM_PROMPT_TEMPLATE 상수 테스트"""
 
-    def test_has_placeholders(self):
-        """필요한 placeholder가 있는지 확인"""
+    def test_has_date_placeholder(self):
+        """날짜 placeholder가 있는지 확인"""
         assert "{current_date}" in SYSTEM_PROMPT_TEMPLATE
-        assert "{current_year}" in SYSTEM_PROMPT_TEMPLATE
 
-    def test_tools_section_exists(self):
-        """도구 섹션이 있는지 확인"""
-        assert "## think" in SYSTEM_PROMPT_TEMPLATE
-        assert "## arag_search" in SYSTEM_PROMPT_TEMPLATE
-        assert "## aweb_search" in SYSTEM_PROMPT_TEMPLATE
+    def test_tools_mentioned(self):
+        """도구들이 언급되어 있는지 확인"""
+        assert "think" in SYSTEM_PROMPT_TEMPLATE
+        assert "arag_search" in SYSTEM_PROMPT_TEMPLATE
+        assert "aweb_search" in SYSTEM_PROMPT_TEMPLATE

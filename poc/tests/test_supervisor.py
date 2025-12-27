@@ -328,3 +328,203 @@ class TestSupervisorProcessStream:
 
         # think의 on_tool_end는 무시되어야 함
         assert len(events) == 0
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_process_stream_saves_to_history(self, mock_chat):
+        """스트리밍 완료 후 히스토리에 저장"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        async def mock_stream_events(*args, **kwargs):
+            yield {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="Hello ")}}
+            yield {"event": "on_chat_model_stream", "data": {"chunk": MagicMock(content="World")}}
+
+        supervisor.graph = MagicMock()
+        supervisor.graph.astream_events = mock_stream_events
+
+        # 스트리밍 실행
+        async for _ in supervisor.process_stream("테스트", session_id="test-session"):
+            pass
+
+        # 히스토리 확인
+        messages = supervisor.memory.get_messages("test-session")
+        assert len(messages) == 2
+        assert messages[0].content == "테스트"
+        assert messages[1].content == "Hello World"
+
+
+class TestSupervisorProcess:
+    """process 메서드 테스트 (Non-streaming)"""
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_process_returns_supervisor_response(self, mock_chat):
+        """process가 SupervisorResponse를 반환"""
+        from src.schemas.models import SupervisorResponse
+
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        # Mock graph의 ainvoke
+        async def mock_ainvoke(*args, **kwargs):
+            return {"messages": [
+                SystemMessage(content="system"),
+                HumanMessage(content="질문"),
+                AIMessage(content="답변입니다")
+            ]}
+
+        supervisor.graph = MagicMock()
+        supervisor.graph.ainvoke = mock_ainvoke
+
+        result = await supervisor.process("테스트 질문")
+
+        assert isinstance(result, SupervisorResponse)
+        assert result.answer == "답변입니다"
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_process_extracts_sources(self, mock_chat):
+        """process가 사용된 도구를 sources에 포함"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        async def mock_ainvoke(*args, **kwargs):
+            return {"messages": [
+                AIMessage(content="", tool_calls=[{"name": "aweb_search", "args": {}, "id": "1"}]),
+                AIMessage(content="최종 답변")
+            ]}
+
+        supervisor.graph = MagicMock()
+        supervisor.graph.ainvoke = mock_ainvoke
+
+        result = await supervisor.process("질문")
+
+        assert "aweb_search" in result.sources
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_process_saves_to_history_with_session(self, mock_chat):
+        """session_id가 있으면 히스토리에 저장"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        async def mock_ainvoke(*args, **kwargs):
+            return {"messages": [AIMessage(content="답변")]}
+
+        supervisor.graph = MagicMock()
+        supervisor.graph.ainvoke = mock_ainvoke
+
+        await supervisor.process("질문", session_id="test-session")
+
+        messages = supervisor.memory.get_messages("test-session")
+        assert len(messages) == 2
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_process_no_history_without_session(self, mock_chat):
+        """session_id가 없으면 히스토리 저장 안 함"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        async def mock_ainvoke(*args, **kwargs):
+            return {"messages": [AIMessage(content="답변")]}
+
+        supervisor.graph = MagicMock()
+        supervisor.graph.ainvoke = mock_ainvoke
+
+        await supervisor.process("질문")  # session_id 없음
+
+        # 어떤 세션에도 저장되지 않음
+        assert supervisor.memory.list_sessions() == []
+
+
+class TestSupervisorParseExecutionLog:
+    """_parse_execution_log 메서드 테스트"""
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    def test_parse_ai_message_content(self, mock_chat):
+        """AIMessage content를 로그에 포함"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        messages = [AIMessage(content="긴 응답 내용입니다" * 20)]
+        log = supervisor._parse_execution_log(messages)
+
+        assert len(log) == 1
+        assert "Response:" in log[0]
+        assert "..." in log[0]  # 100자 초과 시 truncate
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    def test_parse_tool_calls(self, mock_chat):
+        """tool_calls를 로그에 포함"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        messages = [
+            AIMessage(content="", tool_calls=[
+                {"name": "aweb_search", "args": {"query": "test"}, "id": "1"}
+            ])
+        ]
+        log = supervisor._parse_execution_log(messages)
+
+        assert any("Tool: aweb_search" in entry for entry in log)
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    def test_parse_tool_message(self, mock_chat):
+        """ToolMessage를 로그에 포함"""
+        from langchain_core.messages import ToolMessage
+
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        messages = [ToolMessage(content="결과 데이터" * 100, tool_call_id="1")]
+        log = supervisor._parse_execution_log(messages)
+
+        assert len(log) == 1
+        assert "Result:" in log[0]
+        assert "chars" in log[0]
+
+
+class TestSupervisorNode:
+    """_supervisor_node 메서드 테스트"""
+
+    @patch("src.supervisor.supervisor.ChatOpenAI")
+    async def test_supervisor_node_calls_llm(self, mock_chat):
+        """_supervisor_node가 LLM을 호출"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor()
+
+        # Mock LLM response
+        mock_response = AIMessage(content="응답")
+        supervisor.llm_with_tools = MagicMock()
+        supervisor.llm_with_tools.ainvoke = AsyncMock(return_value=mock_response)
+
+        state = {"messages": [HumanMessage(content="질문")]}
+        result = await supervisor._supervisor_node(state)
+
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+        assert result["messages"][0].content == "응답"

@@ -68,3 +68,83 @@ class TestAwebSearch:
 
             assert "[웹 검색 결과]" in result
             assert "테스트 웹 결과" in result
+
+
+class TestWorkerLazyInitialization:
+    """워커 lazy initialization 테스트"""
+
+    def test_get_rag_worker_creates_instance(self):
+        """_get_rag_worker가 인스턴스 생성"""
+        import src.supervisor.tools as tools_module
+
+        # Reset global state
+        tools_module._rag_worker = None
+
+        with patch("src.supervisor.tools.RAGWorker") as MockRAGWorker:
+            mock_instance = MagicMock()
+            MockRAGWorker.return_value = mock_instance
+
+            from src.supervisor.tools import _get_rag_worker
+            result = _get_rag_worker()
+
+            MockRAGWorker.assert_called_once()
+            assert result == mock_instance
+
+    def test_get_rag_worker_reuses_instance(self):
+        """_get_rag_worker가 기존 인스턴스 재사용"""
+        import src.supervisor.tools as tools_module
+
+        mock_instance = MagicMock()
+        tools_module._rag_worker = mock_instance
+
+        from src.supervisor.tools import _get_rag_worker
+        result = _get_rag_worker()
+
+        assert result is mock_instance
+
+    def test_get_web_worker_creates_instance(self):
+        """_get_web_worker가 인스턴스 생성"""
+        import src.supervisor.tools as tools_module
+
+        tools_module._web_worker = None
+
+        with patch("src.supervisor.tools.WebSearchWorker") as MockWebWorker:
+            mock_instance = MagicMock()
+            MockWebWorker.return_value = mock_instance
+
+            from src.supervisor.tools import _get_web_worker
+            result = _get_web_worker()
+
+            MockWebWorker.assert_called_once()
+            assert result == mock_instance
+
+    def test_get_web_worker_reuses_instance(self):
+        """_get_web_worker가 기존 인스턴스 재사용"""
+        import src.supervisor.tools as tools_module
+
+        mock_instance = MagicMock()
+        tools_module._web_worker = mock_instance
+
+        from src.supervisor.tools import _get_web_worker
+        result = _get_web_worker()
+
+        assert result is mock_instance
+
+
+class TestToolDescriptions:
+    """도구 설명 테스트"""
+
+    def test_think_has_description(self):
+        """think 도구에 설명이 있음"""
+        assert think.description
+        assert "생각" in think.description
+
+    def test_arag_search_has_description(self):
+        """arag_search 도구에 설명이 있음"""
+        assert arag_search.description
+        assert "문서" in arag_search.description or "검색" in arag_search.description
+
+    def test_aweb_search_has_description(self):
+        """aweb_search 도구에 설명이 있음"""
+        assert aweb_search.description
+        assert "웹" in aweb_search.description
