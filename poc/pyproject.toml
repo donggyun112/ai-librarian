@@ -8,6 +8,7 @@ dependencies = [
     # Core
     "langchain>=0.3.0",
     "langchain-openai>=0.3.0",
+    "langchain-google-genai>=2.0.0",
     "langgraph>=0.2.0",
     "openai>=1.50.0",
     # Vector DB
@@ -44,4 +45,5 @@ python_functions = ["test_*"]
 [dependency-groups]
 dev = [
     "pyright>=1.1.407",
+    "pytest-cov>=7.0.0",
 ]
