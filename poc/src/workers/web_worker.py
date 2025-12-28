@@ -1,4 +1,6 @@
 """웹 서치 워커 - DuckDuckGo 사용"""
+import asyncio
+
 from ddgs import DDGS
 
 from src.schemas.models import WorkerResult, WorkerType
@@ -19,10 +21,10 @@ class WebSearchWorker(BaseWorker):
     async def execute(self, query: str) -> WorkerResult:
         """웹 검색 실행"""
         try:
-            # 동기 함수인 self.ddgs.text를 비동기 루프에서 실행해야 하지만, 
-            # 간단한 구현을 위해 여기서는 직접 호출합니다. 
-            # 필요시 asyncio.to_thread로 감쌀 수 있습니다.
-            results = list(self.ddgs.text(query, max_results=self.max_results))
+            # 동기 함수를 별도 스레드에서 실행하여 이벤트 루프 블로킹 방지
+            results = await asyncio.to_thread(
+                lambda: list(self.ddgs.text(query, max_results=self.max_results))
+            )
 
             if not results:
                 return self._create_result(

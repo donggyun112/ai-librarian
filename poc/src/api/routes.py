@@ -6,6 +6,7 @@ from typing import AsyncGenerator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
+from loguru import logger
 
 from src.supervisor import Supervisor
 from src.memory import InMemoryChatMemory
@@ -50,7 +51,11 @@ async def chat(request: ChatRequest):
             session_id=session_id
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Chat processing failed")
+        raise HTTPException(
+            status_code=500,
+            detail="요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+        )
 
 
 @router.post("/chat/stream")
@@ -106,9 +111,10 @@ async def chat_stream(request: ChatRequest):
             }
 
         except Exception as e:
+            logger.exception("Stream processing failed")
             yield {
                 "event": "error",
-                "data": json.dumps({"error": str(e)})
+                "data": json.dumps({"error": "스트리밍 처리 중 오류가 발생했습니다."})
             }
 
     return EventSourceResponse(event_generator())
