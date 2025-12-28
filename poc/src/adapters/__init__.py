@@ -2,11 +2,13 @@
 from .base import BaseLLMAdapter, NormalizedChunk, ToolChoiceType
 from .openai import OpenAIAdapter
 from .gemini import GeminiAdapter
+from .deepseek import DeepSeekAdapter
 
 # 프로바이더 이름 → Adapter 클래스 매핑
 ADAPTER_REGISTRY: dict[str, type[BaseLLMAdapter]] = {
     "openai": OpenAIAdapter,
     "gemini": GeminiAdapter,
+    "deepseek": DeepSeekAdapter,
 }
 
 
@@ -35,6 +37,7 @@ __all__ = [
     "ToolChoiceType",
     "OpenAIAdapter",
     "GeminiAdapter",
+    "DeepSeekAdapter",
     "get_adapter",
     "ADAPTER_REGISTRY",
 ]
