@@ -778,6 +778,59 @@
             container.scrollTop = container.scrollHeight;
         }
 
+        function createThinkingBadge(content, beforeElement) {
+            const container = document.getElementById('chat-container');
+
+            const div = document.createElement('div');
+            div.className = 'event-badge think';
+            div.id = 'thinking-badge';
+
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = '🧠';
+            div.appendChild(iconSpan);
+
+            const strong = document.createElement('strong');
+            strong.textContent = 'Thinking';
+            strong.style.marginRight = '0.5rem';
+            div.appendChild(strong);
+
+            const textSpan = document.createElement('span');
+            textSpan.className = 'thinking-text';
+            textSpan.textContent = content;  // 제한 없이 전체 표시
+            div.appendChild(textSpan);
+
+            // 스트리밍 커서 추가
+            const cursor = document.createElement('span');
+            cursor.className = 'streaming-cursor';
+            cursor.style.height = '0.9em';
+            cursor.style.width = '6px';
+            div.appendChild(cursor);
+
+            if (beforeElement) {
+                container.insertBefore(div, beforeElement);
+            } else {
+                container.appendChild(div);
+            }
+            container.scrollTop = container.scrollHeight;
+
+            return div;
+        }
+
+        function updateThinkingBadge(badge, content) {
+            const textSpan = badge.querySelector('.thinking-text');
+            if (textSpan) {
+                textSpan.textContent = content;  // 제한 없이 전체 표시
+            }
+            const container = document.getElementById('chat-container');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function finalizeThinkingBadge(badge) {
+            if (!badge) return;
+            const cursor = badge.querySelector('.streaming-cursor');
+            if (cursor) cursor.remove();
+        }
+
         document.getElementById('new-session-btn').addEventListener('click', newSession);
         document.getElementById('clear-session-btn').addEventListener('click', clearSession);
 
@@ -816,6 +869,8 @@
 
             let fullContent = '';
             let currentEventType = '';
+            let thinkingContent = '';  // thinking 청크 버퍼
+            let thinkingBadge = null;  // thinking badge 요소
 
             try {
                 const response = await fetch('/api/chat/stream', {
@@ -854,7 +909,13 @@
                                     // Scroll to bottom as text grows
                                     container.scrollTop = container.scrollHeight;
                                 } else if (currentEventType === 'think' && data.content) {
-                                    addEventBadge('think', data.content, assistantDiv);
+                                    // thinking 청크를 버퍼링하여 하나의 badge로 업데이트
+                                    thinkingContent += data.content;
+                                    if (!thinkingBadge) {
+                                        thinkingBadge = createThinkingBadge(thinkingContent, assistantDiv);
+                                    } else {
+                                        updateThinkingBadge(thinkingBadge, thinkingContent);
+                                    }
                                 } else if (currentEventType === 'act' && data.tool) {
                                     addEventBadge('act', data.tool + '(' + JSON.stringify(data.args) + ')', assistantDiv);
                                 } else if (currentEventType === 'observe' && data.content) {
@@ -872,6 +933,8 @@
                     }
                 }
 
+                // thinking badge 커서 제거
+                finalizeThinkingBadge(thinkingBadge);
                 updateAssistantMessage(assistantDiv, fullContent || '🤔 응답을 생성하지 못했습니다.', false);
 
             } catch (error) {
