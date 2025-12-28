@@ -85,17 +85,23 @@ async def main():
             if show_log:
                 status = st.status("Thinking...", expanded=True)
                 logs_placeholder = status.container()
+                think_placeholder = None  # thinking 내용 표시용
             answer_placeholder = st.empty()
 
             try:
                 full_answer = ""
+                full_thinking = ""  # thinking 청크 버퍼링
 
                 async for event in supervisor.process_stream(question, session_id=session_id):
                     event_type = event["type"]
 
                     if event_type == "think" and show_log:
+                        # thinking 청크를 모아서 실시간 업데이트
+                        full_thinking += event['content']
                         with logs_placeholder:
-                            st.markdown(f"🧠 **Think:** {event['content']}")
+                            if think_placeholder is None:
+                                think_placeholder = st.empty()
+                            think_placeholder.markdown(f"🧠 **Think:**\n{full_thinking}")
 
                     elif event_type == "act" and show_log:
                         with logs_placeholder:
