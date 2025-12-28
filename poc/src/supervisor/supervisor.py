@@ -28,7 +28,7 @@ from langgraph.prebuilt import ToolNode
 
 from src.schemas.models import SupervisorResponse, StreamEventType, LangGraphEventName
 from src.memory import ChatMemory, InMemoryChatMemory
-from src.adapters import get_adapter, BaseLLMAdapter
+from src.adapters import get_adapter, BaseLLMAdapter, ToolChoiceType
 from .prompts import get_system_prompt
 from .tools import TOOLS
 from config import config
@@ -116,12 +116,34 @@ class Supervisor:
             temperature=0.7,
             max_tokens=self.max_tokens
         )
-        llm_with_tools = llm.bind_tools(TOOLS)
+
+        # 일반 도구 바인딩 (auto)
+        llm_with_tools = self.adapter.bind_tools(llm, TOOLS)
+
+        # think 강제 호출용 바인딩
+        llm_with_think_forced = self.adapter.bind_tools(
+            llm,
+            TOOLS,
+            tool_choice={"type": "function", "function": {"name": THINK_TOOL}}
+        )
 
         async def supervisor_node(state: AgentState) -> dict:
-            """Supervisor 노드: LLM 호출"""
+            """Supervisor 노드: LLM 호출
+
+            첫 응답에는 think 도구를 강제 호출하여 사고 과정을 거치도록 함
+            """
             messages = state["messages"]
-            response = await llm_with_tools.ainvoke(messages)
+
+            # 첫 응답인지 확인 (AI 응답이 없으면 첫 턴)
+            has_ai_response = any(isinstance(m, AIMessage) for m in messages)
+
+            if not has_ai_response:
+                # 첫 응답: think 강제
+                response = await llm_with_think_forced.ainvoke(messages)
+            else:
+                # 이후: LLM이 알아서 결정
+                response = await llm_with_tools.ainvoke(messages)
+
             return {"messages": [response]}
 
         workflow = StateGraph(AgentState)

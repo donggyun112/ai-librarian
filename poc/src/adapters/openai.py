@@ -1,10 +1,10 @@
 """OpenAI LLM Adapter"""
-from typing import Any
+from typing import Any, List, Optional
 
 from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 
-from .base import BaseLLMAdapter, NormalizedChunk
+from .base import BaseLLMAdapter, NormalizedChunk, ToolChoiceType
 from config import config
 
 
@@ -47,3 +47,14 @@ class OpenAIAdapter(BaseLLMAdapter):
     @property
     def provider_name(self) -> str:
         return "openai"
+
+    def bind_tools(
+        self,
+        llm: BaseChatModel,
+        tools: List[Any],
+        tool_choice: Optional[ToolChoiceType] = None
+    ) -> BaseChatModel:
+        """OpenAI는 tool_choice를 그대로 지원"""
+        if tool_choice:
+            return llm.bind_tools(tools, tool_choice=tool_choice)
+        return llm.bind_tools(tools)
