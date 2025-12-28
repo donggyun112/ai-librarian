@@ -24,6 +24,7 @@ dependencies = [
     "fastapi>=0.127.1",
     "uvicorn>=0.40.0",
     "sse-starlette>=3.1.1",
+    "loguru>=0.7.3",
 ]
 
 [project.optional-dependencies]

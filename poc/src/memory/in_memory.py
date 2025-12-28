@@ -3,6 +3,7 @@
 개발/테스트용. 서버 재시작 시 데이터 소실됩니다.
 프로덕션에서는 SQLChatMemory나 RedisChatMemory를 사용하세요.
 """
+import threading
 from collections import defaultdict
 from typing import List
 
@@ -18,6 +19,7 @@ class InMemoryChatMemory(ChatMemory):
         - 빠른 읽기/쓰기
         - 서버 재시작 시 데이터 소실
         - 개발/테스트 환경에 적합
+        - 스레드 안전 (Lock 사용)
 
     사용 예시:
         memory = InMemoryChatMemory()
@@ -30,33 +32,41 @@ class InMemoryChatMemory(ChatMemory):
 
     def __init__(self):
         self._store: dict[str, List[BaseMessage]] = defaultdict(list)
+        self._lock = threading.Lock()
 
     def get_messages(self, session_id: str) -> List[BaseMessage]:
         """세션의 전체 대화 히스토리 조회"""
-        return self._store[session_id].copy()
+        with self._lock:
+            return self._store[session_id].copy()
 
     def add_user_message(self, session_id: str, content: str) -> None:
         """사용자 메시지 추가"""
-        self._store[session_id].append(HumanMessage(content=content))
+        with self._lock:
+            self._store[session_id].append(HumanMessage(content=content))
 
     def add_ai_message(self, session_id: str, content: str) -> None:
         """AI 메시지 추가"""
-        self._store[session_id].append(AIMessage(content=content))
+        with self._lock:
+            self._store[session_id].append(AIMessage(content=content))
 
     def clear(self, session_id: str) -> None:
         """세션 히스토리 초기화"""
-        if session_id in self._store:
-            self._store[session_id].clear()
+        with self._lock:
+            if session_id in self._store:
+                self._store[session_id].clear()
 
     def delete_session(self, session_id: str) -> None:
         """세션 완전 삭제"""
-        if session_id in self._store:
-            del self._store[session_id]
+        with self._lock:
+            if session_id in self._store:
+                del self._store[session_id]
 
     def list_sessions(self) -> List[str]:
         """모든 세션 ID 조회"""
-        return list(self._store.keys())
+        with self._lock:
+            return list(self._store.keys())
 
     def get_message_count(self, session_id: str) -> int:
         """세션의 메시지 개수"""
-        return len(self._store[session_id])
+        with self._lock:
+            return len(self._store[session_id])

@@ -34,4 +34,10 @@ class Config:
         "an AI assistant that helps users find information by searching internal documents and the web"
     )
 
+    # CORS 설정
+    ALLOWED_ORIGINS = os.getenv(
+        "ALLOWED_ORIGINS",
+        "http://localhost:8000,http://localhost:3000"
+    ).split(",")
+
 config = Config()
