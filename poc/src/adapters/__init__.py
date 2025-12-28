@@ -1,5 +1,5 @@
 """LLM Adapters - 프로바이더별 차이점 캡슐화"""
-from .base import BaseLLMAdapter, NormalizedChunk
+from .base import BaseLLMAdapter, NormalizedChunk, ToolChoiceType
 from .openai import OpenAIAdapter
 from .gemini import GeminiAdapter
 
@@ -32,6 +32,7 @@ def get_adapter(provider: str) -> BaseLLMAdapter:
 __all__ = [
     "BaseLLMAdapter",
     "NormalizedChunk",
+    "ToolChoiceType",
     "OpenAIAdapter",
     "GeminiAdapter",
     "get_adapter",

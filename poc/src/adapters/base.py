@@ -1,9 +1,17 @@
 """LLM Adapter 베이스 클래스"""
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, List, Optional, Literal, Union
 
 from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import BaseTool
+
+
+# Tool choice 타입 정의
+ToolChoiceType = Union[
+    Literal["auto", "required", "none"],
+    dict  # {"type": "function", "function": {"name": "tool_name"}}
+]
 
 
 @dataclass
@@ -59,4 +67,27 @@ class BaseLLMAdapter(ABC):
     @abstractmethod
     def provider_name(self) -> str:
         """프로바이더 이름 (로깅/디버깅용)"""
+        pass
+
+    @abstractmethod
+    def bind_tools(
+        self,
+        llm: BaseChatModel,
+        tools: List[Any],
+        tool_choice: Optional[ToolChoiceType] = None
+    ) -> BaseChatModel:
+        """LLM에 도구를 바인딩
+
+        Args:
+            llm: LangChain LLM 인스턴스
+            tools: 바인딩할 도구 목록
+            tool_choice: 도구 선택 옵션
+                - "auto": LLM이 알아서 결정 (기본값)
+                - "required": 반드시 도구 호출
+                - "none": 도구 호출 금지
+                - {"type": "function", "function": {"name": "tool_name"}}: 특정 도구 강제
+
+        Returns:
+            도구가 바인딩된 LLM
+        """
         pass

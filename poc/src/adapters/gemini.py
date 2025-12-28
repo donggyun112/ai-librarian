@@ -1,10 +1,10 @@
 """Gemini LLM Adapter"""
-from typing import Any
+from typing import Any, List, Optional
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.language_models import BaseChatModel
 
-from .base import BaseLLMAdapter, NormalizedChunk
+from .base import BaseLLMAdapter, NormalizedChunk, ToolChoiceType
 from config import config
 
 
@@ -54,3 +54,42 @@ class GeminiAdapter(BaseLLMAdapter):
     @property
     def provider_name(self) -> str:
         return "gemini"
+
+    def bind_tools(
+        self,
+        llm: BaseChatModel,
+        tools: List[Any],
+        tool_choice: Optional[ToolChoiceType] = None
+    ) -> BaseChatModel:
+        """Gemini tool_choice 지원
+
+        Gemini는 tool_choice 형식이 다름:
+        - "auto" → None (기본)
+        - "required" → "any"
+        - "none" → "none"
+        - 특정 도구 → {"function_calling_config": {"mode": "any", "allowed_function_names": ["tool_name"]}}
+        """
+        if tool_choice is None or tool_choice == "auto":
+            return llm.bind_tools(tools)
+
+        if tool_choice == "required":
+            return llm.bind_tools(tools, tool_choice="any")
+
+        if tool_choice == "none":
+            return llm.bind_tools(tools, tool_choice="none")
+
+        # 특정 도구 강제: {"type": "function", "function": {"name": "think"}}
+        if isinstance(tool_choice, dict):
+            tool_name = tool_choice.get("function", {}).get("name")
+            if tool_name:
+                return llm.bind_tools(
+                    tools,
+                    tool_choice={
+                        "function_calling_config": {
+                            "mode": "any",
+                            "allowed_function_names": [tool_name]
+                        }
+                    }
+                )
+
+        return llm.bind_tools(tools)
