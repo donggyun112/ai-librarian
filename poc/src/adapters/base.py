@@ -21,6 +21,7 @@ class NormalizedChunk:
     모든 LLM 프로바이더의 청크를 통일된 형식으로 변환
     """
     text: str
+    thinking: Optional[str] = None  # Native Thinking 콘텐츠 (Gemini 2.5+)
 
 
 class BaseLLMAdapter(ABC):
