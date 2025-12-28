@@ -109,41 +109,31 @@ class Supervisor:
         Graph 구조:
             START → supervisor → (tool_calls?) → tools → supervisor
                             └── (no tools) → END
+
+        Native Thinking:
+            - Gemini 2.5+에서 thinking_budget으로 자동 활성화
+            - think 도구 강제 호출 불필요
         """
-        # Adapter를 통해 LLM 생성
+        # Adapter를 통해 LLM 생성 (Native Thinking 포함)
         llm = self.adapter.create_llm(
             model=self.model,
             temperature=0.7,
             max_tokens=self.max_tokens
         )
 
-        # 일반 도구 바인딩 (auto)
-        llm_with_tools = self.adapter.bind_tools(llm, TOOLS)
-
-        # think 강제 호출용 바인딩
-        llm_with_think_forced = self.adapter.bind_tools(
-            llm,
-            TOOLS,
-            tool_choice={"type": "function", "function": {"name": THINK_TOOL}}
-        )
+        # 검색/액션 도구만 바인딩 (think 도구 제외)
+        action_tools = [t for t in TOOLS if t.name != THINK_TOOL]
+        llm_with_tools = self.adapter.bind_tools(llm, action_tools)
 
         async def supervisor_node(state: AgentState) -> dict:
             """Supervisor 노드: LLM 호출
 
-            첫 응답에는 think 도구를 강제 호출하여 사고 과정을 거치도록 함
+            Native Thinking 전략:
+            - LLM이 내부적으로 thinking 수행 (thinking_budget으로 제어)
+            - 별도의 think 도구 강제 불필요
             """
             messages = state["messages"]
-
-            # 첫 응답인지 확인 (AI 응답이 없으면 첫 턴)
-            has_ai_response = any(isinstance(m, AIMessage) for m in messages)
-
-            if not has_ai_response:
-                # 첫 응답: think 강제
-                response = await llm_with_think_forced.ainvoke(messages)
-            else:
-                # 이후: LLM이 알아서 결정
-                response = await llm_with_tools.ainvoke(messages)
-
+            response = await llm_with_tools.ainvoke(messages)
             return {"messages": [response]}
 
         workflow = StateGraph(AgentState)
@@ -284,12 +274,20 @@ class Supervisor:
             event_type = event["event"]
             data = event.get("data", {})
 
-            # 1. LLM 토큰 스트리밍 (최종 답변)
+            # 1. LLM 토큰 스트리밍 (최종 답변 + Native Thinking)
             if event_type == EVENT_CHAT_MODEL_STREAM:
                 chunk = data.get("chunk")
-                if chunk and chunk.content:
+                # DeepSeek thinking: content="" but additional_kwargs.reasoning_content 있음
+                has_content = chunk and (chunk.content or chunk.additional_kwargs)
+                if has_content:
                     # Adapter로 청크 정규화
                     normalized = self.adapter.normalize_chunk(chunk)
+
+                    # Native Thinking 청크 처리 (Gemini 2.5+)
+                    if normalized.thinking:
+                        yield {"type": StreamEventType.THINK, "content": normalized.thinking}
+
+                    # 일반 텍스트 청크 처리
                     if normalized.text:
                         collected_answer.append(normalized.text)
                         yield {"type": StreamEventType.TOKEN, "content": normalized.text}
@@ -299,13 +297,8 @@ class Supervisor:
                 tool_name = event.get("name", "")
                 tool_input = data.get("input", {})
 
-                # think 도구 → 생각 표시
-                if tool_name == THINK_TOOL:
-                    thought = tool_input.get("thought", "")
-                    yield {"type": StreamEventType.THINK, "content": thought}
-
                 # 검색 도구 → 액션 표시
-                elif tool_name in SEARCH_TOOLS:
+                if tool_name in SEARCH_TOOLS:
                     yield {
                         "type": StreamEventType.ACT,
                         "tool": tool_name,
