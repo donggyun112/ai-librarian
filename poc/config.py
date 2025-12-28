@@ -15,12 +15,20 @@ class Config:
 
     # Google Gemini
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+    # DeepSeek (공식 API)
+    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+    DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+    # OpenRouter (기타 모델용)
+    OPENROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY")
+    OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
 
     # Milvus/Zilliz
     MILVUS_HOST = os.getenv("ZILLIZ_HOST")
     MILVUS_TOKEN = os.getenv("ZILLIZ_TOKEN")
-    MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION", "documents")
+    MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION_NAME", "documents")
 
     # Supervisor 설정
     MAX_RETRIES = 2
