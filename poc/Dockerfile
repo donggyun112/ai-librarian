@@ -12,6 +12,9 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user
+RUN useradd -m -u 1000 appuser
+
 # Install dependencies
 COPY uv.lock pyproject.toml ./
 RUN uv sync --frozen --no-install-project --no-dev
@@ -22,13 +25,14 @@ COPY . .
 # Install the project itself
 RUN uv sync --frozen --no-dev
 
+# Switch to non-root user
+USER appuser
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
-ENV STREAMLIT_SERVER_PORT=8080
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV PORT=8080
+ENV HOST=0.0.0.0
 
 # Expose port 8080 (Cloud Run default)
 EXPOSE 8080
@@ -37,6 +41,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()" || exit 1
 
-# Run Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
+# Run FastAPI app with uvicorn
+ENTRYPOINT ["uv", "run", "uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8080"]
 

@@ -1,0 +1,16 @@
+.git
+.gitignore
+.github
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov
+tests/
+README.md
+DEPLOYMENT_GUIDE.md
+GCP_SETUP.md
+code-review/

@@ -25,10 +25,11 @@ class Config:
     OPENROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY")
     OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
 
-    # Milvus/Zilliz
-    MILVUS_HOST = os.getenv("ZILLIZ_HOST")
-    MILVUS_TOKEN = os.getenv("ZILLIZ_TOKEN")
-    MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION_NAME", "documents")
+
+    # Supabase (New)
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
     # Supervisor 설정
     MAX_RETRIES = 2
