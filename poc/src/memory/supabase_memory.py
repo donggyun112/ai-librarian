@@ -96,24 +96,14 @@ class SupabaseChatMemory(ChatMemory):
     def list_sessions(self) -> List[str]:
         """모든 세션 ID 조회 (Distinct)
         
-        주의: 데이터가 많으면 성능 이슈가 있을 수 있음.
+        Requires 'get_distinct_sessions' RPC function in Supabase.
         """
         try:
-            # RPC나 distinct select 사용 필요. JS/REST API에서 .select('session_id', count='exact', head=False).csv() 등등?
-            # supabase-py에서는 .select("session_id").execute() 후 파이썬에서 unique 처리?
-            # 쿼리 효율을 위해 RPC를 권장하지만, 일단은 간단히 구현.
-            # .range() 등을 이용해서 페이징해야 하나 여기서는 전체 세션 ID를 가져오는 간단 구현 (POC 수준)
-            # 프로덕션에서는 별도의 sessions 테이블을 관리하는 것이 좋음.
-            
-            # 아래는 모든 행을 가져오지 않고, unique한 session_id만 가져오려고 시도.
-            # 하지만 SQL 차원의 distinct가 없으면 모든 row를 가져와야 할 수 있음.
-            # Supabase JS 클라이언트처럼 .select('session_id').distinct()가 있는지 문서 확인 필요.
-            # 없다면 API 호출을 너무 많이 할 수 있으니 주의.
-            
-            # 대안: rpc 호출 (create function get_distinct_sessions() ...)
-            # 여기서는 API 기능 구현을 위해 우선 빈 리스트 혹은 제한된 쿼리로 구현.
-            return [] 
-        except Exception:
+            response = self.supabase.rpc("get_distinct_sessions").execute()
+            # response.data should be a list of dicts: [{'session_id': '...'}]
+            return [item['session_id'] for item in response.data]
+        except Exception as e:
+            print(f"Error listing sessions from Supabase: {e}")
             return []
 
     def get_message_count(self, session_id: str) -> int:
