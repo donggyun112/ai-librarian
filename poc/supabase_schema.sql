@@ -31,3 +31,13 @@ with check (true);
 -- on chat_history
 -- for select
 -- using (true);
+
+-- RPC function to get distinct sessions efficiently
+create or replace function get_distinct_sessions()
+returns table (session_id text) 
+language sql
+as $$
+  select distinct session_id
+  from chat_history
+  order by session_id;
+$$;
