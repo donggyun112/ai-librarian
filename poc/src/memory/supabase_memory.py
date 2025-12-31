@@ -5,6 +5,7 @@ from typing import List, Optional
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import create_client, Client
+from loguru import logger
 
 from .base import ChatMemory
 from config import config
@@ -47,7 +48,7 @@ class SupabaseChatMemory(ChatMemory):
             return messages
         except Exception as e:
             # 로그 처리 필요 (여기서는 print 혹은 무시)
-            print(f"Error fetching messages from Supabase: {e}")
+            logger.error(f"Error fetching messages from Supabase: {e}")
             return []
 
     def _add_message(self, session_id: str, message: BaseMessage, **kwargs) -> None:
@@ -67,7 +68,7 @@ class SupabaseChatMemory(ChatMemory):
         try:
             self.supabase.table(self.table_name).insert(data).execute()
         except Exception as e:
-            print(f"Error saving message to Supabase: {e}")
+            logger.error(f"Error saving message to Supabase: {e}")
 
     def add_user_message(self, session_id: str, content: str, **kwargs) -> None:
         """사용자 메시지 추가"""
@@ -87,7 +88,7 @@ class SupabaseChatMemory(ChatMemory):
                 .eq("session_id", session_id) \
                 .execute()
         except Exception as e:
-            print(f"Error clearing session from Supabase: {e}")
+            logger.error(f"Error clearing session from Supabase: {e}")
 
     def delete_session(self, session_id: str) -> None:
         """세션 완전 삭제 (clear와 동일하게 처리)"""
@@ -103,7 +104,7 @@ class SupabaseChatMemory(ChatMemory):
             # response.data should be a list of dicts: [{'session_id': '...'}]
             return [item['session_id'] for item in response.data]
         except Exception as e:
-            print(f"Error listing sessions from Supabase: {e}")
+            logger.error(f"Error listing sessions from Supabase: {e}")
             return []
 
     def get_message_count(self, session_id: str) -> int:
