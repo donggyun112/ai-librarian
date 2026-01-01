@@ -41,6 +41,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD python -c "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()" || exit 1
 
-# Run FastAPI app with uvicorn
+
 ENTRYPOINT ["uv", "run", "uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8080"]
 
