@@ -46,7 +46,6 @@ gcloud iam workload-identity-pools providers create-oidc "github-provider" \
   --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
   --attribute-condition="assertion.repository_owner == 'donggyun112' && assertion.repository == 'donggyun112/ai-librarian'" \
   --issuer-uri="https://token.actions.githubusercontent.com"
-  --issuer-uri="https://token.actions.githubusercontent.com"
 ```
 
 ### Troubleshooting: `INVALID_ARGUMENT` Error
