@@ -173,12 +173,6 @@ class TestSupervisorProcessStream:
                 "event": "on_chat_model_stream",
                 "data": {"chunk": MagicMock(content="Hello")}
             }
-            # think 도구 호출 이벤트
-            yield {
-                "event": "on_tool_start",
-                "name": "think",
-                "data": {"input": {"thought": "분석 중..."}}
-            }
             # 검색 도구 호출 이벤트
             yield {
                 "event": "on_tool_start",
@@ -199,10 +193,9 @@ class TestSupervisorProcessStream:
         async for event in supervisor.process_stream("테스트 질문"):
             events.append(event)
 
-        # 이벤트 타입 확인
+        # 이벤트 타입 확인 (Native Thinking은 OpenAI에서 지원하지 않음)
         event_types = [e["type"] for e in events]
         assert StreamEventType.TOKEN in event_types
-        assert StreamEventType.THINK in event_types
         assert StreamEventType.ACT in event_types
         assert StreamEventType.OBSERVE in event_types
 
@@ -234,24 +227,29 @@ class TestSupervisorProcessStream:
         assert events[0]["content"] == "테스트"
 
     @pytest.mark.asyncio
-    @patch("src.adapters.openai.ChatOpenAI")
+    @patch("src.adapters.gemini.ChatGoogleGenerativeAI")
     async def test_process_stream_think_event_format(self, mock_chat):
-        """think 이벤트 포맷 확인"""
+        """native thinking 이벤트 포맷 확인 (Gemini)"""
         mock_llm = MagicMock()
         mock_chat.return_value = mock_llm
         mock_llm.bind_tools = MagicMock(return_value=mock_llm)
 
-        supervisor = Supervisor(provider="openai")
+        supervisor = Supervisor(provider="gemini")
 
         async def mock_stream_events(*args, **kwargs):
+            # Gemini Native Thinking 형식: content가 list with thinking type
+            chunk = MagicMock()
+            chunk.content = [{"type": "thinking", "thinking": "생각 내용"}]
+            chunk.additional_kwargs = {}
             yield {
-                "event": "on_tool_start",
-                "name": "think",
-                "data": {"input": {"thought": "생각 내용"}}
+                "event": "on_chat_model_stream",
+                "data": {"chunk": chunk}
             }
 
-        supervisor._cached_graph = MagicMock()
-        supervisor._cached_graph.astream_events = mock_stream_events
+        # Gemini는 매번 새로 생성하므로 _build_graph를 mock
+        mock_graph = MagicMock()
+        mock_graph.astream_events = mock_stream_events
+        supervisor._build_graph = MagicMock(return_value=mock_graph)
 
         events = []
         async for event in supervisor.process_stream("질문"):
