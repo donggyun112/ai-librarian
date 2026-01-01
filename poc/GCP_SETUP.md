@@ -44,7 +44,7 @@ gcloud iam workload-identity-pools providers create-oidc "github-provider" \
   --workload-identity-pool="github-pool" \
   --display-name="GitHub Actions Provider" \
   --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository,attribute.repository_owner=assertion.repository_owner" \
-  --attribute-condition="assertion.repository_owner == 'donggyun112'" \
+  --attribute-condition="assertion.repository_owner == 'donggyun112' && assertion.repository == 'donggyun112/ai-librarian'" \
   --issuer-uri="https://token.actions.githubusercontent.com"
   --issuer-uri="https://token.actions.githubusercontent.com"
 ```
@@ -56,15 +56,17 @@ If you see `The attribute condition must reference one of the provider's claims`
 ```bash
 ERROR: (gcloud.iam.workload-identity-pools.providers.create-oidc) INVALID_ARGUMENT: The attribute condition must reference one of the provider's claims. For more information, see https://cloud.google.com/iam/docs/workload-identity-federation-with-deployment-pipelines#conditions
 ```
+
 ### Verify Provider
 
 Run the following command to verify the provider:
+
 > ```bash
 > gcloud iam workload-identity-pools providers describe "github-provider" \
 >   --project="angelic-edition-325910" \
 >   --location="global" \
 >   --workload-identity-pool="github-pool"
-> ````
+> ```
 
 ## 4. Create Service Account
 
