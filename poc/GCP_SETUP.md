@@ -4,7 +4,7 @@ This guide details the steps to configure Google Cloud resources required for th
 
 ## Prerequisites
 
-- Google Cloud Project: `angelic-edition-325910` (Target Project)
+- Google Cloud Project: `YOUR_PROJECT_ID` (Target Project)
 - `gcloud` CLI installed and authenticated
 - Owner permissions on the project
 
@@ -32,14 +32,14 @@ Allow GitHub Actions to impersonate a Service Account without using long-lived k
 
 ```bash
 gcloud iam workload-identity-pools create "github-pool" \
-  --project="angelic-edition-325910" \
+  --project="YOUR_PROJECT_ID" \
   --location="global" \
   --display-name="GitHub Actions Pool"
 ```
 
 ```bash
 gcloud iam workload-identity-pools providers create-oidc "github-provider" \
-  --project="angelic-edition-325910" \
+  --project="YOUR_PROJECT_ID" \
   --location="global" \
   --workload-identity-pool="github-pool" \
   --display-name="GitHub Actions Provider" \
@@ -62,7 +62,7 @@ Run the following command to verify the provider:
 
 > ```bash
 > gcloud iam workload-identity-pools providers describe "github-provider" \
->   --project="angelic-edition-325910" \
+>   --project="YOUR_PROJECT_ID" \
 >   --location="global" \
 >   --workload-identity-pool="github-pool"
 > ```
@@ -79,15 +79,15 @@ gcloud iam service-accounts create "github-ci-sa" \
 Grant necessary roles to the Service Account.
 
 ```bash
-SA_EMAIL="github-ci-sa@angelic-edition-325910.iam.gserviceaccount.com"
+SA_EMAIL="github-ci-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com"
 
 # Allow SA to push to Container Registry (Storage Admin)
-gcloud projects add-iam-policy-binding "angelic-edition-325910" \
+gcloud projects add-iam-policy-binding "YOUR_PROJECT_ID" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/storage.admin"
 
 # Allow SA to deploy to Cloud Run
-gcloud projects add-iam-policy-binding "angelic-edition-325910" \
+gcloud projects add-iam-policy-binding "YOUR_PROJECT_ID" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/run.admin"
 
@@ -96,15 +96,15 @@ gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser"
 # Allow SA to access Secret Manager
-gcloud projects add-iam-policy-binding "angelic-edition-325910" \
+gcloud projects add-iam-policy-binding "YOUR_PROJECT_ID" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 
 # Allow WIF Pool to impersonate this Service Account (Critical for CI/CD)
-gcloud iam service-accounts add-iam-policy-binding "github-ci-sa@angelic-edition-325910.iam.gserviceaccount.com" \
-  --project="angelic-edition-325910" \
+gcloud iam service-accounts add-iam-policy-binding "github-ci-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com" \
+  --project="YOUR_PROJECT_ID" \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/projects/1045672892426/locations/global/workloadIdentityPools/github-pool/attribute.repository/donggyun112/ai-librarian"
+  --member="principalSet://iam.googleapis.com/projects/YOUR_PROJECT_NUMBER/locations/global/workloadIdentityPools/github-pool/attribute.repository/donggyun112/ai-librarian"
 ```
 
 ## 5. Secret Manager
@@ -120,11 +120,11 @@ Create the following secrets in Google Cloud Secret Manager if they don't exist:
 
 Add the following secrets to your GitHub Repository:
 
-| Secret Name        | Value                                                         |
-| ------------------ | ------------------------------------------------------------- |
-| `GCP_PROJECT_ID`   | `angelic-edition-325910`                                      |
-| `GCP_SA_EMAIL`     | `github-ci-sa@angelic-edition-325910.iam.gserviceaccount.com` |
-| `GCP_WIF_PROVIDER` | Full provider name from Step 3                                |
+| Secret Name        | Value                                                  |
+| ------------------ | ------------------------------------------------------ |
+| `GCP_PROJECT_ID`   | `YOUR_PROJECT_ID`                                      |
+| `GCP_SA_EMAIL`     | `github-ci-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com` |
+| `GCP_WIF_PROVIDER` | Full provider name from Step 3                         |
 
 ### 7. How to Retrieve these Values
 
@@ -134,7 +134,7 @@ Run these commands to get the exact values for GitHub Secrets:
 
 ```bash
 gcloud iam workload-identity-pools providers describe "github-provider" \
-  --project="angelic-edition-325910" \
+  --project="YOUR_PROJECT_ID" \
   --location="global" \
   --workload-identity-pool="github-pool" \
   --format="value(name)"
@@ -143,5 +143,11 @@ gcloud iam workload-identity-pools providers describe "github-provider" \
 **Get GCP_SA_EMAIL:**
 
 ```bash
-echo "github-ci-sa@angelic-edition-325910.iam.gserviceaccount.com"
+echo "github-ci-sa@YOUR_PROJECT_ID.iam.gserviceaccount.com"
+```
+
+**Get GCP_PROJECT_NUMBER:**
+
+```bash
+gcloud projects describe YOUR_PROJECT_ID --format="value(projectNumber)"
 ```
