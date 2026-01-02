@@ -3,18 +3,17 @@ import pytest
 from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-# pytest-asyncio STRICT mode에서 async 테스트 마킹
-pytest_plugins = ('pytest_asyncio',)
-
 from src.supervisor.supervisor import (
     Supervisor,
-    AgentState,
     SEARCH_TOOLS,
     THINK_TOOL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MAX_STEPS,
 )
 from src.schemas.models import StreamEventType
+
+# pytest-asyncio STRICT mode에서 async 테스트 마킹
+pytest_plugins = ('pytest_asyncio',)
 
 
 class TestSupervisorConstants:
