@@ -99,6 +99,12 @@ gcloud iam service-accounts add-iam-policy-binding "${SA_EMAIL}" \
 gcloud projects add-iam-policy-binding "angelic-edition-325910" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
+
+# Allow WIF Pool to impersonate this Service Account (Critical for CI/CD)
+gcloud iam service-accounts add-iam-policy-binding "github-ci-sa@angelic-edition-325910.iam.gserviceaccount.com" \
+  --project="angelic-edition-325910" \
+  --role="roles/iam.workloadIdentityUser" \
+  --member="principalSet://iam.googleapis.com/projects/1045672892426/locations/global/workloadIdentityPools/github-pool/attribute.repository/donggyun112/ai-librarian"
 ```
 
 ## 5. Secret Manager
