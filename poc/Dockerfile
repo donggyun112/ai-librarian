@@ -39,7 +39,17 @@ EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health').read()" || exit 1
+    CMD python -c "import sys, urllib.request, urllib.error; \
+    from urllib.error import URLError, HTTPError; \
+    import socket; \
+    URL = 'http://localhost:8080/health'; \
+    TIMEOUT = 5; \
+    try: \
+    with urllib.request.urlopen(URL, timeout=TIMEOUT) as resp: \
+    status = resp.getcode(); \
+    sys.exit(0 if 200 <= status < 400 else 1); \
+    except (HTTPError, URLError, socket.timeout, Exception): \
+    sys.exit(1)" || exit 1
 
 
 ENTRYPOINT ["sh", "-c", "uv run uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
