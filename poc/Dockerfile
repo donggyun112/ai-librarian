@@ -12,21 +12,22 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
-RUN useradd -m -u 1000 appuser
-
-# Install dependencies
-COPY uv.lock pyproject.toml ./
-RUN uv sync --frozen --no-install-project --no-dev
-
-# Copy application code
-COPY . .
-
-# Install the project itself
-RUN uv sync --frozen --no-dev
+# Create a non-root user and set permissions
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
+
+# Install dependencies
+COPY --chown=appuser:appuser uv.lock pyproject.toml ./
+RUN uv sync --frozen --no-install-project --no-dev
+
+# Copy application code
+COPY --chown=appuser:appuser . .
+
+# Install the project itself
+RUN uv sync --frozen --no-dev
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -52,5 +53,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     sys.exit(1)" || exit 1
 
 
-ENTRYPOINT ["sh", "-c", "uv run uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
+ENTRYPOINT ["sh", "-c", "exec uv run uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
 
