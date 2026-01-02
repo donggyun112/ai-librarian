@@ -21,5 +21,5 @@ if __name__ == "__main__":
         "src.api:app",
         host=args.server_address,
         port=args.server_port,
-        reload=True,
+        reload=os.getenv("ENVIRONMENT") != "production",
     )

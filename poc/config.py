@@ -29,7 +29,6 @@ class Config:
     # Supabase (New)
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
 
     # Supervisor 설정
     MAX_RETRIES = 2
