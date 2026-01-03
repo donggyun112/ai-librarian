@@ -97,7 +97,17 @@ jobs:
           COMMENT_PATH: ${{ github.event.comment.path }}
           COMMENT_LINE: ${{ github.event.comment.line }}
         run: |
-          # Get original comment if this is a reply
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            fi
+
+            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
             API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
