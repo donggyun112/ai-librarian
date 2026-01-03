@@ -59,8 +59,6 @@ jobs:
           chmod 600 ~/.codex/auth.json
 
       - name: Setup MCP servers
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cat >> ~/.codex/config.toml << 'EOF'
 
@@ -68,19 +66,9 @@ jobs:
           [mcp_servers.context7]
           command = "npx"
           args = ["-y", "@upstash/context7-mcp"]
-
-          # GitHub MCP - Enhanced GitHub API access
-          [mcp_servers.github]
-          command = "npx"
-          args = ["-y", "@anthropic/mcp-server-github"]
           EOF
 
-          # Set GitHub token for MCP
-          echo "" >> ~/.codex/config.toml
-          echo '[mcp_servers.github.env]' >> ~/.codex/config.toml
-          echo "GITHUB_TOKEN = \"$GITHUB_TOKEN\"" >> ~/.codex/config.toml
-
-          echo "✅ MCP servers configured"
+          echo "✅ MCP servers configured (context7)"
 
       - name: Run Codex review
         env:
@@ -106,9 +94,9 @@ jobs:
 
             AVAILABLE MCP TOOLS:
             - context7: Use to look up LangChain, LangGraph, FastAPI, Pydantic documentation
-            - github: Enhanced GitHub API access for PR details, issues, etc.
 
             When reviewing LangChain/LangGraph code, use context7 to verify correct API usage.
+            For GitHub operations, use the `gh` CLI which is already available.
             </context>
 
             <project_rules>
