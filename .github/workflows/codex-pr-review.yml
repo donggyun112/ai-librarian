@@ -60,7 +60,7 @@ jobs:
 
       - name: Install Codex CLI
         run: |
-          npm install -g @openai/codex@0.1.2504181803
+          npm install -g @openai/codex@latest
 
       - name: Restore Codex OAuth credentials
         env:
