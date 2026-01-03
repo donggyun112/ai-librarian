@@ -45,7 +45,7 @@ jobs:
             fi
 
             ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
-            if [ "$ORIGINAL_AUTHOR" = "github-actions[bot]" ]; then
+            if [ "$ORIGINAL_AUTHOR" = "github-actions" ]; then
               echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi

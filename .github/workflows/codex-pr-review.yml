@@ -273,7 +273,7 @@ jobs:
             6. BEFORE submitting any review, ALWAYS dismiss previous CHANGES_REQUESTED reviews first:
                ```bash
                # Dismiss all previous CHANGES_REQUESTED reviews from github-actions bot
-               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions[bot]") | .id' | while read review_id; do
+               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions") | .id' | while read review_id; do
                  gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by new review"
                done
                ```
@@ -302,7 +302,7 @@ jobs:
                         }
                       }
                     ' -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-                      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions[bot]") | .id' | \
+                      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions") | .id' | \
                     while read thread_id; do
                       gh api graphql -f query='
                         mutation($threadId: ID!) {
