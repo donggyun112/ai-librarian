@@ -32,9 +32,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COMMENT_BODY: ${{ github.event.comment.body }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
         run: |
-          # Check if this is a reply to github-actions bot or mentions @codex
-          if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex|질문|왜|어떻게|설명"; then
+          # Check if this is a reply to a github-actions bot comment
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            # This is a reply - check if original comment was from github-actions bot
+            ORIGINAL_AUTHOR=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID" --jq '.user.login' 2>/dev/null || echo "")
+            if [ "$ORIGINAL_AUTHOR" = "github-actions[bot]" ]; then
+              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Fallback: check for keywords or direct mentions
+          if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex"; then
             echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
           else
             echo "is_ai_reply=false" >> "$GITHUB_OUTPUT"
@@ -63,6 +76,29 @@ jobs:
           printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
           chmod 600 ~/.codex/auth.json
 
+      - name: Get context for reply
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          COMMENT_PATH: ${{ github.event.comment.path }}
+          COMMENT_LINE: ${{ github.event.comment.line }}
+        run: |
+          # Get original comment if this is a reply
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            ORIGINAL=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Use comment's path/line if available
+          echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"
+          echo "line_number=${COMMENT_LINE:-}" >> "$GITHUB_OUTPUT"
+
       - name: Reply to user
         if: steps.check_reply.outputs.is_ai_reply == 'true'
         env:
@@ -72,20 +108,44 @@ jobs:
           REPO: ${{ github.repository }}
           USER_COMMENT: ${{ github.event.comment.body }}
           COMMENT_ID: ${{ github.event.comment.id }}
+          ORIGINAL_CONTEXT: ${{ steps.context.outputs.original_comment }}
+          FILE_PATH: ${{ steps.context.outputs.file_path }}
+          LINE_NUMBER: ${{ steps.context.outputs.line_number }}
         run: |
-          CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question on a PR review.
+          CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question about your code review.
 
-          PR: $PR_NUMBER
-          User's question: $USER_COMMENT
+          <context>
+          REPO: $REPO
+          PR_NUMBER: $PR_NUMBER
+          USER_QUESTION: $USER_COMMENT
+          FILE_PATH: $FILE_PATH
+          LINE_NUMBER: $LINE_NUMBER
+          ORIGINAL_AI_COMMENT: $ORIGINAL_CONTEXT
+          </context>
 
-          Instructions:
-          1. Get context: \`gh pr view \"$PR_NUMBER\" --json title,body\`
-          2. If needed, check the diff: \`gh pr diff \"$PR_NUMBER\"\`
-          3. Provide a helpful, concise response to the user's question
-          4. Post your reply: \`gh pr comment \"$PR_NUMBER\" --body \"Your response here\"\`
-          5. Keep the response focused and technical
+          <instructions>
+          1. First, get the PR info and understand the context:
+             - \`gh pr view \"$PR_NUMBER\" --json title,body,headRefOid\`
+             - If FILE_PATH is set, read the relevant file: \`cat \"\$FILE_PATH\"\`
 
-          Respond helpfully to the user's question."
+          2. Review your original suggestion (in ORIGINAL_AI_COMMENT) and the user's question
+
+          3. Provide a helpful, technical response that:
+             - Directly answers the user's question
+             - Explains the reasoning behind your original suggestion if asked
+             - Provides code examples if helpful
+
+          4. Post your reply as a comment on the same thread:
+             \`\`\`bash
+             gh api \"repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies\" \\
+               --method POST \\
+               -f body=\"Your response here\"
+             \`\`\`
+
+          5. Keep response concise and focused
+          </instructions>
+
+          Answer the user's question about your code review suggestion."
 
           codex exec \
             -m gpt-5-codex \

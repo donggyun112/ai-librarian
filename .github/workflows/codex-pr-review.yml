@@ -161,27 +161,41 @@ jobs:
             </review_checklist>
 
             <inline_suggestions>
-            For fixable issues, post inline suggestion comments using gh api.
+            For fixable issues, post inline review comments using gh api with JSON input.
 
-            CORRECT API FORMAT:
+            CORRECT API FORMAT (using review comments):
             ```bash
             COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
 
-            gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
+            # Create JSON file for the review with inline comments
+            cat > /tmp/review_comment.json << EOF
+            {
+              "commit_id": "$COMMIT_SHA",
+              "body": "Inline suggestions added",
+              "event": "COMMENT",
+              "comments": [
+                {
+                  "path": "path/to/file.py",
+                  "line": 42,
+                  "body": "\`\`\`suggestion\ncorrected code here\n\`\`\`\nExplanation of the fix"
+                }
+              ]
+            }
+            EOF
+
+            gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
               --method POST \
-              -f body=$'```suggestion\ncorrected code here\n```\nExplanation' \
-              -f commit_id="$COMMIT_SHA" \
-              -f path="path/to/file.py" \
-              -F line:=42 \
-              -f side="RIGHT"
+              --input /tmp/review_comment.json
             ```
 
             CRITICAL RULES:
-            - line must be integer: YOU MUST USE UPPERCASE `-F` with `:=` like: `-F line:=42`
-            - DO NOT use `-f` for the line argument (it creates an invalid `line:` key)
-            - commit_id: get from `gh pr view --json headRefOid`
-            - side: "RIGHT" for new code, "LEFT" for old code
-            - path: relative path from repo root
+            - Use `--input` with a JSON file for complex payloads
+            - Use the `/reviews` endpoint (not `/comments`) for inline suggestions
+            - `line` must be an integer in JSON (no quotes)
+            - `event` can be "COMMENT", "APPROVE", or "REQUEST_CHANGES"
+            - `path` is relative path from repo root
+            - For multi-line suggestions, use `start_line` and `line` together
+            - commit_id: get from `gh pr view --json headRefOid -q '.headRefOid'`
 
             Post inline suggestions for each fixable issue found.
             </inline_suggestions>
@@ -218,16 +232,18 @@ jobs:
 
             2. Review code against <project_rules>
 
-            3. For fixable issues, post inline suggestions:
+            3. For fixable issues, post inline suggestions using JSON input:
                ```bash
                COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
-               gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
-                 --method POST \
-                 -f body=$'```suggestion\nfixed code\n```\nExplanation' \
-                 -f commit_id="$COMMIT_SHA" \
-                 -f path="file.py" \
-                 -F line:=42 \
-                 -f side="RIGHT"
+               cat > /tmp/review_comment.json << EOF
+               {
+                 "commit_id": "$COMMIT_SHA",
+                 "body": "Inline suggestions",
+                 "event": "COMMENT",
+                 "comments": [{"path": "file.py", "line": 42, "body": "\`\`\`suggestion\nfixed code\n\`\`\`\nExplanation"}]
+               }
+               EOF
+               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --method POST --input /tmp/review_comment.json
                ```
 
             4. Post summary review comment:
