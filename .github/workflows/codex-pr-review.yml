@@ -51,7 +51,10 @@ jobs:
         run: |
           if [ -z "$CODEX_AUTH_JSON" ]; then
             echo "CODEX_AUTH_JSON secret is not configured" >&2
-            exit 1
+          mkdir -p ~/.codex
+          trap 'rm -f ~/.codex/auth.json' EXIT
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
           fi
 
           mkdir -p ~/.codex
