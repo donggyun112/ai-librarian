@@ -211,7 +211,7 @@ jobs:
             Now review this PR, post inline suggestions for fixable issues, and add a summary comment.
         run: |
           codex exec \
-            -m o3 \
+            -m gpt-5-codex \
             --sandbox danger-full-access \
             -c shell_environment_policy.inherit=all \
             -c ask_for_approval=\"never\" \
