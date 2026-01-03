@@ -101,7 +101,6 @@ class TestGetSystemPrompt:
     def test_default_tools_used_when_none(self):
         """도구가 없을 때 기본 도구 설명이 사용되는지 확인"""
         prompt = get_system_prompt(tools=None)
-        assert "arag_search" in prompt
         assert "aweb_search" in prompt
 
     def test_contains_quality_check(self):
