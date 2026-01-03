@@ -1,0 +1,334 @@
+name: Codex PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+
+jobs:
+  codex-review:
+    # Skip fork PRs (no secrets access) - only run on same-repo PRs or /codex review command
+    if: |
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       (github.event.pull_request.base.ref == 'main' || github.event.pull_request.base.ref == 'develop')) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/codex review') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: refs/pull/${{ github.event.pull_request.number || github.event.issue.number }}/head
+
+      - name: Set review context
+        id: review_context
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER=$(jq -r '.pull_request.number // .issue.number' "$GITHUB_EVENT_PATH")
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "Unable to determine PR number from event payload" >&2
+            exit 1
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Check if fork PR (security)
+        id: fork_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          # For /codex review on issue_comment, check if PR is from a fork
+          HEAD_REPO=$(gh pr view "$PR_NUMBER" --json headRepositoryOwner,headRepository -q '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::Cannot run Codex review on fork PRs for security reasons"
+            exit 1
+          fi
+
+      - name: Install Codex CLI
+        run: |
+          npm install -g @openai/codex@latest
+
+      - name: Restore Codex OAuth credentials
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "::error::CODEX_AUTH_JSON secret is not configured"
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+
+      - name: Setup MCP servers
+        run: |
+          cat >> ~/.codex/config.toml << 'EOF'
+
+          # Context7 - Library documentation (LangChain, FastAPI, Pydantic, etc.)
+          [mcp_servers.context7]
+          command = "npx"
+          args = ["-y", "@upstash/context7-mcp"]
+          EOF
+
+          echo "✅ MCP servers configured (context7)"
+
+      - name: Run Codex review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
+          REPO: ${{ github.repository }}
+          CODEX_PROMPT: |
+            You are a senior AI/ML engineer performing a thorough code review for a LangChain/LangGraph RAG application.
+
+            <context>
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.review_context.outputs.pr_number }}
+
+            PROJECT STRUCTURE:
+            - poc/src/adapters: External service adapters (OpenAI, embeddings)
+            - poc/src/api: FastAPI endpoints
+            - poc/src/memory: Conversation memory implementations
+            - poc/src/schemas: Pydantic models
+            - poc/src/services: Business logic
+            - poc/src/supervisor: LangGraph supervisor/orchestrator
+            - poc/src/workers: LangGraph worker nodes
+
+            AVAILABLE MCP TOOLS:
+            - context7: Use to look up LangChain, LangGraph, FastAPI, Pydantic documentation
+
+            When reviewing LangChain/LangGraph code, use context7 to verify correct API usage.
+            For GitHub operations, use the `gh` CLI which is already available.
+            </context>
+
+            <project_rules>
+            This is a LangChain/LangGraph RAG (Retrieval-Augmented Generation) project.
+
+            ## Architecture Rules
+            - LangGraph state must be immutable (return new state, don't mutate)
+            - Worker nodes should be single-responsibility
+            - Use supervisor pattern for orchestration
+            - Adapters wrap external services (OpenAI, vector stores)
+
+            ## Coding Standards (CRITICAL)
+            - [ ] **NO LAZY IMPORTS**: All imports MUST be at file top level. Imports inside functions are FORBIDDEN.
+            - [ ] **TYPE HINTS**: All functions must have type hints.
+            - [ ] **ASYNC/AWAIT**: LangChain async methods (ainvoke, astream) must be awaited properly.
+            - [ ] **PYDANTIC V2**: Use Pydantic v2 syntax (model_validate, model_dump).
+            - [ ] **NO PRINT**: Use loguru logger, not print().
+
+            ## LangChain/LangGraph Rules
+            - Use RunnablePassthrough, RunnableLambda for chain composition
+            - Avoid deprecated LangChain APIs (check for deprecation warnings)
+            - LangGraph nodes must return valid state updates
+            - Use structured output (with_structured_output) for reliable parsing
+            - Handle token limits and chunking properly
+
+            ## Security
+            - Never log API keys, tokens, or sensitive data
+            - Validate user inputs before passing to LLM
+            - Sanitize outputs before returning to client
+            </project_rules>
+
+            <review_checklist>
+            ### 1. LangChain/LangGraph
+            - [ ] No deprecated APIs used
+            - [ ] Proper async/await for ainvoke, astream
+            - [ ] State management is immutable
+            - [ ] Chains are composable and testable
+
+            ### 2. Code Quality
+            - [ ] Type hints on all functions
+            - [ ] No lazy imports
+            - [ ] Pydantic v2 syntax
+            - [ ] Proper error handling
+
+            ### 3. Security
+            - [ ] No hardcoded secrets
+            - [ ] Input validation present
+            - [ ] No sensitive data in logs
+
+            ### 4. Testing (CRITICAL)
+            - [ ] New/modified code has corresponding test files
+            - [ ] Tests cover happy path and edge cases
+            - [ ] If no tests added, flag as MUST FIX
+
+            ### 5. Side Effects & Bug Prevention (CRITICAL)
+            - [ ] Check for logic conflicts with existing code
+            - [ ] Identify potential race conditions in async code
+            - [ ] Verify state mutations don't cause unintended side effects
+            - [ ] Check for breaking changes to public APIs
+            - [ ] Ensure error handling doesn't silently swallow exceptions
+            - [ ] Verify edge cases are handled (null, empty, boundary values)
+            </review_checklist>
+
+            <inline_suggestions>
+            For fixable issues, post inline review comments using gh api with JSON input.
+
+            CORRECT API FORMAT (using review comments):
+            ```bash
+            COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+
+            # Create JSON file for the review with inline comments
+            cat > /tmp/review_comment.json << EOF
+            {
+              "commit_id": "$COMMIT_SHA",
+              "body": "Inline suggestions added",
+              "event": "COMMENT",
+              "comments": [
+                {
+                  "path": "path/to/file.py",
+                  "line": 42,
+                  "body": "\`\`\`suggestion\ncorrected code here\n\`\`\`\nExplanation of the fix"
+                }
+              ]
+            }
+            EOF
+
+            gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" \
+              --method POST \
+              --input /tmp/review_comment.json
+            ```
+
+            CRITICAL RULES:
+            - Use `--input` with a JSON file for complex payloads
+            - Use the `/reviews` endpoint (not `/comments`) for inline suggestions
+            - `line` must be an integer in JSON (no quotes)
+            - `event` can be "COMMENT", "APPROVE", or "REQUEST_CHANGES"
+            - `path` is relative path from repo root
+            - For multi-line suggestions, use `start_line` and `line` together
+            - commit_id: get from `gh pr view --json headRefOid -q '.headRefOid'`
+
+            Post inline suggestions for each fixable issue found.
+            </inline_suggestions>
+
+            <output_format>
+            Write your review as a PR comment in this EXACT format:
+
+            ## 🔍 Code Review Summary
+            (Brief overview of changes and overall assessment)
+
+            ## ✅ What's Good
+            (Well-written parts, good practices observed)
+
+            ## 🚨 Issues Found
+            (List any violations. Include file path and line numbers.)
+
+            Format: `file_path:line` - Description
+
+            ## 💡 Inline Suggestions
+            (Note: I've added inline suggestions on specific lines that can be applied with one click)
+
+            ## 📋 Checklist
+            - LangChain/LangGraph: ✅/❌
+            - Type Hints: ✅/❌
+            - Security: ✅/❌
+            - Tests: ✅/❌
+            - Side Effects/Bugs: ✅/❌
+            </output_format>
+
+            <instructions>
+            1. Get PR info:
+               - `gh pr diff "$PR_NUMBER"` for changes
+               - `gh pr view "$PR_NUMBER" --json title,body,headRefOid` for metadata
+
+            2. Review code against <project_rules>
+
+            3. For fixable issues, post inline suggestions using JSON input:
+               ```bash
+               COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+               cat > /tmp/review_comment.json << EOF
+               {
+                 "commit_id": "$COMMIT_SHA",
+                 "body": "Inline suggestions",
+                 "event": "COMMENT",
+                 "comments": [{"path": "file.py", "line": 42, "body": "\`\`\`suggestion\nfixed code\n\`\`\`\nExplanation"}]
+               }
+               EOF
+               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --method POST --input /tmp/review_comment.json
+               ```
+
+            4. Post summary review comment:
+               `gh pr comment "$PR_NUMBER" --body-file review.md`
+
+            5. Determine approval decision:
+               - If ALL checklist items are ✅ (no ❌): Write "APPROVED" to decision.txt
+               - If ANY checklist item is ❌: Write "CHANGES_REQUESTED" to decision.txt
+
+            6. BEFORE submitting any review, ALWAYS dismiss previous CHANGES_REQUESTED reviews first:
+               ```bash
+               # Dismiss all previous CHANGES_REQUESTED reviews from github-actions bot
+               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions") | .id' | while read review_id; do
+                 gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by new review"
+               done
+               ```
+
+            7. Execute approval/rejection:
+               - If APPROVED:
+                 1. Resolve all unresolved review threads from github-actions bot:
+                    ```bash
+                    OWNER=$(echo "$REPO" | cut -d'/' -f1)
+                    REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+
+                    gh api graphql -f query='
+                      query($owner: String!, $repo: String!, $pr: Int!) {
+                        repository(owner: $owner, name: $repo) {
+                          pullRequest(number: $pr) {
+                            reviewThreads(first: 100) {
+                              nodes {
+                                id
+                                isResolved
+                                comments(first: 1) {
+                                  nodes { author { login } }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ' -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+                      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions") | .id' | \
+                    while read thread_id; do
+                      gh api graphql -f query='
+                        mutation($threadId: ID!) {
+                          resolveReviewThread(input: {threadId: $threadId}) {
+                            thread { isResolved }
+                          }
+                        }
+                      ' -f threadId="$thread_id"
+                    done
+                    ```
+                 2. Approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
+               - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
+
+            8. Exit after completing review
+            </instructions>
+
+            Now review this PR, post your review comment, and approve or request changes based on the checklist results.
+        run: |
+          codex exec \
+            -m gpt-5-codex \
+            --sandbox danger-full-access \
+            -c shell_environment_policy.inherit=all \
+            -c ask_for_approval=\"never\" \
+            -C "$GITHUB_WORKSPACE" \
+            -- "$CODEX_PROMPT"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
