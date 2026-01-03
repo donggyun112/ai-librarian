@@ -134,16 +134,19 @@ jobs:
           ORIGINAL_CONTEXT: ${{ steps.context.outputs.original_comment }}
           FILE_PATH: ${{ steps.context.outputs.file_path }}
           LINE_NUMBER: ${{ steps.context.outputs.line_number }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question about your code review.
 
           <context>
           REPO: $REPO
           PR_NUMBER: $PR_NUMBER
+          EVENT_TYPE: $EVENT_NAME
           USER_QUESTION: $USER_COMMENT
           FILE_PATH: $FILE_PATH
           LINE_NUMBER: $LINE_NUMBER
           ORIGINAL_AI_COMMENT: $ORIGINAL_CONTEXT
+          IN_REPLY_TO_ID: $IN_REPLY_TO_ID
           </context>
 
           <instructions>
@@ -158,11 +161,18 @@ jobs:
              - Explains the reasoning behind your original suggestion if asked
              - Provides code examples if helpful
 
-          4. Post your reply as a comment on the same thread:
+          4. Post your reply using the correct API based on EVENT_TYPE:
+
+             If EVENT_TYPE is 'pull_request_review_comment' (inline code comment):
              \`\`\`bash
              gh api \"repos/$REPO/pulls/comments/$IN_REPLY_TO_ID/replies\" \\
                --method POST \\
                -f body=\"Your response here\"
+             \`\`\`
+
+             If EVENT_TYPE is 'issue_comment' (PR conversation comment):
+             \`\`\`bash
+             gh pr comment \"$PR_NUMBER\" --body \"Your response here\"
              \`\`\`
 
           5. Keep response concise and focused
