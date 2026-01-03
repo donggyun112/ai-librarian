@@ -208,10 +208,18 @@ jobs:
             4. Post summary review comment:
                `gh pr comment "$PR_NUMBER" --body-file review.md`
 
-            5. Exit after completing review
+            5. Determine approval decision:
+               - If ALL checklist items are ✅ (no ❌): Write "APPROVED" to decision.txt
+               - If ANY checklist item is ❌: Write "CHANGES_REQUESTED" to decision.txt
+
+            6. Execute approval/rejection:
+               - If APPROVED: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
+               - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
+
+            7. Exit after completing review
             </instructions>
 
-            Now review this PR, post inline suggestions for fixable issues, and add a summary comment.
+            Now review this PR, post your review comment, and approve or request changes based on the checklist results.
         run: |
           codex exec \
             -m gpt-5-codex \
