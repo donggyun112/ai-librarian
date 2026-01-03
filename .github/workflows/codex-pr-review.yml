@@ -61,71 +61,88 @@ jobs:
           PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
           REPO: ${{ github.repository }}
           CODEX_PROMPT: |
-            You are a senior backend engineer performing a thorough code review for a FastAPI/Python backend codebase.
+            You are a senior AI/ML engineer performing a thorough code review for a LangChain/LangGraph RAG application.
 
             <context>
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ steps.review_context.outputs.pr_number }}
+
+            PROJECT STRUCTURE:
+            - poc/src/adapters: External service adapters (OpenAI, embeddings)
+            - poc/src/api: FastAPI endpoints
+            - poc/src/memory: Conversation memory implementations
+            - poc/src/schemas: Pydantic models
+            - poc/src/services: Business logic
+            - poc/src/supervisor: LangGraph supervisor/orchestrator
+            - poc/src/workers: LangGraph worker nodes
             </context>
 
             <project_rules>
-            This project has STRICT coding standards that MUST be enforced. Review against ALL of the following rules:
+            This is a LangChain/LangGraph RAG (Retrieval-Augmented Generation) project.
 
             ## Architecture Rules
-            - Module structure: routers → services → repositories (dependency flow)
-            - Use dependency-injector library for DI (Singleton for repos, Factory for services)
-            - NEVER use @staticmethod in models.py for DB access (legacy anti-pattern)
-            - NEVER access collections directly in routers (must go through service layer)
+            - LangGraph state must be immutable (return new state, don't mutate)
+            - Worker nodes should be single-responsibility
+            - Use supervisor pattern for orchestration
+            - Adapters wrap external services (OpenAI, vector stores)
 
             ## Coding Standards (CRITICAL)
             - [ ] **NO LAZY IMPORTS**: All imports MUST be at file top level. Imports inside functions are FORBIDDEN.
-            - [ ] **TESTS REQUIRED**: No code without tests. Code without tests = rejected.
-            - [ ] **LOGURU ONLY**: Use `from loguru import logger`. No print(), no logging module.
-            - [ ] **NO DEBUG LOGS**: logger.debug() must be removed after fixing issues. Only keep info/warning/error.
             - [ ] **TYPE HINTS**: All functions must have type hints.
-            - [ ] **ASYNC/AWAIT**: All I/O operations must be async.
-            - [ ] **NO SENSITIVE DATA IN LOGS**: Never log passwords, tokens, API keys.
+            - [ ] **ASYNC/AWAIT**: LangChain async methods (ainvoke, astream) must be awaited properly.
+            - [ ] **PYDANTIC V2**: Use Pydantic v2 syntax (model_validate, model_dump).
+            - [ ] **NO PRINT**: Use loguru logger, not print().
 
-            ## Database Rules
-            - Users collection does NOT contain org_id field (use team_members or org_admins)
-            - Always use ObjectId() for MongoDB _id queries
-            - Prevent N+1 queries (use aggregation pipelines)
-            - Always paginate large result sets
+            ## LangChain/LangGraph Rules
+            - Use RunnablePassthrough, RunnableLambda for chain composition
+            - Avoid deprecated LangChain APIs (check for deprecation warnings)
+            - LangGraph nodes must return valid state updates
+            - Use structured output (with_structured_output) for reliable parsing
+            - Handle token limits and chunking properly
+
+            ## Security
+            - Never log API keys, tokens, or sensitive data
+            - Validate user inputs before passing to LLM
+            - Sanitize outputs before returning to client
             </project_rules>
 
             <review_checklist>
-            Check each item and report violations:
+            ### 1. LangChain/LangGraph
+            - [ ] No deprecated APIs used
+            - [ ] Proper async/await for ainvoke, astream
+            - [ ] State management is immutable
+            - [ ] Chains are composable and testable
 
-            ### 1. Import Rules
-            - [ ] All imports at file top level (no lazy imports inside functions)
-            - [ ] Exception: TYPE_CHECKING block for type hints only
-
-            ### 2. Testing
-            - [ ] New code has corresponding test files
-            - [ ] Tests cover happy path and edge cases
-            - [ ] Tests use pytest-asyncio and proper mocking
-
-            ### 3. Logging
-            - [ ] Uses loguru (not print or logging module)
-            - [ ] No logger.debug() statements left behind
-            - [ ] No sensitive data logged
-
-            ### 4. Code Quality
+            ### 2. Code Quality
             - [ ] Type hints on all functions
-            - [ ] Pydantic models for request/response validation
-            - [ ] Error handling with StandardErrorHandler
-            - [ ] Async/await for all I/O operations
+            - [ ] No lazy imports
+            - [ ] Pydantic v2 syntax
+            - [ ] Proper error handling
 
-            ### 5. Architecture
-            - [ ] Follows routers → services → repositories pattern
-            - [ ] No direct collection access in routers
-            - [ ] Uses DI container properly
-
-            ### 6. Security
-            - [ ] No SQL/NoSQL injection vulnerabilities
-            - [ ] No hardcoded secrets or credentials
-            - [ ] Proper input validation
+            ### 3. Security
+            - [ ] No hardcoded secrets
+            - [ ] Input validation present
+            - [ ] No sensitive data in logs
             </review_checklist>
+
+            <inline_suggestions>
+            For specific code improvements, use GitHub's suggestion syntax to allow one-click fixes.
+
+            Use `gh api` to post review comments with suggestions:
+
+            ```bash
+            gh api repos/{owner}/{repo}/pulls/{pr}/comments \
+              -f body='```suggestion
+            corrected code here
+            ```' \
+              -f path='file/path.py' \
+              -f commit_id='HEAD_SHA' \
+              -f line=42
+            ```
+
+            IMPORTANT: For each fixable issue, post an inline suggestion comment on the specific line.
+            This allows the author to accept fixes with one click.
+            </inline_suggestions>
 
             <output_format>
             Write your review as a PR comment in this EXACT format:
@@ -136,41 +153,50 @@ jobs:
             ## ✅ What's Good
             (Well-written parts, good practices observed)
 
-            ## 🚨 Rule Violations (MUST FIX)
-            (List any violations of the project rules above. Include file path and line numbers.)
+            ## 🚨 Issues Found
+            (List any violations. Include file path and line numbers.)
 
-            Format each violation as:
-            - **[RULE_NAME]** `file_path:line` - Description of violation
+            Format: `file_path:line` - Description
 
-            ## ⚠️ Suggestions for Improvement
-            (Optional improvements, not blocking)
+            ## 💡 Inline Suggestions
+            (Note: I've added inline suggestions on specific lines that can be applied with one click)
 
-            ## 📋 Checklist Result
-            - Tests: ✅/❌
-            - Imports: ✅/❌
-            - Logging: ✅/❌
+            ## 📋 Checklist
+            - LangChain/LangGraph: ✅/❌
             - Type Hints: ✅/❌
-            - Architecture: ✅/❌
+            - Security: ✅/❌
             </output_format>
 
             <instructions>
-            1. First, fetch the PR diff using: `gh pr diff "$PR_NUMBER"`
-            2. Also get PR metadata using: `gh pr view "$PR_NUMBER" --json title,body,url,author`
-            3. Check each file against the rules in <project_rules>
-            4. Be STRICT about rule violations - this codebase has zero tolerance for:
-               - Lazy imports (imports inside functions)
-               - Missing tests
-               - print() statements or logger.debug() left behind
-               - Missing type hints
-            5. Save your review to review.md file
-            6. Post your review using: `gh pr comment "$PR_NUMBER" --body-file review.md`
-            7. Exit after posting the comment successfully
+            1. Get PR info:
+               - `gh pr diff "$PR_NUMBER"` for changes
+               - `gh pr view "$PR_NUMBER" --json title,body,headRefOid` for metadata
+
+            2. Review code against <project_rules>
+
+            3. For each fixable issue, post inline suggestion:
+               ```bash
+               gh api repos/$REPO/pulls/$PR_NUMBER/comments \
+                 -f body='```suggestion
+               fixed code
+               ```
+               Explanation of the fix' \
+                 -f path='path/to/file.py' \
+                 -f commit_id='COMMIT_SHA' \
+                 -f line=LINE_NUMBER \
+                 -f side='RIGHT'
+               ```
+
+            4. Post summary review comment:
+               `gh pr comment "$PR_NUMBER" --body-file review.md`
+
+            5. Exit after completing review
             </instructions>
 
-            Now review this PR and post your findings as a comment. Fail the run if you cannot complete the review.
+            Now review this PR, post inline suggestions for fixable issues, and add a summary comment.
         run: |
           codex exec \
-            -m gpt-5-codex \
+            -m o3 \
             --sandbox danger-full-access \
             -c shell_environment_policy.inherit=all \
             -c ask_for_approval=\"never\" \
