@@ -1,0 +1,178 @@
+name: Codex PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  codex-review:
+    if: |
+      (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'develop') ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       contains(github.event.comment.body, '/codex review'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set review context
+        id: review_context
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          PR_NUMBER=$(jq -r '.pull_request.number // .issue.number' "$GITHUB_EVENT_PATH")
+          if [ -z "$PR_NUMBER" ] || [ "$PR_NUMBER" = "null" ]; then
+            echo "Unable to determine PR number from event payload" >&2
+            exit 1
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Install Codex CLI
+        run: |
+          npm install -g @openai/codex@latest
+
+      - name: Restore Codex OAuth credentials
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "CODEX_AUTH_JSON secret is not configured" >&2
+            exit 1
+          fi
+
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+
+      - name: Run Codex review
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
+          REPO: ${{ github.repository }}
+          CODEX_PROMPT: |
+            You are a senior backend engineer performing a thorough code review for a FastAPI/Python backend codebase.
+
+            <context>
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ steps.review_context.outputs.pr_number }}
+            </context>
+
+            <project_rules>
+            This project has STRICT coding standards that MUST be enforced. Review against ALL of the following rules:
+
+            ## Architecture Rules
+            - Module structure: routers → services → repositories (dependency flow)
+            - Use dependency-injector library for DI (Singleton for repos, Factory for services)
+            - NEVER use @staticmethod in models.py for DB access (legacy anti-pattern)
+            - NEVER access collections directly in routers (must go through service layer)
+
+            ## Coding Standards (CRITICAL)
+            - [ ] **NO LAZY IMPORTS**: All imports MUST be at file top level. Imports inside functions are FORBIDDEN.
+            - [ ] **TESTS REQUIRED**: No code without tests. Code without tests = rejected.
+            - [ ] **LOGURU ONLY**: Use `from loguru import logger`. No print(), no logging module.
+            - [ ] **NO DEBUG LOGS**: logger.debug() must be removed after fixing issues. Only keep info/warning/error.
+            - [ ] **TYPE HINTS**: All functions must have type hints.
+            - [ ] **ASYNC/AWAIT**: All I/O operations must be async.
+            - [ ] **NO SENSITIVE DATA IN LOGS**: Never log passwords, tokens, API keys.
+
+            ## Database Rules
+            - Users collection does NOT contain org_id field (use team_members or org_admins)
+            - Always use ObjectId() for MongoDB _id queries
+            - Prevent N+1 queries (use aggregation pipelines)
+            - Always paginate large result sets
+            </project_rules>
+
+            <review_checklist>
+            Check each item and report violations:
+
+            ### 1. Import Rules
+            - [ ] All imports at file top level (no lazy imports inside functions)
+            - [ ] Exception: TYPE_CHECKING block for type hints only
+
+            ### 2. Testing
+            - [ ] New code has corresponding test files
+            - [ ] Tests cover happy path and edge cases
+            - [ ] Tests use pytest-asyncio and proper mocking
+
+            ### 3. Logging
+            - [ ] Uses loguru (not print or logging module)
+            - [ ] No logger.debug() statements left behind
+            - [ ] No sensitive data logged
+
+            ### 4. Code Quality
+            - [ ] Type hints on all functions
+            - [ ] Pydantic models for request/response validation
+            - [ ] Error handling with StandardErrorHandler
+            - [ ] Async/await for all I/O operations
+
+            ### 5. Architecture
+            - [ ] Follows routers → services → repositories pattern
+            - [ ] No direct collection access in routers
+            - [ ] Uses DI container properly
+
+            ### 6. Security
+            - [ ] No SQL/NoSQL injection vulnerabilities
+            - [ ] No hardcoded secrets or credentials
+            - [ ] Proper input validation
+            </review_checklist>
+
+            <output_format>
+            Write your review as a PR comment in this EXACT format:
+
+            ## 🔍 Code Review Summary
+            (Brief overview of changes and overall assessment)
+
+            ## ✅ What's Good
+            (Well-written parts, good practices observed)
+
+            ## 🚨 Rule Violations (MUST FIX)
+            (List any violations of the project rules above. Include file path and line numbers.)
+
+            Format each violation as:
+            - **[RULE_NAME]** `file_path:line` - Description of violation
+
+            ## ⚠️ Suggestions for Improvement
+            (Optional improvements, not blocking)
+
+            ## 📋 Checklist Result
+            - Tests: ✅/❌
+            - Imports: ✅/❌
+            - Logging: ✅/❌
+            - Type Hints: ✅/❌
+            - Architecture: ✅/❌
+            </output_format>
+
+            <instructions>
+            1. First, fetch the PR diff using: `gh pr diff "$PR_NUMBER"`
+            2. Also get PR metadata using: `gh pr view "$PR_NUMBER" --json title,body,url,author`
+            3. Check each file against the rules in <project_rules>
+            4. Be STRICT about rule violations - this codebase has zero tolerance for:
+               - Lazy imports (imports inside functions)
+               - Missing tests
+               - print() statements or logger.debug() left behind
+               - Missing type hints
+            5. Save your review to review.md file
+            6. Post your review using: `gh pr comment "$PR_NUMBER" --body-file review.md`
+            7. Exit after posting the comment successfully
+            </instructions>
+
+            Now review this PR and post your findings as a comment. Fail the run if you cannot complete the review.
+        run: |
+          codex exec \
+            -m gpt-5-codex \
+            --sandbox danger-full-access \
+            -c shell_environment_policy.inherit=all \
+            -c ask_for_approval=\"never\" \
+            -C "$GITHUB_WORKSPACE" \
+            -- "$CODEX_PROMPT"
