@@ -12,12 +12,19 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Create a non-root user and set permissions
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
 # Install dependencies
-COPY uv.lock pyproject.toml ./
+COPY --chown=appuser:appuser uv.lock pyproject.toml ./
 RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy application code
-COPY . .
+COPY --chown=appuser:appuser . .
 
 # Install the project itself
 RUN uv sync --frozen --no-dev
@@ -25,18 +32,25 @@ RUN uv sync --frozen --no-dev
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
-ENV STREAMLIT_SERVER_PORT=8080
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_SERVER_HEADLESS=true
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+ENV PORT=8080
+ENV HOST=0.0.0.0
 
 # Expose port 8080 (Cloud Run default)
 EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import socket; s=socket.socket(); s.connect(('localhost', 8080)); s.close()" || exit 1
+    CMD python -c "import sys, urllib.request, urllib.error; \
+    from urllib.error import URLError, HTTPError; \
+    import socket; \
+    URL = 'http://localhost:8080/health'; \
+    TIMEOUT = 5; \
+    try: \
+    with urllib.request.urlopen(URL, timeout=TIMEOUT) as resp: \
+    status = resp.getcode(); \
+    sys.exit(0 if 200 <= status < 400 else 1); \
+    except (HTTPError, URLError, socket.timeout, Exception): \
+    sys.exit(1)" || exit 1
 
-# Run Streamlit app
-CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
 
+ENTRYPOINT ["sh", "-c", "exec uv run uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
