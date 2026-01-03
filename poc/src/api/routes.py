@@ -1,15 +1,15 @@
 """API 라우트 정의"""
 import json
 import uuid
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
-from src.memory import InMemoryChatMemory
+from src.memory import InMemoryChatMemory, SupabaseChatMemory
 from config import config
 from .schemas import (
     ChatRequest,
@@ -22,7 +22,17 @@ from .schemas import (
 router = APIRouter()
 
 # 전역 인스턴스 (애플리케이션 수명 동안 유지)
-memory = InMemoryChatMemory()
+# 전역 인스턴스 (애플리케이션 수명 동안 유지)
+if config.SUPABASE_URL and config.SUPABASE_SERVICE_ROLE_KEY:
+    logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
+    memory = SupabaseChatMemory(
+        url=config.SUPABASE_URL,
+        key=config.SUPABASE_SERVICE_ROLE_KEY
+    )
+else:
+    logger.info("Using In-Memory storage (not persistent)")
+    memory = InMemoryChatMemory()
+
 supervisor = Supervisor(memory=memory)
 
 
@@ -41,9 +51,14 @@ async def chat(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
 
     try:
+        kwargs = {}
+        if request.user_id:
+            kwargs["user_id"] = request.user_id
+
         result = await supervisor.process(
             question=request.message,
-            session_id=session_id
+            session_id=session_id,
+            **kwargs
         )
         return ChatResponse(
             answer=result.answer,
@@ -74,9 +89,14 @@ async def chat_stream(request: ChatRequest):
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         try:
+            kwargs = {}
+            if request.user_id:
+                kwargs["user_id"] = request.user_id
+
             async for event in supervisor.process_stream(
                 question=request.message,
-                session_id=session_id
+                session_id=session_id,
+                **kwargs
             ):
                 event_type = event.get("type", "token")
 
@@ -121,13 +141,22 @@ async def chat_stream(request: ChatRequest):
 
 
 @router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions():
-    """세션 목록 조회"""
-    session_ids = memory.list_sessions()
+async def list_sessions(user_id: Optional[str] = None):
+    """세션 목록 조회
+
+    Args:
+        user_id: 사용자 ID (제공 시 해당 사용자의 세션만 조회)
+    """
+    # SupabaseChatMemory인 경우에만 user_id 전달
+    if hasattr(memory, 'list_sessions') and 'user_id' in memory.list_sessions.__code__.co_varnames:
+        session_ids = memory.list_sessions(user_id=user_id)
+    else:
+        session_ids = memory.list_sessions()
+
     sessions = [
         SessionInfo(
             session_id=sid,
-            message_count=memory.get_message_count(sid)
+            message_count=memory.get_message_count(sid, user_id=user_id) if hasattr(memory, 'get_message_count') and 'user_id' in memory.get_message_count.__code__.co_varnames else memory.get_message_count(sid)
         )
         for sid in session_ids
     ]
@@ -135,17 +164,43 @@ async def list_sessions():
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """세션 삭제"""
-    if session_id not in memory.list_sessions():
-        raise HTTPException(status_code=404, detail="Session not found")
+async def delete_session(session_id: str, user_id: Optional[str] = None):
+    """세션 삭제
 
-    memory.delete_session(session_id)
+    Args:
+        session_id: 세션 ID
+        user_id: 사용자 ID (제공 시 소유권 검증)
+    """
+    # SupabaseChatMemory인 경우 user_id로 소유권 검증
+    if hasattr(memory, 'list_sessions') and 'user_id' in memory.list_sessions.__code__.co_varnames:
+        user_sessions = memory.list_sessions(user_id=user_id)
+        if session_id not in user_sessions:
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
+    else:
+        if session_id not in memory.list_sessions():
+            raise HTTPException(status_code=404, detail="Session not found")
+
+    # SupabaseChatMemory인 경우 user_id 전달
+    if hasattr(memory, 'delete_session') and 'user_id' in memory.delete_session.__code__.co_varnames:
+        memory.delete_session(session_id, user_id=user_id)
+    else:
+        memory.delete_session(session_id)
+
     return {"message": "Session deleted", "session_id": session_id}
 
 
 @router.delete("/sessions/{session_id}/messages")
-async def clear_session(session_id: str):
-    """세션 메시지 초기화"""
-    memory.clear(session_id)
+async def clear_session(session_id: str, user_id: Optional[str] = None):
+    """세션 메시지 초기화
+
+    Args:
+        session_id: 세션 ID
+        user_id: 사용자 ID (제공 시 소유권 검증)
+    """
+    # SupabaseChatMemory인 경우 user_id 전달
+    if hasattr(memory, 'clear') and 'user_id' in memory.clear.__code__.co_varnames:
+        memory.clear(session_id, user_id=user_id)
+    else:
+        memory.clear(session_id)
+
     return {"message": "Session cleared", "session_id": session_id}

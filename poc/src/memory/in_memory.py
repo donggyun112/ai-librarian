@@ -39,15 +39,22 @@ class InMemoryChatMemory(ChatMemory):
         with self._lock:
             return self._store[session_id].copy()
 
-    def add_user_message(self, session_id: str, content: str) -> None:
+    def add_user_message(self, session_id: str, content: str, **kwargs) -> None:
         """사용자 메시지 추가"""
         with self._lock:
-            self._store[session_id].append(HumanMessage(content=content))
+            msg = HumanMessage(content=content)
+            # 메타데이터가 있으면 additional_kwargs에 저장 (선택사항)
+            if kwargs:
+                msg.additional_kwargs.update(kwargs)
+            self._store[session_id].append(msg)
 
-    def add_ai_message(self, session_id: str, content: str) -> None:
+    def add_ai_message(self, session_id: str, content: str, **kwargs) -> None:
         """AI 메시지 추가"""
         with self._lock:
-            self._store[session_id].append(AIMessage(content=content))
+            msg = AIMessage(content=content)
+            if kwargs:
+                msg.additional_kwargs.update(kwargs)
+            self._store[session_id].append(msg)
 
     def clear(self, session_id: str) -> None:
         """세션 히스토리 초기화"""
