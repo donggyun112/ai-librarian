@@ -81,6 +81,19 @@ jobs:
           printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
           chmod 600 ~/.codex/auth.json
 
+      - name: Setup MCP servers
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: |
+          cat >> ~/.codex/config.toml << 'EOF'
+
+          # Context7 - Library documentation (LangChain, LangGraph, FastAPI, Pydantic, etc.)
+          [mcp_servers.context7]
+          command = "npx"
+          args = ["-y", "@upstash/context7-mcp"]
+          EOF
+
+          echo "✅ MCP servers configured (context7)"
+
       - name: Get context for reply
         if: steps.check_reply.outputs.is_ai_reply == 'true'
         id: context
@@ -167,4 +180,4 @@ jobs:
 
       - name: Cleanup credentials
         if: always()
-        run: rm -f ~/.codex/auth.json
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
