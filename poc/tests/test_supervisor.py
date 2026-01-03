@@ -312,7 +312,7 @@ class TestSupervisorProcessStream:
 
         assert len(events) == 1
         assert events[0]["type"] == StreamEventType.OBSERVE
-        assert "RAG 결과" in events[0]["content"]
+        assert "Web search 결과" in events[0]["content"]
 
     @pytest.mark.asyncio
     @patch("src.adapters.openai.ChatOpenAI")

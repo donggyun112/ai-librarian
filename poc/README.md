@@ -6,7 +6,7 @@
 
 ## 프로젝트 개요
 
-AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전트 시스템입니다. 내부 문서 검색(RAG)과 웹 검색을 결합하여 사용자 질문에 최적의 답변을 제공합니다.
+AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전트 시스템입니다. 웹 검색을 통해 사용자 질문에 최적의 답변을 제공합니다.
 
 ### 핵심 특징
 
@@ -147,7 +147,7 @@ LLM_PROVIDER=openai  # 또는 "gemini"
 # OpenAI
 OPENAI_API_KEY=sk-...
 OPENAI_CHAT_MODEL=gpt-4o
-EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 # Google Gemini (선택)
 GOOGLE_API_KEY=...
