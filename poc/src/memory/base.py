@@ -35,24 +35,22 @@ class ChatMemory(ABC):
         pass
 
     @abstractmethod
-    def add_user_message(self, session_id: str, content: str, **kwargs) -> None:
+    def add_user_message(self, session_id: str, content: str) -> None:
         """사용자 메시지 추가
 
         Args:
             session_id: 세션 식별자
             content: 메시지 내용
-            **kwargs: 추가 메타데이터 (예: user_id)
         """
         pass
 
     @abstractmethod
-    def add_ai_message(self, session_id: str, content: str, **kwargs) -> None:
+    def add_ai_message(self, session_id: str, content: str) -> None:
         """AI 메시지 추가
 
         Args:
             session_id: 세션 식별자
             content: 메시지 내용
-            **kwargs: 추가 메타데이터
         """
         pass
 
@@ -65,14 +63,13 @@ class ChatMemory(ABC):
         """
         pass
 
-    def save_conversation(self, session_id: str, user_message: str, ai_message: str, **kwargs) -> None:
+    def save_conversation(self, session_id: str, user_message: str, ai_message: str) -> None:
         """대화 쌍(사용자 + AI) 저장 - 편의 메서드
 
         Args:
             session_id: 세션 식별자
             user_message: 사용자 메시지
             ai_message: AI 응답
-            **kwargs: 추가 메타데이터
         """
-        self.add_user_message(session_id, user_message, **kwargs)
-        self.add_ai_message(session_id, ai_message, **kwargs)
+        self.add_user_message(session_id, user_message)
+        self.add_ai_message(session_id, ai_message)

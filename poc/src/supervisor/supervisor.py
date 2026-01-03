@@ -177,9 +177,9 @@ class Supervisor:
         messages.append(HumanMessage(content=question))
         return messages
 
-    def _save_to_history(self, session_id: str, question: str, answer: str, **kwargs) -> None:
+    def _save_to_history(self, session_id: str, question: str, answer: str) -> None:
         """대화 히스토리에 저장"""
-        self.memory.save_conversation(session_id, question, answer, **kwargs)
+        self.memory.save_conversation(session_id, question, answer)
 
     def clear_history(self, session_id: str) -> None:
         """세션 히스토리 초기화"""
@@ -191,15 +191,13 @@ class Supervisor:
     async def process(
         self,
         question: str,
-        session_id: Optional[str] = None,
-        **kwargs
+        session_id: Optional[str] = None
     ) -> SupervisorResponse:
         """질문 처리 (Non-streaming)
 
         Args:
             question: 사용자 질문
             session_id: 세션 ID (None이면 히스토리 없이 처리)
-            **kwargs: 추가 메타데이터 (예: user_id)
         """
         if session_id:
             messages = self._build_messages(session_id, question)
@@ -227,7 +225,7 @@ class Supervisor:
 
         # 히스토리에 저장
         if session_id:
-            self._save_to_history(session_id, question, answer, **kwargs)
+            self._save_to_history(session_id, question, answer)
 
         return SupervisorResponse(
             answer=answer,
@@ -242,8 +240,7 @@ class Supervisor:
     async def process_stream(
         self,
         question: str,
-        session_id: Optional[str] = None,
-        **kwargs
+        session_id: Optional[str] = None
     ) -> AsyncIterator[dict]:
         """
         스트리밍 처리 - 토큰 단위 실시간 출력
@@ -320,7 +317,7 @@ class Supervisor:
         # 스트리밍 완료 후 히스토리에 저장
         if session_id and collected_answer:
             full_answer = "".join(collected_answer)
-            self._save_to_history(session_id, question, full_answer, **kwargs)
+            self._save_to_history(session_id, question, full_answer)
 
     # ============================================================
     # 유틸리티 메서드
