@@ -270,21 +270,21 @@ jobs:
                - If ALL checklist items are ✅ (no ❌): Write "APPROVED" to decision.txt
                - If ANY checklist item is ❌: Write "CHANGES_REQUESTED" to decision.txt
 
-            6. Execute approval/rejection:
+            6. BEFORE submitting any review, ALWAYS dismiss previous CHANGES_REQUESTED reviews first:
+               ```bash
+               # Dismiss all previous CHANGES_REQUESTED reviews from github-actions bot
+               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions[bot]") | .id' | while read review_id; do
+                 gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by new review"
+               done
+               ```
+
+            7. Execute approval/rejection:
                - If APPROVED:
-                 1. First, dismiss any previous CHANGES_REQUESTED reviews from github-actions:
-                    ```bash
-                    # Get review IDs with CHANGES_REQUESTED state and dismiss them
-                    gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions[bot]") | .id' | while read review_id; do
-                      gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by passing review"
-                    done
-                    ```
-                 2. Resolve all unresolved review threads from github-actions bot:
+                 1. Resolve all unresolved review threads from github-actions bot:
                     ```bash
                     OWNER=$(echo "$REPO" | cut -d'/' -f1)
                     REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
 
-                    # Get unresolved thread IDs from github-actions bot
                     gh api graphql -f query='
                       query($owner: String!, $repo: String!, $pr: Int!) {
                         repository(owner: $owner, name: $repo) {
@@ -313,10 +313,10 @@ jobs:
                       ' -f threadId="$thread_id"
                     done
                     ```
-                 3. Then approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
+                 2. Approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
                - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
 
-            7. Exit after completing review
+            8. Exit after completing review
             </instructions>
 
             Now review this PR, post your review comment, and approve or request changes based on the checklist results.
