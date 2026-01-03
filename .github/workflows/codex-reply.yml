@@ -112,10 +112,14 @@ jobs:
               API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
             fi
 
-            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line, node_id: .node_id}' 2>/dev/null || echo "{}")
             echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
             echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
+
+            # Get thread node_id for resolving
+            THREAD_NODE_ID=$(gh api "$API_PATH" --jq '.node_id' 2>/dev/null || echo "")
+            echo "thread_node_id=${THREAD_NODE_ID}" >> "$GITHUB_OUTPUT"
           fi
 
           echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"
@@ -135,6 +139,7 @@ jobs:
           FILE_PATH: ${{ steps.context.outputs.file_path }}
           LINE_NUMBER: ${{ steps.context.outputs.line_number }}
           EVENT_NAME: ${{ github.event_name }}
+          THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
         run: |
           CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question about your code review.
 
@@ -147,6 +152,7 @@ jobs:
           LINE_NUMBER: $LINE_NUMBER
           ORIGINAL_AI_COMMENT: $ORIGINAL_CONTEXT
           IN_REPLY_TO_ID: $IN_REPLY_TO_ID
+          THREAD_NODE_ID: $THREAD_NODE_ID
           </context>
 
           <instructions>
@@ -165,7 +171,7 @@ jobs:
 
              If EVENT_TYPE is 'pull_request_review_comment' (inline code comment):
              \`\`\`bash
-             gh api \"repos/$REPO/pulls/comments/$IN_REPLY_TO_ID/replies\" \\
+             gh api \"repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID/replies\" \\
                --method POST \\
                -f body=\"Your response here\"
              \`\`\`
@@ -176,6 +182,13 @@ jobs:
              \`\`\`
 
           5. Keep response concise and focused
+
+          6. After posting your reply, if EVENT_TYPE is 'pull_request_review_comment' and THREAD_NODE_ID is available,
+             resolve the conversation thread using GraphQL:
+             \`\`\`bash
+             gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"$THREAD_NODE_ID\"}) { thread { isResolved } } }'
+             \`\`\`
+             This marks the conversation as resolved after you've answered the question.
           </instructions>
 
           Answer the user's question about your code review suggestion."
