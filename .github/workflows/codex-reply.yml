@@ -99,7 +99,16 @@ jobs:
         run: |
           # Get original comment if this is a reply
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-            ORIGINAL=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            fi
+            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
             echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
             echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
