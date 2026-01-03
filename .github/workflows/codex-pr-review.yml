@@ -50,16 +50,17 @@ jobs:
           CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
         run: |
           if [ -z "$CODEX_AUTH_JSON" ]; then
-            echo "CODEX_AUTH_JSON secret is not configured" >&2
-          mkdir -p ~/.codex
-          trap 'rm -f ~/.codex/auth.json' EXIT
-          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
-          chmod 600 ~/.codex/auth.json
+            echo "::error::CODEX_AUTH_JSON secret is not configured"
+            exit 1
           fi
 
           mkdir -p ~/.codex
           printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
           chmod 600 ~/.codex/auth.json
+
+      - name: Cleanup credentials on exit
+        if: always()
+        run: rm -f ~/.codex/auth.json
 
       - name: Setup MCP servers
         env:
