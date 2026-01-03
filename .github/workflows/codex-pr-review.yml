@@ -147,14 +147,19 @@ jobs:
             gh api repos/{owner}/{repo}/pulls/{pr}/comments \
               -f body='```suggestion
             corrected code here
-            ```' \
+            ```
+            Explanation here' \
               -f path='file/path.py' \
               -f commit_id='HEAD_SHA' \
-              -f line=42
+              -F position=10
+            ```
+
+            Or use the simpler PR review approach:
+            ```bash
+            gh pr review {pr} --comment --body "suggestion comment"
             ```
 
             IMPORTANT: For each fixable issue, post an inline suggestion comment on the specific line.
-            This allows the author to accept fixes with one click.
             </inline_suggestions>
 
             <output_format>
@@ -189,18 +194,14 @@ jobs:
 
             2. Review code against <project_rules>
 
-            3. For each fixable issue, post inline suggestion:
-               ```bash
-               gh api repos/$REPO/pulls/$PR_NUMBER/comments \
-                 -f body='```suggestion
-               fixed code
+            3. For fixable issues, include suggestion blocks in your review comment:
+               ```markdown
+               ### file.py:42
+               \`\`\`suggestion
+               fixed code here
+               \`\`\`
                ```
-               Explanation of the fix' \
-                 -f path='path/to/file.py' \
-                 -f commit_id='COMMIT_SHA' \
-                 -f line=LINE_NUMBER \
-                 -f side='RIGHT'
-               ```
+               This shows the suggested fix inline in your review.
 
             4. Post summary review comment:
                `gh pr comment "$PR_NUMBER" --body-file review.md`
