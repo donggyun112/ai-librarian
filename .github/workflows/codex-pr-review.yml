@@ -58,10 +58,6 @@ jobs:
           printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
           chmod 600 ~/.codex/auth.json
 
-      - name: Cleanup credentials on exit
-        if: always()
-        run: rm -f ~/.codex/auth.json
-
       - name: Setup MCP servers
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -269,3 +265,7 @@ jobs:
             -c ask_for_approval=\"never\" \
             -C "$GITHUB_WORKSPACE" \
             -- "$CODEX_PROMPT"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
