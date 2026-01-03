@@ -21,7 +21,6 @@ class TestSupervisorConstants:
 
     def test_search_tools(self):
         """검색 도구 목록 확인"""
-        assert "arag_search" in SEARCH_TOOLS
         assert "aweb_search" in SEARCH_TOOLS
 
     def test_think_tool(self):
@@ -300,8 +299,8 @@ class TestSupervisorProcessStream:
         async def mock_stream_events(*args, **kwargs):
             yield {
                 "event": "on_tool_end",
-                "name": "arag_search",
-                "data": {"output": "RAG 결과"}
+                "name": "aweb_search",
+                "data": {"output": "Web search 결과"}
             }
 
         supervisor._cached_graph = MagicMock()
