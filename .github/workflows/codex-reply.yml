@@ -1,0 +1,100 @@
+name: Codex Reply
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  codex-reply:
+    if: |
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       !contains(github.event.comment.body, '/codex review') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+      ||
+      (github.event_name == 'pull_request_review_comment' &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Check if reply to AI comment
+        id: check_reply
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          # Check if this is a reply to github-actions bot or mentions @codex
+          if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex|질문|왜|어떻게|설명"; then
+            echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_ai_reply=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Codex CLI
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: npm install -g @openai/codex@latest
+
+      - name: Restore Codex OAuth credentials
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "::error::CODEX_AUTH_JSON secret is not configured"
+            exit 1
+          fi
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+
+      - name: Reply to user
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          USER_COMMENT: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+        run: |
+          CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question on a PR review.
+
+          PR: $PR_NUMBER
+          User's question: $USER_COMMENT
+
+          Instructions:
+          1. Get context: \`gh pr view \"$PR_NUMBER\" --json title,body\`
+          2. If needed, check the diff: \`gh pr diff \"$PR_NUMBER\"\`
+          3. Provide a helpful, concise response to the user's question
+          4. Post your reply: \`gh pr comment \"$PR_NUMBER\" --body \"Your response here\"\`
+          5. Keep the response focused and technical
+
+          Respond helpfully to the user's question."
+
+          codex exec \
+            -m gpt-5-codex \
+            --sandbox danger-full-access \
+            -c shell_environment_policy.inherit=all \
+            -c ask_for_approval=\"never\" \
+            -C "$GITHUB_WORKSPACE" \
+            -- "$CODEX_PROMPT"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.codex/auth.json
