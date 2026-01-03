@@ -124,7 +124,12 @@ jobs:
             - [ ] Input validation present
             - [ ] No sensitive data in logs
 
-            ### 4. Side Effects & Bug Prevention (CRITICAL)
+            ### 4. Testing (CRITICAL)
+            - [ ] New/modified code has corresponding test files
+            - [ ] Tests cover happy path and edge cases
+            - [ ] If no tests added, flag as MUST FIX
+
+            ### 5. Side Effects & Bug Prevention (CRITICAL)
             - [ ] Check for logic conflicts with existing code
             - [ ] Identify potential race conditions in async code
             - [ ] Verify state mutations don't cause unintended side effects
@@ -173,6 +178,7 @@ jobs:
             - LangChain/LangGraph: ✅/❌
             - Type Hints: ✅/❌
             - Security: ✅/❌
+            - Tests: ✅/❌
             - Side Effects/Bugs: ✅/❌
             </output_format>
 
