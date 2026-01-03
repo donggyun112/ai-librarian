@@ -4,12 +4,12 @@ import uuid
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
-from src.memory import InMemoryChatMemory
+from src.memory import InMemoryChatMemory, SupabaseChatMemory
 from config import config
 from .schemas import (
     ChatRequest,
@@ -22,7 +22,17 @@ from .schemas import (
 router = APIRouter()
 
 # 전역 인스턴스 (애플리케이션 수명 동안 유지)
-memory = InMemoryChatMemory()
+# 전역 인스턴스 (애플리케이션 수명 동안 유지)
+if config.SUPABASE_URL and config.SUPABASE_SERVICE_ROLE_KEY:
+    logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
+    memory = SupabaseChatMemory(
+        url=config.SUPABASE_URL,
+        key=config.SUPABASE_SERVICE_ROLE_KEY
+    )
+else:
+    logger.info("Using In-Memory storage (not persistent)")
+    memory = InMemoryChatMemory()
+
 supervisor = Supervisor(memory=memory)
 
 
@@ -41,9 +51,14 @@ async def chat(request: ChatRequest):
     session_id = request.session_id or str(uuid.uuid4())
 
     try:
+        kwargs = {}
+        if request.user_id:
+            kwargs["user_id"] = request.user_id
+
         result = await supervisor.process(
             question=request.message,
-            session_id=session_id
+            session_id=session_id,
+            **kwargs
         )
         return ChatResponse(
             answer=result.answer,
@@ -74,9 +89,14 @@ async def chat_stream(request: ChatRequest):
 
     async def event_generator() -> AsyncGenerator[dict, None]:
         try:
+            kwargs = {}
+            if request.user_id:
+                kwargs["user_id"] = request.user_id
+
             async for event in supervisor.process_stream(
                 question=request.message,
-                session_id=session_id
+                session_id=session_id,
+                **kwargs
             ):
                 event_type = event.get("type", "token")
 
