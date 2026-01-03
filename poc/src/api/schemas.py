@@ -7,6 +7,7 @@ class ChatRequest(BaseModel):
     """채팅 요청"""
     message: str = Field(..., min_length=1, description="사용자 메시지")
     session_id: Optional[str] = Field(None, description="세션 ID (없으면 히스토리 없이 처리)")
+    user_id: Optional[str] = Field(None, description="사용자 ID (선택 사항)")
 
 
 class ChatResponse(BaseModel):
