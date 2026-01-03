@@ -66,7 +66,7 @@ jobs:
 
       - name: Install Codex CLI
         if: steps.check_reply.outputs.is_ai_reply == 'true'
-        run: npm install -g @openai/codex@latest
+        run: npm install -g @openai/codex@0.1.2504181803
 
       - name: Restore Codex OAuth credentials
         if: steps.check_reply.outputs.is_ai_reply == 'true'

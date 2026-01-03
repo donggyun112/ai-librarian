@@ -44,9 +44,23 @@ jobs:
           fi
           echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
 
+      - name: Check if fork PR (security)
+        id: fork_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          # For /codex review on issue_comment, check if PR is from a fork
+          HEAD_REPO=$(gh pr view "$PR_NUMBER" --json headRepositoryOwner,headRepository -q '"\(.headRepositoryOwner.login)/\(.headRepository.name)"')
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::Cannot run Codex review on fork PRs for security reasons"
+            exit 1
+          fi
+
       - name: Install Codex CLI
         run: |
-          npm install -g @openai/codex@latest
+          npm install -g @openai/codex@0.1.2504181803
 
       - name: Restore Codex OAuth credentials
         env:
