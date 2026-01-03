@@ -11,7 +11,9 @@ dependencies = [
     "langchain-google-genai>=2.0.0",
     "langgraph>=0.2.0",
     "openai>=1.50.0",
-
+    "supabase>=2.0.0",
+    # Vector DB
+    "pymilvus>=2.5.0",
     # Web Search
     "ddgs>=5.0.0",
     # Data
