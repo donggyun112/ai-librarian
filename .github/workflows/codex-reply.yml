@@ -165,7 +165,7 @@ jobs:
 
              If EVENT_TYPE is 'pull_request_review_comment' (inline code comment):
              \`\`\`bash
-             gh api \"repos/$REPO/pulls/comments/$IN_REPLY_TO_ID/replies\" \\
+             gh api \"repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID/replies\" \\
                --method POST \\
                -f body=\"Your response here\"
              \`\`\`
