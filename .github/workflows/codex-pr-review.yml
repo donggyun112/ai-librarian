@@ -140,27 +140,28 @@ jobs:
             </review_checklist>
 
             <inline_suggestions>
-            For specific code improvements, use GitHub's suggestion syntax to allow one-click fixes.
+            For fixable issues, post inline suggestion comments using gh api.
 
-            Use `gh api` to post review comments with suggestions:
-
+            CORRECT API FORMAT:
             ```bash
-            gh api repos/{owner}/{repo}/pulls/{pr}/comments \
-              -f body='```suggestion
-            corrected code here
-            ```
-            Explanation here' \
-              -f path='file/path.py' \
-              -f commit_id='HEAD_SHA' \
-              -F position=10
+            COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+
+            gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
+              --method POST \
+              -f body=$'```suggestion\ncorrected code here\n```\nExplanation' \
+              -f commit_id="$COMMIT_SHA" \
+              -f path="path/to/file.py" \
+              -F line:=42 \
+              -f side="RIGHT"
             ```
 
-            Or use the simpler PR review approach:
-            ```bash
-            gh pr review {pr} --comment --body "suggestion comment"
-            ```
+            CRITICAL RULES:
+            - line must be integer: use `-F line:=42` (not `-f line=42`)
+            - commit_id: get from `gh pr view --json headRefOid`
+            - side: "RIGHT" for new code, "LEFT" for old code
+            - path: relative path from repo root
 
-            IMPORTANT: For each fixable issue, post an inline suggestion comment on the specific line.
+            Post inline suggestions for each fixable issue found.
             </inline_suggestions>
 
             <output_format>
@@ -195,14 +196,17 @@ jobs:
 
             2. Review code against <project_rules>
 
-            3. For fixable issues, include suggestion blocks in your review comment:
-               ```markdown
-               ### file.py:42
-               \`\`\`suggestion
-               fixed code here
-               \`\`\`
+            3. For fixable issues, post inline suggestions:
+               ```bash
+               COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
+               gh api "repos/$REPO/pulls/$PR_NUMBER/comments" \
+                 --method POST \
+                 -f body=$'```suggestion\nfixed code\n```\nExplanation' \
+                 -f commit_id="$COMMIT_SHA" \
+                 -f path="file.py" \
+                 -F line:=42 \
+                 -f side="RIGHT"
                ```
-               This shows the suggested fix inline in your review.
 
             4. Post summary review comment:
                `gh pr comment "$PR_NUMBER" --body-file review.md`
