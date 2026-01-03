@@ -123,6 +123,14 @@ jobs:
             - [ ] No hardcoded secrets
             - [ ] Input validation present
             - [ ] No sensitive data in logs
+
+            ### 4. Side Effects & Bug Prevention (CRITICAL)
+            - [ ] Check for logic conflicts with existing code
+            - [ ] Identify potential race conditions in async code
+            - [ ] Verify state mutations don't cause unintended side effects
+            - [ ] Check for breaking changes to public APIs
+            - [ ] Ensure error handling doesn't silently swallow exceptions
+            - [ ] Verify edge cases are handled (null, empty, boundary values)
             </review_checklist>
 
             <inline_suggestions>
@@ -165,6 +173,7 @@ jobs:
             - LangChain/LangGraph: ✅/❌
             - Type Hints: ✅/❌
             - Security: ✅/❌
+            - Side Effects/Bugs: ✅/❌
             </output_format>
 
             <instructions>
