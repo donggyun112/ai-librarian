@@ -15,6 +15,7 @@ Adapter 패턴:
 
 from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
+import anyio
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
@@ -177,8 +178,20 @@ class Supervisor:
         messages.append(HumanMessage(content=question))
         return messages
 
+    async def _save_to_history_async(self, session_id: str, question: str, answer: str, **kwargs) -> None:
+        """대화 히스토리에 비동기 저장"""
+        # SupabaseChatMemory의 경우 비동기 메서드 사용
+        if hasattr(self.memory, 'save_conversation_async'):
+            await self.memory.save_conversation_async(session_id, question, answer, **kwargs)
+        else:
+            # 동기 메모리의 경우 스레드에서 실행
+            await anyio.to_thread.run_sync(
+                self.memory.save_conversation,
+                session_id, question, answer, **kwargs
+            )
+
     def _save_to_history(self, session_id: str, question: str, answer: str, **kwargs) -> None:
-        """대화 히스토리에 저장"""
+        """대화 히스토리에 저장 (동기 wrapper)"""
         self.memory.save_conversation(session_id, question, answer, **kwargs)
 
     def clear_history(self, session_id: str) -> None:
@@ -227,7 +240,7 @@ class Supervisor:
 
         # 히스토리에 저장
         if session_id:
-            self._save_to_history(session_id, question, answer, **kwargs)
+            await self._save_to_history_async(session_id, question, answer, **kwargs)
 
         return SupervisorResponse(
             answer=answer,
@@ -320,7 +333,7 @@ class Supervisor:
         # 스트리밍 완료 후 히스토리에 저장
         if session_id and collected_answer:
             full_answer = "".join(collected_answer)
-            self._save_to_history(session_id, question, full_answer, **kwargs)
+            await self._save_to_history_async(session_id, question, full_answer, **kwargs)
 
     # ============================================================
     # 유틸리티 메서드
