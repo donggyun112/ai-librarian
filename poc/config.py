@@ -25,11 +25,6 @@ class Config:
     OPENROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY")
     OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
 
-    # Milvus/Zilliz
-    MILVUS_HOST = os.getenv("ZILLIZ_HOST")
-    MILVUS_TOKEN = os.getenv("ZILLIZ_TOKEN")
-    MILVUS_COLLECTION = os.getenv("MILVUS_COLLECTION_NAME", "documents")
-
     # Supervisor 설정
     MAX_RETRIES = 2
     CONFIDENCE_THRESHOLD = 0.7

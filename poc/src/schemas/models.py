@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 from enum import Enum
 
 class WorkerType(str, Enum):
-    RAG = "rag"
     WEB_SEARCH = "web_search"
 
 
