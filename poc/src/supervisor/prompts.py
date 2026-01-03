@@ -80,8 +80,7 @@ def get_system_prompt(
 
 
 # 기본 도구 설명 (도구 리스트가 제공되지 않을 때 사용)
-DEFAULT_TOOLS_DESCRIPTION = """- `arag_search`: Search internal documents and knowledge base
-- `aweb_search`: Search the web for latest information"""
+DEFAULT_TOOLS_DESCRIPTION = """- `aweb_search`: Search the web for latest information"""
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are {persona}, {description}.

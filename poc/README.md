@@ -6,7 +6,7 @@
 
 ## 프로젝트 개요
 
-AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전트 시스템입니다. 내부 문서 검색(RAG)과 웹 검색을 결합하여 사용자 질문에 최적의 답변을 제공합니다.
+AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전트 시스템입니다. 웹 검색을 통해 사용자 질문에 최적의 답변을 제공합니다.
 
 ### 핵심 특징
 
@@ -14,7 +14,7 @@ AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전�
 |------|------|
 | **ReAct 패턴** | Think-Act-Observe 사이클로 추론 과정 투명화 |
 | **멀티 프로바이더** | OpenAI GPT-4o, Google Gemini 2.0 Flash 지원 |
-| **하이브리드 검색** | 벡터 DB(RAG) + 웹 검색 통합 |
+| **웹 검색** | DuckDuckGo 기반 실시간 웹 검색 |
 | **실시간 스트리밍** | SSE 기반 토큰 단위 응답 |
 | **세션 관리** | 대화 히스토리 유지 |
 
@@ -47,12 +47,13 @@ AI Librarian은 **LangGraph**를 활용한 ReAct(Reasoning + Acting) 에이전�
 │   └───────────┘                                                  │
 └─────────────────────────────────────────────────────────────────┘
                                   │
-                    ┌─────────────┼─────────────┐
-                    ▼             ▼             ▼
-             ┌───────────┐ ┌───────────┐ ┌───────────┐
-             │   think   │ │ RAGWorker │ │ WebWorker │
-             │  (생각)   │ │  (Milvus) │ │(DuckDuckGo)│
-             └───────────┘ └───────────┘ └───────────┘
+                                  │
+                    ┌─────────────┴─────────────┐
+                    ▼                           ▼
+             ┌───────────┐               ┌───────────┐
+             │   think   │               │ WebWorker │
+             │  (생각)   │               │(DuckDuckGo)│
+             └───────────┘               └───────────┘
 ```
 
 ### LangGraph 워크플로우
@@ -74,7 +75,6 @@ graph LR
 | 언어 | Python | 3.12+ |
 | AI 프레임워크 | LangChain, LangGraph | 0.3.x, 0.2.x |
 | LLM | OpenAI, Google Gemini | GPT-4o, Gemini 2.0 Flash |
-| 벡터 DB | Milvus/Zilliz | 2.5.x |
 | 웹 검색 | DuckDuckGo | ddgs 5.x |
 | 웹 프레임워크 | FastAPI | 0.127+ |
 | 패키지 관리 | uv | - |
@@ -105,7 +105,6 @@ poc/
 │   │   └── tools.py        # 도구 정의
 │   └── workers/            # 검색 워커
 │       ├── base.py         # BaseWorker (인터페이스)
-│       ├── rag_worker.py   # 벡터 검색
 │       └── web_worker.py   # 웹 검색
 ├── tests/                  # 테스트 코드
 ├── static/                 # 프론트엔드
@@ -148,16 +147,11 @@ LLM_PROVIDER=openai  # 또는 "gemini"
 # OpenAI
 OPENAI_API_KEY=sk-...
 OPENAI_CHAT_MODEL=gpt-4o
-EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 # Google Gemini (선택)
 GOOGLE_API_KEY=...
 GEMINI_MODEL=gemini-2.0-flash
-
-# Milvus/Zilliz
-ZILLIZ_HOST=https://xxx.zillizcloud.com
-ZILLIZ_TOKEN=...
-MILVUS_COLLECTION=documents
 
 # 프롬프트 설정
 RESPONSE_LANGUAGE=Korean
@@ -322,7 +316,6 @@ class CustomWorker(BaseWorker):
 | 문제 | 해결 방법 |
 |------|----------|
 | API 키 오류 | `.env` 파일 확인, API 키 유효성 검증 |
-| Milvus 연결 실패 | `ZILLIZ_HOST`, `ZILLIZ_TOKEN` 확인 |
 | 스트리밍 중단 | 클라이언트 타임아웃, 프록시 설정 확인 |
 
 ---
@@ -332,7 +325,6 @@ class CustomWorker(BaseWorker):
 - [LangChain 문서](https://python.langchain.com/)
 - [LangGraph 가이드](https://langchain-ai.github.io/langgraph/)
 - [OpenAI API 문서](https://platform.openai.com/docs)
-- [Milvus 문서](https://milvus.io/docs)
 - [FastAPI 문서](https://fastapi.tiangolo.com/)
 
 ---
