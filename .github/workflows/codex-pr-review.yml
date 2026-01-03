@@ -338,7 +338,7 @@ jobs:
                     ```bash
                     # Get review IDs with CHANGES_REQUESTED state and dismiss them
                     gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions[bot]") | .id' | while read review_id; do
-                      gh api "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by passing review" -f event="DISMISS"
+                      gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by passing review"
                     done
                     ```
                  2. Then approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
