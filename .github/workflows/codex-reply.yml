@@ -40,7 +40,17 @@ jobs:
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
             # This is a reply - check if original comment was from github-actions bot
             ORIGINAL_AUTHOR=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID" --jq '.user.login' 2>/dev/null || echo "")
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            fi
+            ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
             if [ "$ORIGINAL_AUTHOR" = "github-actions[bot]" ]; then
+              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
               echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
