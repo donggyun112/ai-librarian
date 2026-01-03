@@ -34,13 +34,14 @@ jobs:
           COMMENT_BODY: ${{ github.event.comment.body }}
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
         run: |
-          # Check if this is a reply to a github-actions bot comment
+          # Only trigger if this is a reply to github-actions bot
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            # Determine API path based on event type
             if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
               API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
             fi
 
             ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
@@ -49,25 +50,8 @@ jobs:
               exit 0
             fi
           fi
-            # This is a reply - check if original comment was from github-actions bot
-            ORIGINAL_AUTHOR=$(gh api "repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID" --jq '.user.login' 2>/dev/null || echo "")
-          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
-            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
-              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
-            fi
-            ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
-            if [ "$ORIGINAL_AUTHOR" = "github-actions[bot]" ]; then
-              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
-              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
 
-          # Fallback: check for keywords or direct mentions
+          # Fallback: check for direct mentions
           if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex"; then
             echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
           else
@@ -103,15 +87,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           COMMENT_PATH: ${{ github.event.comment.path }}
           COMMENT_LINE: ${{ github.event.comment.line }}
         run: |
+          # Get original AI comment content
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
             if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
               API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
             fi
 
             ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
@@ -119,23 +104,7 @@ jobs:
             echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
           fi
-          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
-            API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
-            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
-              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
-            fi
-            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
-            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
-          fi
-            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
-          fi
 
-          # Use comment's path/line if available
           echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"
           echo "line_number=${COMMENT_LINE:-}" >> "$GITHUB_OUTPUT"
 
@@ -148,6 +117,7 @@ jobs:
           REPO: ${{ github.repository }}
           USER_COMMENT: ${{ github.event.comment.body }}
           COMMENT_ID: ${{ github.event.comment.id }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           ORIGINAL_CONTEXT: ${{ steps.context.outputs.original_comment }}
           FILE_PATH: ${{ steps.context.outputs.file_path }}
           LINE_NUMBER: ${{ steps.context.outputs.line_number }}
@@ -177,9 +147,7 @@ jobs:
 
           4. Post your reply as a comment on the same thread:
              \`\`\`bash
-             gh api "repos/$REPO/pulls/comments/$COMMENT_ID/replies" \
-               --method POST \
-               -f body="Your response here"
+             gh api \"repos/$REPO/pulls/comments/$IN_REPLY_TO_ID/replies\" \\
                --method POST \\
                -f body=\"Your response here\"
              \`\`\`
