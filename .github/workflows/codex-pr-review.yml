@@ -238,7 +238,15 @@ jobs:
                - If ANY checklist item is ❌: Write "CHANGES_REQUESTED" to decision.txt
 
             6. Execute approval/rejection:
-               - If APPROVED: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
+               - If APPROVED:
+                 1. First, dismiss any previous CHANGES_REQUESTED reviews from github-actions:
+                    ```bash
+                    # Get review IDs with CHANGES_REQUESTED state and dismiss them
+                    gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions[bot]") | .id' | while read review_id; do
+                      gh api "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by passing review" -f event="DISMISS"
+                    done
+                    ```
+                 2. Then approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
                - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
 
             7. Exit after completing review
