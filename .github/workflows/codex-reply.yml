@@ -137,7 +137,9 @@ jobs:
 
           4. Post your reply as a comment on the same thread:
              \`\`\`bash
-             gh api \"repos/$REPO/pulls/$PR_NUMBER/comments/$COMMENT_ID/replies\" \\
+             gh api "repos/$REPO/pulls/comments/$COMMENT_ID/replies" \
+               --method POST \
+               -f body="Your response here"
                --method POST \\
                -f body=\"Your response here\"
              \`\`\`
