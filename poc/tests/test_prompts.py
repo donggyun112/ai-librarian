@@ -56,11 +56,12 @@ class TestGetSystemPrompt:
         current_date = datetime.now().strftime("%Y-%m-%d")
         assert current_date in prompt
 
-    def test_contains_think_tool(self):
-        """think 도구 사용 지침이 있는지 확인"""
+    def test_contains_workflow_analysis(self):
+        """분석 단계 지침이 있는지 확인 (native thinking 대체)"""
         prompt = get_system_prompt()
-        assert "think" in prompt
-        assert "ALWAYS" in prompt
+        # Native thinking으로 전환됨: think 도구 대신 워크플로우에서 분석 지침 제공
+        assert "Analyze" in prompt
+        assert "Step 1" in prompt
 
     def test_contains_workflow_steps(self):
         """워크플로우 단계가 있는지 확인"""
@@ -100,7 +101,6 @@ class TestGetSystemPrompt:
     def test_default_tools_used_when_none(self):
         """도구가 없을 때 기본 도구 설명이 사용되는지 확인"""
         prompt = get_system_prompt(tools=None)
-        assert "arag_search" in prompt
         assert "aweb_search" in prompt
 
     def test_contains_quality_check(self):

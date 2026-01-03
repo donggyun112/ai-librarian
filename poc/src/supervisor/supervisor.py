@@ -38,7 +38,7 @@ from config import config
 # ============================================================
 # 상수 정의
 # ============================================================
-SEARCH_TOOLS = ["arag_search", "aweb_search"]
+SEARCH_TOOLS = ["aweb_search"]
 THINK_TOOL = "think"
 DEFAULT_MAX_TOKENS = 4096
 DEFAULT_MAX_STEPS = 10

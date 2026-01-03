@@ -1,7 +1,7 @@
 """tools.py 테스트"""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.supervisor.tools import think, arag_search, aweb_search, TOOLS
+from src.supervisor.tools import think, aweb_search, TOOLS
 
 
 class TestThinkTool:
@@ -28,31 +28,11 @@ class TestToolsList:
         """필수 도구들이 포함되어 있는지 확인"""
         tool_names = [t.name for t in TOOLS]
         assert "think" in tool_names
-        assert "arag_search" in tool_names
         assert "aweb_search" in tool_names
 
     def test_tools_count(self):
         """도구 개수 확인"""
-        assert len(TOOLS) == 3
-
-
-class TestAragSearch:
-    """arag_search 도구 테스트"""
-
-    @pytest.mark.asyncio
-    async def test_returns_rag_result_format(self):
-        """RAG 검색 결과 포맷 확인"""
-        with patch("src.supervisor.tools._get_rag_worker") as mock_get_worker:
-            mock_worker = MagicMock()
-            mock_result = MagicMock()
-            mock_result.content = "테스트 RAG 결과"
-            mock_worker.execute = AsyncMock(return_value=mock_result)
-            mock_get_worker.return_value = mock_worker
-
-            result = await arag_search.ainvoke({"query": "테스트 쿼리"})
-
-            assert "[RAG 검색 결과]" in result
-            assert "테스트 RAG 결과" in result
+        assert len(TOOLS) == 2
 
 
 class TestAwebSearch:
@@ -76,35 +56,6 @@ class TestAwebSearch:
 
 class TestWorkerLazyInitialization:
     """워커 lazy initialization 테스트"""
-
-    def test_get_rag_worker_creates_instance(self):
-        """_get_rag_worker가 인스턴스 생성"""
-        import src.supervisor.tools as tools_module
-
-        # Reset global state
-        tools_module._rag_worker = None
-
-        with patch("src.supervisor.tools.RAGWorker") as MockRAGWorker:
-            mock_instance = MagicMock()
-            MockRAGWorker.return_value = mock_instance
-
-            from src.supervisor.tools import _get_rag_worker
-            result = _get_rag_worker()
-
-            MockRAGWorker.assert_called_once()
-            assert result == mock_instance
-
-    def test_get_rag_worker_reuses_instance(self):
-        """_get_rag_worker가 기존 인스턴스 재사용"""
-        import src.supervisor.tools as tools_module
-
-        mock_instance = MagicMock()
-        tools_module._rag_worker = mock_instance
-
-        from src.supervisor.tools import _get_rag_worker
-        result = _get_rag_worker()
-
-        assert result is mock_instance
 
     def test_get_web_worker_creates_instance(self):
         """_get_web_worker가 인스턴스 생성"""
@@ -142,11 +93,6 @@ class TestToolDescriptions:
         """think 도구에 설명이 있음"""
         assert think.description
         assert "생각" in think.description
-
-    def test_arag_search_has_description(self):
-        """arag_search 도구에 설명이 있음"""
-        assert arag_search.description
-        assert "문서" in arag_search.description or "검색" in arag_search.description
 
     def test_aweb_search_has_description(self):
         """aweb_search 도구에 설명이 있음"""
