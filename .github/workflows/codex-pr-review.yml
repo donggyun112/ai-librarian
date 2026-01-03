@@ -262,7 +262,41 @@ jobs:
                       gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by passing review"
                     done
                     ```
-                 2. Then approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
+                 2. Resolve all unresolved review threads from github-actions bot:
+                    ```bash
+                    OWNER=$(echo "$REPO" | cut -d'/' -f1)
+                    REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
+
+                    # Get unresolved thread IDs from github-actions bot
+                    gh api graphql -f query='
+                      query($owner: String!, $repo: String!, $pr: Int!) {
+                        repository(owner: $owner, name: $repo) {
+                          pullRequest(number: $pr) {
+                            reviewThreads(first: 100) {
+                              nodes {
+                                id
+                                isResolved
+                                comments(first: 1) {
+                                  nodes { author { login } }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    ' -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+                      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions[bot]") | .id' | \
+                    while read thread_id; do
+                      gh api graphql -f query='
+                        mutation($threadId: ID!) {
+                          resolveReviewThread(input: {threadId: $threadId}) {
+                            thread { isResolved }
+                          }
+                        }
+                      ' -f threadId="$thread_id"
+                    done
+                    ```
+                 3. Then approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
                - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
 
             7. Exit after completing review
