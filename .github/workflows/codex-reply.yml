@@ -1,0 +1,193 @@
+name: Codex Reply
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  codex-reply:
+    if: |
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       !contains(github.event.comment.body, '/codex review') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+      ||
+      (github.event_name == 'pull_request_review_comment' &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Check if reply to AI comment
+        id: check_reply
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Only trigger if this is a reply to github-actions bot
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            # Determine API path based on event type
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            fi
+
+            ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
+            if [ "$ORIGINAL_AUTHOR" = "github-actions" ]; then
+              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Fallback: check for direct mentions
+          if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex"; then
+            echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_ai_reply=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Codex CLI
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: npm install -g @openai/codex@latest
+
+      - name: Restore Codex OAuth credentials
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "::error::CODEX_AUTH_JSON secret is not configured"
+            exit 1
+          fi
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+
+      - name: Setup MCP servers
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: |
+          cat >> ~/.codex/config.toml << 'EOF'
+
+          # Context7 - Library documentation (LangChain, LangGraph, FastAPI, Pydantic, etc.)
+          [mcp_servers.context7]
+          command = "npx"
+          args = ["-y", "@upstash/context7-mcp"]
+          EOF
+
+          echo "✅ MCP servers configured (context7)"
+
+      - name: Get context for reply
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          COMMENT_PATH: ${{ github.event.comment.path }}
+          COMMENT_LINE: ${{ github.event.comment.line }}
+        run: |
+          # Get original AI comment content
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            fi
+
+            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line}' 2>/dev/null || echo "{}")
+            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"
+          echo "line_number=${COMMENT_LINE:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Reply to user
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          USER_COMMENT: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          ORIGINAL_CONTEXT: ${{ steps.context.outputs.original_comment }}
+          FILE_PATH: ${{ steps.context.outputs.file_path }}
+          LINE_NUMBER: ${{ steps.context.outputs.line_number }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question about your code review.
+
+          <context>
+          REPO: $REPO
+          PR_NUMBER: $PR_NUMBER
+          EVENT_TYPE: $EVENT_NAME
+          USER_QUESTION: $USER_COMMENT
+          FILE_PATH: $FILE_PATH
+          LINE_NUMBER: $LINE_NUMBER
+          ORIGINAL_AI_COMMENT: $ORIGINAL_CONTEXT
+          IN_REPLY_TO_ID: $IN_REPLY_TO_ID
+          </context>
+
+          <instructions>
+          1. First, get the PR info and understand the context:
+             - \`gh pr view \"$PR_NUMBER\" --json title,body,headRefOid\`
+             - If FILE_PATH is set, read the relevant file: \`cat \"\$FILE_PATH\"\`
+
+          2. Review your original suggestion (in ORIGINAL_AI_COMMENT) and the user's question
+
+          3. Provide a helpful, technical response that:
+             - Directly answers the user's question
+             - Explains the reasoning behind your original suggestion if asked
+             - Provides code examples if helpful
+
+          4. Post your reply using the correct API based on EVENT_TYPE:
+
+             If EVENT_TYPE is 'pull_request_review_comment' (inline code comment):
+             \`\`\`bash
+             gh api \"repos/$REPO/pulls/comments/$IN_REPLY_TO_ID/replies\" \\
+               --method POST \\
+               -f body=\"Your response here\"
+             \`\`\`
+
+             If EVENT_TYPE is 'issue_comment' (PR conversation comment):
+             \`\`\`bash
+             gh pr comment \"$PR_NUMBER\" --body \"Your response here\"
+             \`\`\`
+
+          5. Keep response concise and focused
+          </instructions>
+
+          Answer the user's question about your code review suggestion."
+
+          codex exec \
+            -m gpt-5-codex \
+            --sandbox danger-full-access \
+            -c shell_environment_policy.inherit=all \
+            -c ask_for_approval=\"never\" \
+            -C "$GITHUB_WORKSPACE" \
+            -- "$CODEX_PROMPT"
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
