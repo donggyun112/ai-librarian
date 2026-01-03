@@ -61,6 +61,30 @@ jobs:
           printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
           chmod 600 ~/.codex/auth.json
 
+      - name: Setup MCP servers
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat >> ~/.codex/config.toml << 'EOF'
+
+          # Context7 - Library documentation (LangChain, FastAPI, Pydantic, etc.)
+          [mcp_servers.context7]
+          command = "npx"
+          args = ["-y", "@upstash/context7-mcp"]
+
+          # GitHub MCP - Enhanced GitHub API access
+          [mcp_servers.github]
+          command = "npx"
+          args = ["-y", "@anthropic/mcp-server-github"]
+          EOF
+
+          # Set GitHub token for MCP
+          echo "" >> ~/.codex/config.toml
+          echo '[mcp_servers.github.env]' >> ~/.codex/config.toml
+          echo "GITHUB_TOKEN = \"$GITHUB_TOKEN\"" >> ~/.codex/config.toml
+
+          echo "✅ MCP servers configured"
+
       - name: Run Codex review
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,6 +106,12 @@ jobs:
             - poc/src/services: Business logic
             - poc/src/supervisor: LangGraph supervisor/orchestrator
             - poc/src/workers: LangGraph worker nodes
+
+            AVAILABLE MCP TOOLS:
+            - context7: Use to look up LangChain, LangGraph, FastAPI, Pydantic documentation
+            - github: Enhanced GitHub API access for PR details, issues, etc.
+
+            When reviewing LangChain/LangGraph code, use context7 to verify correct API usage.
             </context>
 
             <project_rules>
@@ -162,7 +192,8 @@ jobs:
             ```
 
             CRITICAL RULES:
-            - line must be integer: use `-F line:=42` (not `-f line=42`)
+            - line must be integer: YOU MUST USE UPPERCASE `-F` with `:=` like: `-F line:=42`
+            - DO NOT use `-f` for the line argument (it creates an invalid `line:` key)
             - commit_id: get from `gh pr view --json headRefOid`
             - side: "RIGHT" for new code, "LEFT" for old code
             - path: relative path from repo root
