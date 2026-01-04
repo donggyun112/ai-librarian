@@ -227,15 +227,27 @@ def post_summary_comment(repo: str, pr_number: int, summary: str) -> None:
 
 
 def submit_review_decision(pr_number: int, decision: str) -> None:
-    """최종 리뷰 결정 (request-changes only)
+    """최종 리뷰 결정 (approve/request-changes)
 
-    Note: APPROVE는 GITHUB_TOKEN 권한 제한으로 지원하지 않음.
-    이전 CHANGES_REQUESTED 리뷰가 dismiss되면 머지 블럭이 해제됨.
+    Note: APPROVE는 GitHub repo settings에서 아래 옵션이 켜져 있어야 함:
+    Settings → Actions → General → Workflow permissions
+    → ✅ "Allow GitHub Actions to create and approve pull requests"
+
+    권한이 없으면 approve 실패하지만, dismiss_previous_reviews()가
+    이전 CHANGES_REQUESTED를 제거하므로 머지 블럭은 해제됨.
     """
     if decision == "APPROVE":
-        # GITHUB_TOKEN은 approve 권한이 없음
-        # dismiss_previous_reviews()가 이전 CHANGES_REQUESTED를 제거하므로 머지 가능
-        print("Decision: APPROVE - merge unblocked (previous reviews dismissed)")
+        try:
+            run_gh([
+                "pr", "review", str(pr_number),
+                "--approve",
+                "--body", "✅ AI Review Passed - All checks passed"
+            ])
+            print("Approved PR")
+        except RuntimeError as e:
+            # GitHub Actions GITHUB_TOKEN은 approve 권한이 없을 수 있음
+            print(f"Note: Could not approve PR (expected with default GITHUB_TOKEN): {e}", file=sys.stderr)
+            print("Previous CHANGES_REQUESTED reviews were dismissed - merge is unblocked")
     elif decision == "CHANGES_REQUESTED":
         run_gh([
             "pr", "review", str(pr_number),
