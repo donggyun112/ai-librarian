@@ -229,13 +229,20 @@ jobs:
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
         run: |
-          python3 .github/scripts/post_reply.py \
-            --repo "$REPO" \
-            --pr "$PR_NUMBER" \
-            --event-type "$EVENT_NAME" \
-            --in-reply-to "$IN_REPLY_TO_ID" \
-            --thread-node-id "$THREAD_NODE_ID" \
-            --input /tmp/reply_output.json
+          # Build command with optional --in-reply-to
+          CMD="python3 .github/scripts/post_reply.py --repo \"$REPO\" --pr \"$PR_NUMBER\" --event-type \"$EVENT_NAME\""
+
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            CMD="$CMD --in-reply-to \"$IN_REPLY_TO_ID\""
+          fi
+
+          if [ -n "$THREAD_NODE_ID" ] && [ "$THREAD_NODE_ID" != "null" ]; then
+            CMD="$CMD --thread-node-id \"$THREAD_NODE_ID\""
+          fi
+
+          CMD="$CMD --input /tmp/reply_output.json"
+
+          eval $CMD
 
       - name: Cleanup credentials
         if: always()

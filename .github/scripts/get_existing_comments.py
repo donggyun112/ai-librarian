@@ -37,18 +37,28 @@ def run_gh(args: list[str]) -> str:
 
 
 def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
-    """github-actions bot의 인라인 리뷰 코멘트 조회"""
+    """github-actions bot의 인라인 리뷰 코멘트 조회 (pagination 지원)"""
 
-    # REST API로 리뷰 코멘트 조회
+    # REST API로 리뷰 코멘트 조회 (pagination)
     comments_json = run_gh([
         "api", f"repos/{repo}/pulls/{pr_number}/comments",
+        "--paginate",
         "--jq", '[.[] | select(.user.login == "github-actions[bot]") | {id: .id, path: .path, line: .line, body: .body, created_at: .created_at, node_id: .node_id}]'
     ])
 
     if not comments_json:
         return []
 
-    comments = json.loads(comments_json)
+    # --paginate outputs multiple JSON arrays, one per page
+    # We need to merge them
+    comments = []
+    for line in comments_json.strip().split("\n"):
+        if line.strip():
+            try:
+                page_comments = json.loads(line)
+                comments.extend(page_comments)
+            except json.JSONDecodeError:
+                continue
 
     # GraphQL로 스레드 resolve 상태 조회
     owner, repo_name = repo.split("/")
