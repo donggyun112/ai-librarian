@@ -40,6 +40,8 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
     """github-actions bot의 인라인 리뷰 코멘트 조회 (pagination 지원)"""
 
     # REST API로 리뷰 코멘트 조회 (pagination)
+    # Note: --paginate with --jq outputs one JSON array per page, separated by newlines
+    # Each page is a complete JSON array, so we can parse and merge them
     comments_json = run_gh([
         "api", f"repos/{repo}/pulls/{pr_number}/comments",
         "--paginate",
@@ -49,8 +51,8 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
     if not comments_json:
         return []
 
-    # --paginate outputs multiple JSON arrays, one per page
-    # We need to merge them
+    # --paginate with --jq outputs multiple JSON arrays, one per page (each on its own line)
+    # We need to parse each line as a separate JSON array and merge them
     comments = []
     for line in comments_json.strip().split("\n"):
         if line.strip():
@@ -118,7 +120,9 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
         for thread in threads:
             if thread.get("comments", {}).get("nodes"):
                 first_comment = thread["comments"]["nodes"][0]
-                if first_comment.get("author", {}).get("login") == "github-actions[bot]":
+                # GraphQL returns "github-actions" while REST API returns "github-actions[bot]"
+                author_login = first_comment.get("author", {}).get("login", "")
+                if author_login in ("github-actions[bot]", "github-actions"):
                     comment_id = first_comment.get("databaseId")
                     if comment_id:
                         thread_map[comment_id] = {

@@ -104,12 +104,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           COMMENT_PATH: ${{ github.event.comment.path }}
           COMMENT_LINE: ${{ github.event.comment.line }}
+          COMMENT_NODE_ID: ${{ github.event.comment.node_id }}
         run: |
-          # Get original AI comment content
+          # Get original AI comment content and thread node_id
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            # This is a reply to an existing comment - get the parent comment info
             if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
               API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
             else
@@ -120,10 +124,48 @@ jobs:
             echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
             echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
             echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
 
-            # Get thread node_id for resolving
-            THREAD_NODE_ID=$(gh api "$API_PATH" --jq '.node_id' 2>/dev/null || echo "")
-            echo "thread_node_id=${THREAD_NODE_ID}" >> "$GITHUB_OUTPUT"
+          # Get the review thread node_id (PRRT_...) for resolving
+          # Note: comment.node_id is PRRC_... (comment), but resolveReviewThread needs PRRT_... (thread)
+          # We need to query GraphQL to find the thread that contains this comment
+          if [ "$GITHUB_EVENT_NAME" = "pull_request_review_comment" ]; then
+            QUERY='
+            query($owner: String!, $repo: String!, $pr: Int!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100) {
+                    nodes {
+                      id
+                      comments(first: 1) {
+                        nodes { id }
+                      }
+                    }
+                  }
+                }
+              }
+            }'
+
+            OWNER="${REPO%/*}"
+            REPO_NAME="${REPO#*/}"
+
+            # Find the thread that contains our comment (by comment node_id)
+            # For top-level comments, COMMENT_NODE_ID is the first comment in the thread
+            # For replies, IN_REPLY_TO_ID's node_id is the first comment
+            if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+              # Get the parent comment's node_id first
+              PARENT_NODE_ID=$(gh api "repos/$REPO/pulls/comments/$IN_REPLY_TO_ID" --jq '.node_id' 2>/dev/null || echo "")
+              TARGET_COMMENT_ID="$PARENT_NODE_ID"
+            else
+              TARGET_COMMENT_ID="$COMMENT_NODE_ID"
+            fi
+
+            if [ -n "$TARGET_COMMENT_ID" ]; then
+              THREAD_NODE_ID=$(gh api graphql -f query="$QUERY" \
+                -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
+                --jq ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id" 2>/dev/null || echo "")
+              echo "thread_node_id=${THREAD_NODE_ID}" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
           echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"

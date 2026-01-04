@@ -99,7 +99,7 @@ class TestGetBotReviewComments:
         page1 = [{"id": 1, "path": "a.py", "line": 1, "body": "test1", "created_at": "2024-01-01", "node_id": "n1"}]
         page2 = [{"id": 2, "path": "b.py", "line": 2, "body": "test2", "created_at": "2024-01-02", "node_id": "n2"}]
 
-        # Simulate paginated output (newline-separated JSON arrays)
+        # --paginate with --jq outputs one JSON array per page, separated by newlines
         paginated_output = json.dumps(page1) + "\n" + json.dumps(page2)
 
         mock_gh.side_effect = [
@@ -116,7 +116,7 @@ class TestGetBotReviewComments:
     @patch("get_existing_comments.run_gh")
     def test_handles_malformed_pagination(self, mock_gh):
         """Test handling malformed JSON in pagination."""
-        # Some valid, some invalid
+        # Some valid, some invalid - invalid lines should be skipped
         paginated_output = '[{"id": 1, "path": "a.py", "line": 1, "body": "test", "created_at": "2024-01-01", "node_id": "n1"}]\ninvalid json\n[{"id": 2, "path": "b.py", "line": 2, "body": "test2", "created_at": "2024-01-02", "node_id": "n2"}]'
 
         mock_gh.side_effect = [
