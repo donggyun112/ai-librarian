@@ -60,14 +60,18 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
             except json.JSONDecodeError:
                 continue
 
-    # GraphQL로 스레드 resolve 상태 조회
+    # GraphQL로 스레드 resolve 상태 조회 (pagination 지원)
     owner, repo_name = repo.split("/")
 
     query = """
-    query($owner: String!, $repo: String!, $pr: Int!) {
+    query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $pr) {
-          reviewThreads(first: 100) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
               isResolved
@@ -85,20 +89,31 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
     }
     """
 
-    threads_result = run_gh([
-        "api", "graphql",
-        "-f", f"query={query}",
-        "-f", f"owner={owner}",
-        "-f", f"repo={repo_name}",
-        "-F", f"pr={pr_number}",
-    ])
-
     # 스레드 정보를 comment id로 매핑
     thread_map = {}  # comment_id -> {thread_id, is_resolved}
+    cursor = None
+    has_next_page = True
 
-    if threads_result:
+    while has_next_page:
+        gh_args = [
+            "api", "graphql",
+            "-f", f"query={query}",
+            "-f", f"owner={owner}",
+            "-f", f"repo={repo_name}",
+            "-F", f"pr={pr_number}",
+        ]
+        if cursor:
+            gh_args.extend(["-f", f"cursor={cursor}"])
+
+        threads_result = run_gh(gh_args)
+
+        if not threads_result:
+            break
+
         data = json.loads(threads_result)
-        threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {}).get("nodes", [])
+        review_threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {})
+        threads = review_threads.get("nodes", [])
+        page_info = review_threads.get("pageInfo", {})
 
         for thread in threads:
             if thread.get("comments", {}).get("nodes"):
@@ -110,6 +125,9 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
                             "thread_id": thread["id"],
                             "is_resolved": thread.get("isResolved", False)
                         }
+
+        has_next_page = page_info.get("hasNextPage", False)
+        cursor = page_info.get("endCursor")
 
     # 결과 조합
     result = []

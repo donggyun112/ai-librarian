@@ -96,14 +96,18 @@ def dismiss_previous_reviews(repo: str, pr_number: int) -> None:
 
 
 def resolve_bot_threads(repo: str, pr_number: int) -> None:
-    """github-actions bot의 미해결 스레드 resolve"""
+    """github-actions bot의 미해결 스레드 resolve (pagination 지원)"""
     owner, repo_name = repo.split("/")
 
     query = """
-    query($owner: String!, $repo: String!, $pr: Int!) {
+    query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
       repository(owner: $owner, name: $repo) {
         pullRequest(number: $pr) {
-          reviewThreads(first: 100) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
             nodes {
               id
               isResolved
@@ -117,16 +121,40 @@ def resolve_bot_threads(repo: str, pr_number: int) -> None:
     }
     """
 
-    result = run_gh([
-        "api", "graphql",
-        "-f", f"query={query}",
-        "-f", f"owner={owner}",
-        "-f", f"repo={repo_name}",
-        "-F", f"pr={pr_number}",
-        "--jq", '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions[bot]") | .id'
-    ])
+    # 모든 미해결 bot 스레드 수집
+    thread_ids = []
+    cursor = None
+    has_next_page = True
 
-    thread_ids = result.strip().split("\n") if result.strip() else []
+    while has_next_page:
+        gh_args = [
+            "api", "graphql",
+            "-f", f"query={query}",
+            "-f", f"owner={owner}",
+            "-f", f"repo={repo_name}",
+            "-F", f"pr={pr_number}",
+        ]
+        if cursor:
+            gh_args.extend(["-f", f"cursor={cursor}"])
+
+        result = run_gh(gh_args)
+
+        if not result:
+            break
+
+        data = json.loads(result)
+        review_threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {})
+        threads = review_threads.get("nodes", [])
+        page_info = review_threads.get("pageInfo", {})
+
+        for thread in threads:
+            if not thread.get("isResolved", True):
+                comments = thread.get("comments", {}).get("nodes", [])
+                if comments and comments[0].get("author", {}).get("login") == "github-actions[bot]":
+                    thread_ids.append(thread["id"])
+
+        has_next_page = page_info.get("hasNextPage", False)
+        cursor = page_info.get("endCursor")
 
     mutation = """
     mutation($threadId: ID!) {
@@ -199,25 +227,15 @@ def post_summary_comment(repo: str, pr_number: int, summary: str) -> None:
 
 
 def submit_review_decision(pr_number: int, decision: str) -> None:
-    """최종 리뷰 결정 (approve/request-changes)
+    """최종 리뷰 결정 (request-changes only)
 
-    Note: GitHub 레포 설정에서 아래 옵션이 켜져 있어야 함:
-    Settings → Actions → General → Workflow permissions
-    → ✅ "Allow GitHub Actions to create and approve pull requests"
+    Note: APPROVE는 GITHUB_TOKEN 권한 제한으로 지원하지 않음.
+    이전 CHANGES_REQUESTED 리뷰가 dismiss되면 머지 블럭이 해제됨.
     """
     if decision == "APPROVE":
-        try:
-            run_gh([
-                "pr", "review", str(pr_number),
-                "--approve",
-                "--body", "✅ AI Review Passed - All checks passed"
-            ])
-            print("Approved PR")
-        except RuntimeError as e:
-            # GitHub Actions GITHUB_TOKEN은 approve 권한이 없을 수 있음
-            # 이전 CHANGES_REQUESTED가 dismiss되었으므로 머지 블럭은 해제됨
-            print(f"Note: Could not approve PR (expected with GITHUB_TOKEN): {e}", file=sys.stderr)
-            print("Previous CHANGES_REQUESTED reviews were dismissed - merge is unblocked")
+        # GITHUB_TOKEN은 approve 권한이 없음
+        # dismiss_previous_reviews()가 이전 CHANGES_REQUESTED를 제거하므로 머지 가능
+        print("Decision: APPROVE - merge unblocked (previous reviews dismissed)")
     elif decision == "CHANGES_REQUESTED":
         run_gh([
             "pr", "review", str(pr_number),
