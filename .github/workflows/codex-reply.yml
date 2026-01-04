@@ -187,13 +187,24 @@ jobs:
 
           5. Keep response concise and focused
 
-          6. After posting your reply, if EVENT_TYPE is 'pull_request_review_comment' and THREAD_NODE_ID is available,
-             resolve the conversation thread using GraphQL:
-             \`\`\`bash
-             gh api graphql -f query='mutation { resolveReviewThread(input: {threadId: \"$THREAD_NODE_ID\"}) { thread { isResolved } } }'
-             \`\`\`
-             This marks the conversation as resolved after you've answered the question.
+          6. Output ONLY the JSON object - no markdown fences, no extra text
           </instructions>
+
+          <output_protocol>
+          YOU MUST OUTPUT A SINGLE JSON OBJECT TO STDOUT AS YOUR FINAL ACTION.
+
+          JSON Schema:
+          {
+            \"reply\": \"Your response in markdown format\",
+            \"resolve_thread\": true | false
+          }
+
+          - reply: The actual response content (markdown supported)
+          - resolve_thread: Set to true if the question has been fully answered
+
+          CRITICAL: Do NOT execute gh api calls yourself. Only output JSON.
+          The post_reply.py script will handle all GitHub API calls.
+          </output_protocol>
 
           Answer the user's question about your code review suggestion."
 
@@ -201,10 +212,31 @@ jobs:
             -m gpt-5-codex \
             --sandbox danger-full-access \
             -c shell_environment_policy.inherit=all \
-            -c ask_for_approval=\"never\" \
+            -c ask_for_approval="never" \
             -C "$GITHUB_WORKSPACE" \
-            -- "$CODEX_PROMPT"
+            -- "$CODEX_PROMPT" > /tmp/reply_output.json
+
+          echo "=== Codex Output ==="
+          cat /tmp/reply_output.json
+
+      - name: Post reply to GitHub
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
+        run: |
+          python3 .github/scripts/post_reply.py \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --event-type "$EVENT_NAME" \
+            --in-reply-to "$IN_REPLY_TO_ID" \
+            --thread-node-id "$THREAD_NODE_ID" \
+            --input /tmp/reply_output.json
 
       - name: Cleanup credentials
         if: always()
-        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml /tmp/reply_output.json
