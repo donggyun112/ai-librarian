@@ -178,11 +178,13 @@ jobs:
                 fi
 
                 # Try to find matching thread in current page
-                THREAD_NODE_ID=$(echo "$RESULT" | jq -r ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id" 2>/dev/null || echo "")
+                # Note: jq -r returns "null" string when no match, so we filter it out
+                THREAD_NODE_ID=$(echo "$RESULT" | jq -r ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id // empty" 2>/dev/null || echo "")
 
-                if [ -n "$THREAD_NODE_ID" ]; then
+                if [ -n "$THREAD_NODE_ID" ] && [ "$THREAD_NODE_ID" != "null" ]; then
                   break
                 fi
+                THREAD_NODE_ID=""  # Reset if null
 
                 # Check if there are more pages
                 HAS_NEXT=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' 2>/dev/null || echo "false")

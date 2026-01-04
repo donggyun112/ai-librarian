@@ -53,10 +53,10 @@ class TestPostReplyToReviewComment:
         """Test posting reply to review comment."""
         mock_gh.return_value = ""
 
-        post_reply_to_review_comment("owner/repo", 42, 12345, "My reply")
+        post_reply_to_review_comment("owner/repo", 12345, "My reply")
 
         mock_gh.assert_called_once_with([
-            "api", "repos/owner/repo/pulls/42/comments/12345/replies",
+            "api", "repos/owner/repo/pulls/comments/12345/replies",
             "--method", "POST",
             "-f", "body=My reply"
         ])
@@ -67,7 +67,7 @@ class TestPostReplyToReviewComment:
         mock_gh.return_value = ""
 
         body = "```python\nprint('hello')\n```"
-        post_reply_to_review_comment("owner/repo", 1, 123, body)
+        post_reply_to_review_comment("owner/repo", 123, body)
 
         call_args = mock_gh.call_args[0][0]
         assert f"body={body}" in call_args
@@ -176,7 +176,7 @@ class TestMainFunction:
         ]):
             main()
 
-        mock_post.assert_called_once_with("owner/repo", 42, 12345, sample_reply_payload["reply"])
+        mock_post.assert_called_once_with("owner/repo", 12345, sample_reply_payload["reply"])
 
     @patch("post_reply.run_gh")
     def test_main_no_resolve(self, mock_gh, tmp_path):

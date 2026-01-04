@@ -209,8 +209,11 @@ def resolve_bot_threads(repo: str, pr_number: int) -> None:
         for thread in threads:
             if not thread.get("isResolved", True):
                 comments = thread.get("comments", {}).get("nodes", [])
-                if comments and comments[0].get("author", {}).get("login") == "github-actions[bot]":
-                    thread_ids.append(thread["id"])
+                if comments:
+                    # GraphQL returns "github-actions" while REST API returns "github-actions[bot]"
+                    author_login = comments[0].get("author", {}).get("login", "")
+                    if author_login in ("github-actions[bot]", "github-actions"):
+                        thread_ids.append(thread["id"])
 
         has_next_page = page_info.get("hasNextPage", False)
         cursor = page_info.get("endCursor")

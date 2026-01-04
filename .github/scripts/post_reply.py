@@ -38,10 +38,14 @@ def run_gh(args: list[str], input_data: Optional[str] = None) -> str:
     return result.stdout.strip()
 
 
-def post_reply_to_review_comment(repo: str, pr_number: int, in_reply_to_id: int, body: str) -> None:
-    """인라인 리뷰 코멘트에 답글 게시"""
+def post_reply_to_review_comment(repo: str, in_reply_to_id: int, body: str) -> None:
+    """인라인 리뷰 코멘트에 답글 게시
+
+    Note: GitHub API endpoint is /repos/{repo}/pulls/comments/{comment_id}/replies
+    NOT /repos/{repo}/pulls/{pr_number}/comments/{comment_id}/replies
+    """
     run_gh([
-        "api", f"repos/{repo}/pulls/{pr_number}/comments/{in_reply_to_id}/replies",
+        "api", f"repos/{repo}/pulls/comments/{in_reply_to_id}/replies",
         "--method", "POST",
         "-f", f"body={body}"
     ])
@@ -121,7 +125,7 @@ def main() -> None:
         if not args.in_reply_to:
             print("Error: --in-reply-to required for review comment replies", file=sys.stderr)
             sys.exit(1)
-        post_reply_to_review_comment(args.repo, args.pr, args.in_reply_to, reply_body)
+        post_reply_to_review_comment(args.repo, args.in_reply_to, reply_body)
     else:
         post_reply_to_issue_comment(args.pr, reply_body)
 
