@@ -309,8 +309,9 @@ jobs:
                 {
                   "path": "relative/path/to/file.py",
                   "line": 42,
-                  "body": "```suggestion\ncorrected code here\n```\nExplanation",
-                  "start_line": null
+                  "body": "```suggestion\ncorrected code here\n```\nExplanation of what this fixes",
+                  "start_line": null,
+                  "severity": "warning"
                 }
               ],
               "resolve_thread_ids": ["PRRT_xxx", "PRRT_yyy"]
@@ -319,8 +320,19 @@ jobs:
             FIELDS:
             - decision: APPROVE if all checks pass, CHANGES_REQUESTED if any fail
             - summary: Full markdown review
-            - inline_comments: NEW issues found in this review
+            - inline_comments: NEW issues found in this review (do NOT duplicate existing comments)
             - resolve_thread_ids: thread_id values from <previous_review_comments> that are now FIXED
+
+            SEVERITY LEVELS (required for each inline_comment):
+            - "critical": Security vulnerabilities, data loss risks, breaking bugs (🚨)
+            - "warning": Logic errors, potential bugs, missing error handling (⚠️)
+            - "suggestion": Code improvements, better patterns, performance (💡)
+            - "nitpick": Style, naming conventions, minor cleanups (📝)
+
+            DUPLICATE PREVENTION:
+            - Check existing_comments.json for comments at the same (path, line)
+            - Do NOT create new comments for issues already commented on
+            - Only add comments for NEW issues not already flagged
 
             CRITICAL: Do NOT execute gh api calls yourself. Only output JSON.
             The post_review.py script will handle all GitHub API calls.

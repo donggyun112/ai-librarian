@@ -24,6 +24,9 @@ from post_review import (
     post_summary_comment,
     submit_review_decision,
     resolve_bot_threads,
+    get_existing_comment_locations,
+    filter_duplicate_comments,
+    format_comment_body,
 )
 
 
@@ -298,3 +301,112 @@ class TestSubmitReviewDecision:
         mock_gh.assert_not_called()
         captured = capsys.readouterr()
         assert "Unknown decision" in captured.err
+
+
+class TestSeverityAndDuplicates:
+    """Tests for severity formatting and duplicate filtering."""
+
+    def test_format_comment_body_with_severity(self):
+        """Test severity emoji is added to comment body."""
+        comment = InlineComment(
+            path="file.py",
+            line=10,
+            body="This is a problem",
+            severity="critical"
+        )
+        formatted = format_comment_body(comment)
+        assert "🚨" in formatted
+        assert "CRITICAL" in formatted
+
+    def test_format_comment_body_suggestion_block(self):
+        """Test severity is added before suggestion block."""
+        comment = InlineComment(
+            path="file.py",
+            line=10,
+            body="```suggestion\nfixed code\n```\nExplanation",
+            severity="warning"
+        )
+        formatted = format_comment_body(comment)
+        assert formatted.startswith("**⚠️ WARNING**")
+        assert "```suggestion" in formatted
+
+    def test_filter_duplicate_comments(self):
+        """Test duplicate comments are filtered out."""
+        comments = [
+            InlineComment(path="a.py", line=10, body="issue 1"),
+            InlineComment(path="b.py", line=20, body="issue 2"),
+            InlineComment(path="a.py", line=10, body="duplicate"),
+        ]
+        existing = {("a.py", 10)}
+
+        filtered = filter_duplicate_comments(comments, existing)
+
+        assert len(filtered) == 1
+        assert filtered[0].path == "b.py"
+
+    def test_filter_no_duplicates(self):
+        """Test no filtering when no duplicates exist."""
+        comments = [
+            InlineComment(path="a.py", line=10, body="issue 1"),
+            InlineComment(path="b.py", line=20, body="issue 2"),
+        ]
+        existing = {("c.py", 30)}
+
+        filtered = filter_duplicate_comments(comments, existing)
+
+        assert len(filtered) == 2
+
+    @patch("post_review.run_gh")
+    def test_get_existing_comment_locations(self, mock_gh):
+        """Test fetching existing comment locations."""
+        mock_gh.return_value = '[{"path": "file.py", "line": 42}]'
+
+        locations = get_existing_comment_locations("owner/repo", 1)
+
+        assert ("file.py", 42) in locations
+
+    @patch("post_review.run_gh")
+    def test_get_existing_comment_locations_empty(self, mock_gh):
+        """Test empty response returns empty set."""
+        mock_gh.return_value = ""
+
+        locations = get_existing_comment_locations("owner/repo", 1)
+
+        assert locations == set()
+
+    def test_parse_payload_with_severity(self):
+        """Test parsing payload includes severity."""
+        data = {
+            "decision": "CHANGES_REQUESTED",
+            "summary": "Issues found",
+            "inline_comments": [
+                {
+                    "path": "file.py",
+                    "line": 42,
+                    "body": "Fix this",
+                    "severity": "critical"
+                }
+            ],
+            "resolve_thread_ids": []
+        }
+        payload = parse_review_payload(data)
+
+        assert payload.inline_comments[0].severity == "critical"
+
+    def test_parse_payload_default_severity(self):
+        """Test default severity is warning."""
+        data = {
+            "decision": "CHANGES_REQUESTED",
+            "summary": "Issues found",
+            "inline_comments": [
+                {
+                    "path": "file.py",
+                    "line": 42,
+                    "body": "Fix this"
+                }
+            ],
+            "resolve_thread_ids": []
+        }
+        payload = parse_review_payload(data)
+
+        assert payload.inline_comments[0].severity == "warning"

@@ -39,6 +39,7 @@ class InlineComment:
     line: int
     body: str
     start_line: Optional[int] = None
+    severity: str = "warning"  # "critical", "warning", "suggestion", "nitpick"
 
 
 @dataclass
@@ -47,6 +48,64 @@ class ReviewPayload:
     summary: str
     inline_comments: list[InlineComment]
     resolve_thread_ids: list[str]  # 해결된 이슈의 thread_id 목록
+
+
+def get_existing_comment_locations(repo: str, pr_number: int) -> set[tuple[str, int]]:
+    """기존 bot 코멘트의 (path, line) 위치 조회"""
+    try:
+        comments_json = run_gh([
+            "api", f"repos/{repo}/pulls/{pr_number}/comments",
+            "--paginate",
+            "--jq", '[.[] | select(.user.login == "github-actions[bot]") | {path: .path, line: .line}]'
+        ])
+        if not comments_json:
+            return set()
+
+        locations = set()
+        for line in comments_json.strip().split("\n"):
+            if line.strip():
+                try:
+                    page_comments = json.loads(line)
+                    for c in page_comments:
+                        if c.get("path") and c.get("line"):
+                            locations.add((c["path"], c["line"]))
+                except json.JSONDecodeError:
+                    continue
+        return locations
+    except RuntimeError:
+        return set()
+
+
+def filter_duplicate_comments(
+    comments: list[InlineComment],
+    existing_locations: set[tuple[str, int]]
+) -> list[InlineComment]:
+    """기존 코멘트와 같은 위치의 새 코멘트 필터링"""
+    filtered = []
+    for c in comments:
+        if (c.path, c.line) not in existing_locations:
+            filtered.append(c)
+        else:
+            print(f"Skipping duplicate comment at {c.path}:{c.line}")
+    return filtered
+
+
+SEVERITY_EMOJI = {
+    "critical": "🚨",
+    "warning": "⚠️",
+    "suggestion": "💡",
+    "nitpick": "📝",
+}
+
+
+def format_comment_body(comment: InlineComment) -> str:
+    """severity 이모지를 코멘트 body에 추가"""
+    emoji = SEVERITY_EMOJI.get(comment.severity, "⚠️")
+    severity_label = comment.severity.upper()
+    # body가 suggestion 블록으로 시작하면 그 앞에 severity 추가
+    if comment.body.strip().startswith("```suggestion"):
+        return f"**{emoji} {severity_label}**\n\n{comment.body}"
+    return f"**{emoji} {severity_label}**: {comment.body}"
 
 
 def run_gh(args: list[str], input_data: Optional[str] = None) -> str:
@@ -189,7 +248,7 @@ def post_inline_comments(repo: str, pr_number: int, commit_sha: str, comments: l
             "path": c.path,
             "line": c.line,
             "side": "RIGHT",
-            "body": c.body,
+            "body": format_comment_body(c),
         }
         if c.start_line:
             comment_obj["start_line"] = c.start_line
@@ -291,6 +350,7 @@ def parse_review_payload(data: dict) -> ReviewPayload:
             line=c["line"],
             body=c["body"],
             start_line=c.get("start_line"),
+            severity=c.get("severity", "warning"),
         )
         for c in data.get("inline_comments", [])
     ]
@@ -344,9 +404,12 @@ def main() -> None:
         print(f"Resolving {len(payload.resolve_thread_ids)} threads marked as fixed")
         resolve_specific_threads(payload.resolve_thread_ids)
 
-    # 3. 인라인 코멘트 게시
+    # 3. 인라인 코멘트 게시 (중복 필터링)
     if payload.inline_comments:
-        post_inline_comments(args.repo, args.pr, commit_sha, payload.inline_comments)
+        existing_locations = get_existing_comment_locations(args.repo, args.pr)
+        filtered_comments = filter_duplicate_comments(payload.inline_comments, existing_locations)
+        print(f"Filtered {len(payload.inline_comments) - len(filtered_comments)} duplicate comments")
+        post_inline_comments(args.repo, args.pr, commit_sha, filtered_comments)
 
     # 4. 요약 코멘트 게시
     post_summary_comment(args.repo, args.pr, payload.summary)
