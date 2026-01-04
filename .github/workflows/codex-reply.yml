@@ -34,7 +34,7 @@ jobs:
       - name: Check if reply to AI comment
         id: check_reply
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           COMMENT_BODY: ${{ github.event.comment.body }}
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           REPO: ${{ github.repository }}
@@ -102,7 +102,7 @@ jobs:
         if: steps.check_reply.outputs.is_ai_reply == 'true'
         id: context
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           COMMENT_ID: ${{ github.event.comment.id }}
@@ -205,8 +205,8 @@ jobs:
       - name: Reply to user
         if: steps.check_reply.outputs.is_ai_reply == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           REPO: ${{ github.repository }}
           USER_COMMENT: ${{ github.event.comment.body }}
@@ -295,7 +295,10 @@ jobs:
       - name: Post reply to GitHub
         if: steps.check_reply.outputs.is_ai_reply == 'true'
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          # Use GITHUB_TOKEN for posting replies (appears as github-actions[bot])
+          # Use GH_TOKEN only for GraphQL mutations (resolve threads) that require elevated permissions
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_ELEVATED: ${{ secrets.GH_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           EVENT_NAME: ${{ github.event_name }}

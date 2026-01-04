@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -164,14 +165,31 @@ def format_comment_body(comment: InlineComment) -> str:
     return f"**{emoji} {severity_label}**: {comment.body}"
 
 
-def run_gh(args: list[str], input_data: Optional[str] = None) -> str:
-    """gh CLI 실행"""
+def run_gh(args: list[str], input_data: Optional[str] = None, use_elevated_token: bool = False) -> str:
+    """gh CLI 실행
+
+    Args:
+        args: gh CLI arguments
+        input_data: stdin input data
+        use_elevated_token: If True, use GH_TOKEN_ELEVATED env var for operations
+                           that require elevated permissions (e.g., GraphQL mutations)
+    """
     cmd = ["gh"] + args
+
+    # Optionally use elevated token for specific operations
+    env = None
+    if use_elevated_token:
+        elevated_token = os.environ.get("GH_TOKEN_ELEVATED")
+        if elevated_token:
+            env = os.environ.copy()
+            env["GH_TOKEN"] = elevated_token
+
     result = subprocess.run(
         cmd,
         input=input_data,
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         print(f"Error running: {' '.join(cmd)}", file=sys.stderr)
@@ -281,14 +299,38 @@ def resolve_bot_threads(repo: str, pr_number: int) -> None:
             continue
         try:
             # Use JSON input for proper GraphQL variable handling
+            # Use elevated token for GraphQL mutations (resolve requires special permissions)
             payload = json.dumps({
                 "query": mutation,
                 "variables": {"threadId": thread_id}
             })
-            run_gh(["api", "graphql", "--input", "-"], input_data=payload)
+            run_gh(["api", "graphql", "--input", "-"], input_data=payload, use_elevated_token=True)
             print(f"Resolved thread {thread_id}")
         except RuntimeError as e:
             print(f"Warning: Failed to resolve thread {thread_id}: {e}", file=sys.stderr)
+
+
+def generate_inline_summary(comments: list[InlineComment]) -> str:
+    """인라인 코멘트 요약 생성"""
+    severity_counts = {"critical": 0, "warning": 0, "suggestion": 0, "nitpick": 0}
+    for c in comments:
+        severity = c.severity if c.severity in severity_counts else "warning"
+        severity_counts[severity] += 1
+
+    parts = []
+    if severity_counts["critical"] > 0:
+        parts.append(f"🚨 {severity_counts['critical']} critical")
+    if severity_counts["warning"] > 0:
+        parts.append(f"⚠️ {severity_counts['warning']} warnings")
+    if severity_counts["suggestion"] > 0:
+        parts.append(f"💡 {severity_counts['suggestion']} suggestions")
+    if severity_counts["nitpick"] > 0:
+        parts.append(f"📝 {severity_counts['nitpick']} nitpicks")
+
+    if not parts:
+        return "Inline review comments added."
+
+    return f"**Inline Review:** {', '.join(parts)}"
 
 
 def post_inline_comments(repo: str, pr_number: int, commit_sha: str, comments: list[InlineComment]) -> None:
@@ -309,10 +351,13 @@ def post_inline_comments(repo: str, pr_number: int, commit_sha: str, comments: l
             comment_obj["start_side"] = "RIGHT"
         comments_payload.append(comment_obj)
 
+    # 의미있는 요약 생성
+    summary = generate_inline_summary(comments)
+
     payload = {
         "commit_id": commit_sha,
         "event": "COMMENT",
-        "body": "Inline suggestions",
+        "body": summary,
         "comments": comments_payload,
     }
 
@@ -348,6 +393,9 @@ def submit_review_decision(pr_number: int, decision: str) -> None:
 
     권한이 없으면 approve 실패하지만, dismiss_previous_reviews()가
     이전 CHANGES_REQUESTED를 제거하므로 머지 블럭은 해제됨.
+
+    Note: 자신의 PR에는 request-changes를 할 수 없음 (GitHub 정책)
+    이 경우 COMMENT로 대체하여 리뷰 내용은 전달함.
     """
     if decision == "APPROVE":
         try:
@@ -362,12 +410,19 @@ def submit_review_decision(pr_number: int, decision: str) -> None:
             print(f"Note: Could not approve PR (expected with default GITHUB_TOKEN): {e}", file=sys.stderr)
             print("Previous CHANGES_REQUESTED reviews were dismissed - merge is unblocked")
     elif decision == "CHANGES_REQUESTED":
-        run_gh([
-            "pr", "review", str(pr_number),
-            "--request-changes",
-            "--body", "❌ AI Review Failed - Please fix the issues above"
-        ])
-        print("Requested changes")
+        try:
+            run_gh([
+                "pr", "review", str(pr_number),
+                "--request-changes",
+                "--body", "❌ AI Review Failed - Please fix the issues above"
+            ])
+            print("Requested changes")
+        except RuntimeError as e:
+            # 자신의 PR에는 request-changes 불가 (GitHub 정책)
+            if "Can not request changes on your own" in str(e):
+                print("Note: Cannot request changes on own PR (GitHub policy) - review posted as comment", file=sys.stderr)
+            else:
+                print(f"Warning: Could not submit review decision: {e}", file=sys.stderr)
     else:
         print(f"Unknown decision: {decision}", file=sys.stderr)
 
@@ -381,11 +436,12 @@ def resolve_specific_threads(thread_ids: list[str]) -> None:
             continue
         try:
             # Use JSON input for proper GraphQL variable handling
+            # Use elevated token for GraphQL mutations (resolve requires special permissions)
             payload = json.dumps({
                 "query": mutation,
                 "variables": {"threadId": thread_id}
             })
-            run_gh(["api", "graphql", "--input", "-"], input_data=payload)
+            run_gh(["api", "graphql", "--input", "-"], input_data=payload, use_elevated_token=True)
             print(f"Resolved thread {thread_id}")
         except RuntimeError as e:
             print(f"Warning: Failed to resolve thread {thread_id}: {e}", file=sys.stderr)

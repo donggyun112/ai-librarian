@@ -51,7 +51,7 @@ jobs:
       - name: Check if fork PR (security)
         id: fork_check
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
@@ -94,7 +94,7 @@ jobs:
       - name: Get PR context
         id: pr_context
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
         run: |
@@ -119,8 +119,8 @@ jobs:
 
       - name: Run Codex review
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
           REPO: ${{ github.repository }}
           CODEX_PROMPT: |
@@ -351,7 +351,10 @@ jobs:
 
       - name: Post review to GitHub
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          # Use GITHUB_TOKEN for posting comments (appears as github-actions[bot])
+          # Use GH_TOKEN only for GraphQL mutations (resolve threads) that require elevated permissions
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_ELEVATED: ${{ secrets.GH_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
         run: |

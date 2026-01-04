@@ -17,19 +17,37 @@ Usage:
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from typing import Optional
 
 
-def run_gh(args: list[str], input_data: Optional[str] = None) -> str:
-    """gh CLI 실행"""
+def run_gh(args: list[str], input_data: Optional[str] = None, use_elevated_token: bool = False) -> str:
+    """gh CLI 실행
+
+    Args:
+        args: gh CLI arguments
+        input_data: stdin input data
+        use_elevated_token: If True, use GH_TOKEN_ELEVATED env var for operations
+                           that require elevated permissions (e.g., GraphQL mutations)
+    """
     cmd = ["gh"] + args
+
+    # Optionally use elevated token for specific operations
+    env = None
+    if use_elevated_token:
+        elevated_token = os.environ.get("GH_TOKEN_ELEVATED")
+        if elevated_token:
+            env = os.environ.copy()
+            env["GH_TOKEN"] = elevated_token
+
     result = subprocess.run(
         cmd,
         input=input_data,
         capture_output=True,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         print(f"Error running: {' '.join(cmd)}", file=sys.stderr)
@@ -68,11 +86,12 @@ def resolve_thread(thread_node_id: str) -> None:
 
     try:
         # Use JSON input for proper GraphQL variable handling
+        # Use elevated token for GraphQL mutations (resolve requires special permissions)
         payload = json.dumps({
             "query": mutation,
             "variables": {"threadId": thread_node_id}
         })
-        run_gh(["api", "graphql", "--input", "-"], input_data=payload)
+        run_gh(["api", "graphql", "--input", "-"], input_data=payload, use_elevated_token=True)
         print(f"Resolved thread {thread_node_id}")
     except RuntimeError as e:
         print(f"Warning: Failed to resolve thread: {e}", file=sys.stderr)

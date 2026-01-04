@@ -27,6 +27,7 @@ from post_review import (
     get_existing_comment_locations,
     filter_duplicate_comments,
     format_comment_body,
+    generate_inline_summary,
 )
 
 
@@ -476,3 +477,67 @@ class TestSeverityAndDuplicates:
         payload = parse_review_payload(data)
 
         assert payload.inline_comments[0].severity == "warning"
+
+
+class TestGenerateInlineSummary:
+    """Tests for generate_inline_summary function."""
+
+    def test_summary_with_all_severities(self):
+        """Test summary includes all severity counts."""
+        comments = [
+            InlineComment(path="a.py", line=1, body="critical issue", severity="critical"),
+            InlineComment(path="a.py", line=2, body="warning issue", severity="warning"),
+            InlineComment(path="a.py", line=3, body="suggestion", severity="suggestion"),
+            InlineComment(path="a.py", line=4, body="nitpick", severity="nitpick"),
+        ]
+
+        summary = generate_inline_summary(comments)
+
+        assert "🚨 1 critical" in summary
+        assert "⚠️ 1 warnings" in summary
+        assert "💡 1 suggestions" in summary
+        assert "📝 1 nitpicks" in summary
+        assert "**Inline Review:**" in summary
+
+    def test_summary_with_multiple_same_severity(self):
+        """Test summary counts multiple items of same severity."""
+        comments = [
+            InlineComment(path="a.py", line=1, body="warning 1", severity="warning"),
+            InlineComment(path="a.py", line=2, body="warning 2", severity="warning"),
+            InlineComment(path="a.py", line=3, body="warning 3", severity="warning"),
+        ]
+
+        summary = generate_inline_summary(comments)
+
+        assert "⚠️ 3 warnings" in summary
+        assert "critical" not in summary
+        assert "suggestion" not in summary.lower()
+        assert "nitpick" not in summary.lower()
+
+    def test_summary_empty_comments(self):
+        """Test summary with empty comments list."""
+        summary = generate_inline_summary([])
+
+        assert summary == "Inline review comments added."
+
+    def test_summary_unknown_severity_defaults_to_warning(self):
+        """Test unknown severity is counted as warning."""
+        comments = [
+            InlineComment(path="a.py", line=1, body="issue", severity="unknown"),
+        ]
+
+        summary = generate_inline_summary(comments)
+
+        assert "⚠️ 1 warnings" in summary
+
+    def test_summary_only_critical(self):
+        """Test summary with only critical issues."""
+        comments = [
+            InlineComment(path="a.py", line=1, body="critical 1", severity="critical"),
+            InlineComment(path="a.py", line=2, body="critical 2", severity="critical"),
+        ]
+
+        summary = generate_inline_summary(comments)
+
+        assert "🚨 2 critical" in summary
+        assert "warnings" not in summary
