@@ -145,21 +145,34 @@ async def list_sessions(user_id: Optional[str] = None):
     """세션 목록 조회
 
     Args:
-        user_id: 사용자 ID (제공 시 해당 사용자의 세션만 조회)
+        user_id: 사용자 ID (Supabase 사용 시 필수)
     """
-    # SupabaseChatMemory인 경우에만 user_id 전달
-    if hasattr(memory, 'list_sessions') and 'user_id' in memory.list_sessions.__code__.co_varnames:
+    # SupabaseChatMemory인 경우 user_id 필수
+    if isinstance(memory, SupabaseChatMemory):
+        if not user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
         session_ids = memory.list_sessions(user_id=user_id)
+        sessions = [
+            SessionInfo(
+                session_id=sid,
+                message_count=memory.get_message_count(sid, user_id=user_id)
+            )
+            for sid in session_ids
+        ]
     else:
+        # InMemoryChatMemory는 user_id 무시
         session_ids = memory.list_sessions()
+        sessions = [
+            SessionInfo(
+                session_id=sid,
+                message_count=memory.get_message_count(sid)
+            )
+            for sid in session_ids
+        ]
 
-    sessions = [
-        SessionInfo(
-            session_id=sid,
-            message_count=memory.get_message_count(sid, user_id=user_id) if hasattr(memory, 'get_message_count') and 'user_id' in memory.get_message_count.__code__.co_varnames else memory.get_message_count(sid)
-        )
-        for sid in session_ids
-    ]
     return SessionListResponse(sessions=sessions)
 
 
@@ -169,21 +182,24 @@ async def delete_session(session_id: str, user_id: Optional[str] = None):
 
     Args:
         session_id: 세션 ID
-        user_id: 사용자 ID (제공 시 소유권 검증)
+        user_id: 사용자 ID (Supabase 사용 시 필수)
     """
-    # SupabaseChatMemory인 경우 user_id로 소유권 검증
-    if hasattr(memory, 'list_sessions') and 'user_id' in memory.list_sessions.__code__.co_varnames:
+    # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
+    if isinstance(memory, SupabaseChatMemory):
+        if not user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
+        # 소유권 검증
         user_sessions = memory.list_sessions(user_id=user_id)
         if session_id not in user_sessions:
             raise HTTPException(status_code=404, detail="Session not found or access denied")
-    else:
-        if session_id not in memory.list_sessions():
-            raise HTTPException(status_code=404, detail="Session not found")
-
-    # SupabaseChatMemory인 경우 user_id 전달
-    if hasattr(memory, 'delete_session') and 'user_id' in memory.delete_session.__code__.co_varnames:
         memory.delete_session(session_id, user_id=user_id)
     else:
+        # InMemoryChatMemory는 user_id 무시
+        if session_id not in memory.list_sessions():
+            raise HTTPException(status_code=404, detail="Session not found")
         memory.delete_session(session_id)
 
     return {"message": "Session deleted", "session_id": session_id}
@@ -195,12 +211,22 @@ async def clear_session(session_id: str, user_id: Optional[str] = None):
 
     Args:
         session_id: 세션 ID
-        user_id: 사용자 ID (제공 시 소유권 검증)
+        user_id: 사용자 ID (Supabase 사용 시 필수)
     """
-    # SupabaseChatMemory인 경우 user_id 전달
-    if hasattr(memory, 'clear') and 'user_id' in memory.clear.__code__.co_varnames:
+    # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
+    if isinstance(memory, SupabaseChatMemory):
+        if not user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
+        # 소유권 검증
+        user_sessions = memory.list_sessions(user_id=user_id)
+        if session_id not in user_sessions:
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
         memory.clear(session_id, user_id=user_id)
     else:
+        # InMemoryChatMemory는 user_id 무시
         memory.clear(session_id)
 
     return {"message": "Session cleared", "session_id": session_id}

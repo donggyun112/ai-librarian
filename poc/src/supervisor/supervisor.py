@@ -170,11 +170,28 @@ class Supervisor:
     # ============================================================
     # 히스토리 관리
     # ============================================================
-    def _build_messages(self, session_id: str, question: str) -> List[BaseMessage]:
-        """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성"""
+    def _build_messages(self, session_id: str, question: str, user_id: Optional[str] = None) -> List[BaseMessage]:
+        """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성
+
+        Args:
+            session_id: 세션 ID
+            question: 사용자 질문
+            user_id: 사용자 ID (SupabaseChatMemory 사용 시 필수)
+
+        Raises:
+            ValueError: SupabaseChatMemory 사용 시 user_id가 None인 경우
+        """
         # 도구 정보를 동적으로 주입하여 프롬프트 생성
         messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))]
-        messages.extend(self.memory.get_messages(session_id))  # 이전 대화 히스토리
+
+        # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
+        if hasattr(self.memory, 'get_messages') and 'user_id' in self.memory.get_messages.__code__.co_varnames:
+            if user_id is None:
+                raise ValueError("user_id is required when using SupabaseChatMemory")
+            messages.extend(self.memory.get_messages(session_id, user_id=user_id))
+        else:
+            messages.extend(self.memory.get_messages(session_id))  # 이전 대화 히스토리
+
         messages.append(HumanMessage(content=question))
         return messages
 
@@ -215,7 +232,8 @@ class Supervisor:
             **kwargs: 추가 메타데이터 (예: user_id)
         """
         if session_id:
-            messages = self._build_messages(session_id, question)
+            user_id = kwargs.get("user_id")
+            messages = self._build_messages(session_id, question, user_id=user_id)
         else:
             # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [
@@ -271,7 +289,8 @@ class Supervisor:
             {"type": "observe", "content": str} - 도구 결과
         """
         if session_id:
-            messages = self._build_messages(session_id, question)
+            user_id = kwargs.get("user_id")
+            messages = self._build_messages(session_id, question, user_id=user_id)
         else:
             # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [

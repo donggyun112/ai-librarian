@@ -1,10 +1,12 @@
 """Supabase 기반 대화 히스토리 저장소"""
 from typing import List, Optional
+import asyncio
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import create_client, Client
 from loguru import logger
 import anyio
+from anyio.from_thread import run_sync
 
 from .base import ChatMemory
 
@@ -163,14 +165,12 @@ class SupabaseChatMemory(ChatMemory):
             이 동기 메서드는 레거시 호환성을 위해 유지됩니다.
             비동기 컨텍스트에서는 _add_message_async를 직접 사용하세요.
         """
-        import asyncio
         try:
             # 현재 실행 중인 이벤트 루프가 있는 경우
             asyncio.get_running_loop()
             # 비동기 컨텍스트에서 호출된 경우 경고
             logger.warning("_add_message called from async context. Consider using _add_message_async directly.")
             # anyio.from_thread를 사용하여 비동기 함수 호출
-            from anyio.from_thread import run_sync
             run_sync(self._add_message_async, session_id, message, **kwargs)
         except RuntimeError:
             # 이벤트 루프가 없는 경우 (동기 컨텍스트)
