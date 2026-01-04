@@ -131,10 +131,14 @@ jobs:
           # We need to query GraphQL to find the thread that contains this comment
           if [ "$GITHUB_EVENT_NAME" = "pull_request_review_comment" ]; then
             QUERY='
-            query($owner: String!, $repo: String!, $pr: Int!) {
+            query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
               repository(owner: $owner, name: $repo) {
                 pullRequest(number: $pr) {
-                  reviewThreads(first: 100) {
+                  reviewThreads(first: 100, after: $cursor) {
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
                     nodes {
                       id
                       comments(first: 1) {
@@ -161,9 +165,34 @@ jobs:
             fi
 
             if [ -n "$TARGET_COMMENT_ID" ]; then
-              THREAD_NODE_ID=$(gh api graphql -f query="$QUERY" \
-                -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-                --jq ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id" 2>/dev/null || echo "")
+              # Paginate through all review threads to find the one containing our comment
+              THREAD_NODE_ID=""
+              CURSOR=""
+              while true; do
+                if [ -n "$CURSOR" ]; then
+                  RESULT=$(gh api graphql -f query="$QUERY" \
+                    -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" -f cursor="$CURSOR" 2>/dev/null || echo "{}")
+                else
+                  RESULT=$(gh api graphql -f query="$QUERY" \
+                    -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" 2>/dev/null || echo "{}")
+                fi
+
+                # Try to find matching thread in current page
+                THREAD_NODE_ID=$(echo "$RESULT" | jq -r ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id" 2>/dev/null || echo "")
+
+                if [ -n "$THREAD_NODE_ID" ]; then
+                  break
+                fi
+
+                # Check if there are more pages
+                HAS_NEXT=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' 2>/dev/null || echo "false")
+                if [ "$HAS_NEXT" != "true" ]; then
+                  break
+                fi
+
+                CURSOR=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' 2>/dev/null || echo "")
+              done
+
               echo "thread_node_id=${THREAD_NODE_ID}" >> "$GITHUB_OUTPUT"
             fi
           fi

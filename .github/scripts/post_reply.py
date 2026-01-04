@@ -79,7 +79,7 @@ def resolve_thread(thread_node_id: str) -> None:
         print(f"Warning: Failed to resolve thread: {e}", file=sys.stderr)
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Post GitHub PR reply from Codex output")
     parser.add_argument("--repo", required=True, help="Repository (owner/repo)")
     parser.add_argument("--pr", type=int, required=True, help="PR number")

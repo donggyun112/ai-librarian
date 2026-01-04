@@ -303,7 +303,7 @@ def parse_review_payload(data: dict) -> ReviewPayload:
     )
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Post GitHub PR review from Codex output")
     parser.add_argument("--repo", required=True, help="Repository (owner/repo)")
     parser.add_argument("--pr", type=int, required=True, help="PR number")

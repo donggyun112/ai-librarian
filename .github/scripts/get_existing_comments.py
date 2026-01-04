@@ -152,7 +152,7 @@ def get_bot_review_comments(repo: str, pr_number: int) -> list[dict]:
     return result
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description="Get existing bot review comments")
     parser.add_argument("--repo", required=True, help="Repository (owner/repo)")
     parser.add_argument("--pr", type=int, required=True, help="PR number")
