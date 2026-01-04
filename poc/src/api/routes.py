@@ -1,7 +1,7 @@
 """API 라우트 정의"""
 import json
 import uuid
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, Optional, Dict
 
 from fastapi import APIRouter, HTTPException
 
@@ -24,7 +24,6 @@ from .schemas import (
 router = APIRouter()
 
 # 전역 인스턴스 (애플리케이션 수명 동안 유지)
-# 전역 인스턴스 (애플리케이션 수명 동안 유지)
 if config.SUPABASE_URL and config.SUPABASE_SERVICE_ROLE_KEY:
     logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
     memory = SupabaseChatMemory(
@@ -39,7 +38,7 @@ supervisor = Supervisor(memory=memory)
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
+async def health_check() -> HealthResponse:
     """헬스 체크"""
     return HealthResponse(
         status="ok",
@@ -48,7 +47,7 @@ async def health_check():
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest) -> ChatResponse:
     """채팅 (Non-streaming)"""
     session_id = request.session_id or str(uuid.uuid4())
 
@@ -91,7 +90,7 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/chat/stream")
-async def chat_stream(request: ChatRequest):
+async def chat_stream(request: ChatRequest) -> EventSourceResponse:
     """채팅 (SSE Streaming)
 
     이벤트 타입:
@@ -174,7 +173,7 @@ async def chat_stream(request: ChatRequest):
 
 
 @router.get("/sessions", response_model=SessionListResponse)
-async def list_sessions(user_id: Optional[str] = None):
+async def list_sessions(user_id: Optional[str] = None) -> SessionListResponse:
     """세션 목록 조회
 
     Args:
@@ -187,11 +186,11 @@ async def list_sessions(user_id: Optional[str] = None):
                 status_code=400,
                 detail="user_id is required when using Supabase backend"
             )
-        session_ids = memory.list_sessions(user_id=user_id)
+        session_ids = await memory.list_sessions_async(user_id=user_id)
         sessions = [
             SessionInfo(
                 session_id=sid,
-                message_count=memory.get_message_count(sid, user_id=user_id)
+                message_count=await memory.get_message_count_async(sid, user_id=user_id)
             )
             for sid in session_ids
         ]
@@ -210,7 +209,7 @@ async def list_sessions(user_id: Optional[str] = None):
 
 
 @router.get("/sessions/{session_id}/messages", response_model=SessionHistoryResponse)
-async def get_session_messages(session_id: str, user_id: Optional[str] = None):
+async def get_session_messages(session_id: str, user_id: Optional[str] = None) -> SessionHistoryResponse:
     """세션의 대화 히스토리 조회
 
     Args:
@@ -224,7 +223,7 @@ async def get_session_messages(session_id: str, user_id: Optional[str] = None):
                 status_code=400,
                 detail="user_id is required when using Supabase backend"
             )
-        messages = memory.get_messages(session_id, user_id=user_id)
+        messages = await memory.get_messages_async(session_id, user_id=user_id)
     else:
         # InMemoryChatMemory는 user_id 무시
         messages = memory.get_messages(session_id)
@@ -245,7 +244,7 @@ async def get_session_messages(session_id: str, user_id: Optional[str] = None):
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, user_id: Optional[str] = None):
+async def delete_session(session_id: str, user_id: Optional[str] = None) -> Dict[str, str]:
     """세션 삭제
 
     Args:
@@ -260,10 +259,10 @@ async def delete_session(session_id: str, user_id: Optional[str] = None):
                 detail="user_id is required when using Supabase backend"
             )
         # 소유권 검증
-        user_sessions = memory.list_sessions(user_id=user_id)
+        user_sessions = await memory.list_sessions_async(user_id=user_id)
         if session_id not in user_sessions:
             raise HTTPException(status_code=404, detail="Session not found or access denied")
-        memory.delete_session(session_id, user_id=user_id)
+        await memory.delete_session_async(session_id, user_id=user_id)
     else:
         # InMemoryChatMemory는 user_id 무시
         if session_id not in memory.list_sessions():
@@ -274,7 +273,7 @@ async def delete_session(session_id: str, user_id: Optional[str] = None):
 
 
 @router.delete("/sessions/{session_id}/messages")
-async def clear_session(session_id: str, user_id: Optional[str] = None):
+async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[str, str]:
     """세션 메시지 초기화
 
     Args:
@@ -289,10 +288,10 @@ async def clear_session(session_id: str, user_id: Optional[str] = None):
                 detail="user_id is required when using Supabase backend"
             )
         # 소유권 검증
-        user_sessions = memory.list_sessions(user_id=user_id)
+        user_sessions = await memory.list_sessions_async(user_id=user_id)
         if session_id not in user_sessions:
             raise HTTPException(status_code=404, detail="Session not found or access denied")
-        memory.clear(session_id, user_id=user_id)
+        await memory.clear_async(session_id, user_id=user_id)
     else:
         # InMemoryChatMemory는 user_id 무시
         memory.clear(session_id)

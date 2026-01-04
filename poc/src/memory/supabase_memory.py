@@ -69,36 +69,37 @@ class SupabaseChatMemory(ChatMemory):
             logger.error(f"Error ensuring session {session_id}: {e}")
             return False
 
-    def get_messages(self, session_id: str, user_id: Optional[str] = None) -> List[BaseMessage]:
-        """세션의 전체 대화 히스토리 조회
+    async def get_messages_async(self, session_id: str, user_id: Optional[str] = None) -> List[BaseMessage]:
+        """세션의 전체 대화 히스토리 조회 (비동기)
 
         Args:
             session_id: 세션 ID
             user_id: 사용자 ID (제공 시 소유권 검증)
-
-        Note:
-            이 메서드는 ChatMemory 인터페이스와의 호환성을 위해 동기 메서드로 유지합니다.
-            내부적으로 anyio.from_thread.run_sync를 통해 비동기 작업을 처리할 수 있지만,
-            현재 구현에서는 Supervisor가 비동기 컨텍스트에서 호출하므로 동기 호출을 유지합니다.
         """
         try:
             # user_id가 제공된 경우 세션 소유권 검증
             if user_id:
-                session_check = self.supabase.table(self.sessions_table) \
-                    .select("id") \
-                    .eq("id", session_id) \
-                    .eq("user_id", user_id) \
-                    .execute()
+                def _check_ownership():
+                    return self.supabase.table(self.sessions_table) \
+                        .select("id") \
+                        .eq("id", session_id) \
+                        .eq("user_id", user_id) \
+                        .execute()
+
+                session_check = await anyio.to_thread.run_sync(_check_ownership)
 
                 if not session_check.data:
                     logger.warning(f"User {user_id} does not own session {session_id}")
                     return []
 
-            response = self.supabase.table(self.messages_table) \
-                .select("message") \
-                .eq("session_id", session_id) \
-                .order("created_at", desc=False) \
-                .execute()
+            def _fetch_messages():
+                return self.supabase.table(self.messages_table) \
+                    .select("message") \
+                    .eq("session_id", session_id) \
+                    .order("created_at", desc=False) \
+                    .execute()
+
+            response = await anyio.to_thread.run_sync(_fetch_messages)
 
             messages = []
             for row in response.data:
@@ -111,6 +112,24 @@ class SupabaseChatMemory(ChatMemory):
         except Exception as e:
             logger.error(f"Error fetching messages from Supabase: {e}")
             return []
+
+    def get_messages(self, session_id: str, user_id: Optional[str] = None) -> List[BaseMessage]:
+        """세션의 전체 대화 히스토리 조회 (동기 wrapper - 레거시 호환용)
+
+        Args:
+            session_id: 세션 ID
+            user_id: 사용자 ID (제공 시 소유권 검증)
+
+        Note:
+            이 메서드는 ChatMemory 인터페이스와의 호환성을 위해 유지합니다.
+            비동기 컨텍스트에서는 get_messages_async를 사용하세요.
+        """
+        try:
+            asyncio.get_running_loop()
+            logger.warning("get_messages called from async context. Consider using get_messages_async directly.")
+            return run_sync(self.get_messages_async, session_id, user_id)
+        except RuntimeError:
+            return asyncio.run(self.get_messages_async(session_id, user_id))
 
     def _get_role(self, message: BaseMessage) -> str:
         if isinstance(message, HumanMessage):
@@ -208,9 +227,8 @@ class SupabaseChatMemory(ChatMemory):
         await self._add_message_async(session_id, user_msg, **kwargs)
         await self._add_message_async(session_id, ai_msg, **kwargs)
 
-    def clear(self, session_id: str, user_id: Optional[str] = None) -> None:
-        """세션 히스토리 메시지 삭제 (세션 자체는 유지할 수도 있고, 정책에 따라 다름)
-        여기서는 chat_messages만 삭제하는 것으로 구현.
+    async def clear_async(self, session_id: str, user_id: Optional[str] = None) -> None:
+        """세션 히스토리 메시지 삭제 (비동기)
 
         Args:
             session_id: 세션 ID
@@ -219,25 +237,45 @@ class SupabaseChatMemory(ChatMemory):
         try:
             # user_id가 제공된 경우 세션 소유권 검증
             if user_id:
-                session_check = self.supabase.table(self.sessions_table) \
-                    .select("id") \
-                    .eq("id", session_id) \
-                    .eq("user_id", user_id) \
-                    .execute()
+                def _check_ownership():
+                    return self.supabase.table(self.sessions_table) \
+                        .select("id") \
+                        .eq("id", session_id) \
+                        .eq("user_id", user_id) \
+                        .execute()
+
+                session_check = await anyio.to_thread.run_sync(_check_ownership)
 
                 if not session_check.data:
                     logger.warning(f"User {user_id} cannot clear session {session_id}")
                     return
 
-            self.supabase.table(self.messages_table) \
-                .delete() \
-                .eq("session_id", session_id) \
-                .execute()
+            def _clear_messages():
+                return self.supabase.table(self.messages_table) \
+                    .delete() \
+                    .eq("session_id", session_id) \
+                    .execute()
+
+            await anyio.to_thread.run_sync(_clear_messages)
         except Exception as e:
             logger.error(f"Error clearing messages for session {session_id}: {e}")
 
-    def delete_session(self, session_id: str, user_id: Optional[str] = None) -> None:
-        """세션 및 관련 메시지 완전 삭제 (Cascade 설정되어 있으면 세션만 삭제하면 됨)
+    def clear(self, session_id: str, user_id: Optional[str] = None) -> None:
+        """세션 히스토리 메시지 삭제 (동기 wrapper - 레거시 호환용)
+
+        Args:
+            session_id: 세션 ID
+            user_id: 사용자 ID (제공 시 소유권 검증)
+        """
+        try:
+            asyncio.get_running_loop()
+            logger.warning("clear called from async context. Consider using clear_async directly.")
+            run_sync(self.clear_async, session_id, user_id)
+        except RuntimeError:
+            asyncio.run(self.clear_async(session_id, user_id))
+
+    async def delete_session_async(self, session_id: str, user_id: Optional[str] = None) -> None:
+        """세션 및 관련 메시지 완전 삭제 (비동기)
 
         Args:
             session_id: 세션 ID
@@ -246,39 +284,75 @@ class SupabaseChatMemory(ChatMemory):
         try:
             # user_id가 제공된 경우 세션 소유권 검증 후 삭제
             if user_id:
-                self.supabase.table(self.sessions_table) \
-                    .delete() \
-                    .eq("id", session_id) \
-                    .eq("user_id", user_id) \
-                    .execute()
+                def _delete_with_user():
+                    return self.supabase.table(self.sessions_table) \
+                        .delete() \
+                        .eq("id", session_id) \
+                        .eq("user_id", user_id) \
+                        .execute()
+
+                await anyio.to_thread.run_sync(_delete_with_user)
             else:
-                self.supabase.table(self.sessions_table) \
-                    .delete() \
-                    .eq("id", session_id) \
-                    .execute()
+                def _delete_session():
+                    return self.supabase.table(self.sessions_table) \
+                        .delete() \
+                        .eq("id", session_id) \
+                        .execute()
+
+                await anyio.to_thread.run_sync(_delete_session)
         except Exception as e:
             logger.error(f"Error deleting session {session_id}: {e}")
 
-    def list_sessions(self, user_id: Optional[str] = None) -> List[str]:
-        """모든 세션 ID 조회
+    def delete_session(self, session_id: str, user_id: Optional[str] = None) -> None:
+        """세션 및 관련 메시지 완전 삭제 (동기 wrapper - 레거시 호환용)
+
+        Args:
+            session_id: 세션 ID
+            user_id: 사용자 ID (제공 시 소유권 검증)
+        """
+        try:
+            asyncio.get_running_loop()
+            logger.warning("delete_session called from async context. Consider using delete_session_async directly.")
+            run_sync(self.delete_session_async, session_id, user_id)
+        except RuntimeError:
+            asyncio.run(self.delete_session_async(session_id, user_id))
+
+    async def list_sessions_async(self, user_id: Optional[str] = None) -> List[str]:
+        """모든 세션 ID 조회 (비동기)
 
         Args:
             user_id: 사용자 ID (제공 시 해당 사용자의 세션만 조회)
         """
         try:
-            query = self.supabase.table(self.sessions_table).select("id")
+            def _list_sessions():
+                query = self.supabase.table(self.sessions_table).select("id")
 
-            if user_id:
-                query = query.eq("user_id", user_id)
+                if user_id:
+                    query = query.eq("user_id", user_id)
 
-            response = query.order("last_message_at", desc=True).execute()
-            return [item['id'] for item in response.data]
+                response = query.order("last_message_at", desc=True).execute()
+                return [item['id'] for item in response.data]
+
+            return await anyio.to_thread.run_sync(_list_sessions)
         except Exception as e:
             logger.error(f"Error listing sessions from Supabase: {e}")
             return []
 
-    def get_message_count(self, session_id: str, user_id: Optional[str] = None) -> int:
-        """세션의 메시지 개수
+    def list_sessions(self, user_id: Optional[str] = None) -> List[str]:
+        """모든 세션 ID 조회 (동기 wrapper - 레거시 호환용)
+
+        Args:
+            user_id: 사용자 ID (제공 시 해당 사용자의 세션만 조회)
+        """
+        try:
+            asyncio.get_running_loop()
+            logger.warning("list_sessions called from async context. Consider using list_sessions_async directly.")
+            return run_sync(self.list_sessions_async, user_id)
+        except RuntimeError:
+            return asyncio.run(self.list_sessions_async(user_id))
+
+    async def get_message_count_async(self, session_id: str, user_id: Optional[str] = None) -> int:
+        """세션의 메시지 개수 (비동기)
 
         Args:
             session_id: 세션 ID
@@ -287,19 +361,39 @@ class SupabaseChatMemory(ChatMemory):
         try:
             # user_id가 제공된 경우 세션 소유권 검증
             if user_id:
-                session_check = self.supabase.table(self.sessions_table) \
-                    .select("id") \
-                    .eq("id", session_id) \
-                    .eq("user_id", user_id) \
-                    .execute()
+                def _check_ownership():
+                    return self.supabase.table(self.sessions_table) \
+                        .select("id") \
+                        .eq("id", session_id) \
+                        .eq("user_id", user_id) \
+                        .execute()
+
+                session_check = await anyio.to_thread.run_sync(_check_ownership)
 
                 if not session_check.data:
                     return 0
 
-            response = self.supabase.table(self.messages_table) \
-                .select("id", count="exact") \
-                .eq("session_id", session_id) \
-                .execute()
-            return response.count if response.count is not None else 0
+            def _count_messages():
+                response = self.supabase.table(self.messages_table) \
+                    .select("id", count="exact") \
+                    .eq("session_id", session_id) \
+                    .execute()
+                return response.count if response.count is not None else 0
+
+            return await anyio.to_thread.run_sync(_count_messages)
         except Exception:
             return 0
+
+    def get_message_count(self, session_id: str, user_id: Optional[str] = None) -> int:
+        """세션의 메시지 개수 (동기 wrapper - 레거시 호환용)
+
+        Args:
+            session_id: 세션 ID
+            user_id: 사용자 ID (제공 시 소유권 검증)
+        """
+        try:
+            asyncio.get_running_loop()
+            logger.warning("get_message_count called from async context. Consider using get_message_count_async directly.")
+            return run_sync(self.get_message_count_async, session_id, user_id)
+        except RuntimeError:
+            return asyncio.run(self.get_message_count_async(session_id, user_id))

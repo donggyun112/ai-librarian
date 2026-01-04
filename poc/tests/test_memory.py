@@ -149,7 +149,8 @@ class TestSupervisorWithMemory:
         supervisor = Supervisor()
         assert isinstance(supervisor.memory, InMemoryChatMemory)
 
-    def test_build_messages_includes_history(self):
+    @pytest.mark.asyncio
+    async def test_build_messages_includes_history(self):
         """_build_messages가 히스토리를 포함하는지 확인"""
         from src.supervisor import Supervisor
         from langchain_core.messages import SystemMessage
@@ -158,7 +159,7 @@ class TestSupervisorWithMemory:
         memory.save_conversation("session-1", "이전 질문", "이전 답변")
 
         supervisor = Supervisor(memory=memory)
-        messages = supervisor._build_messages("session-1", "새 질문")
+        messages = await supervisor._build_messages("session-1", "새 질문")
 
         # SystemMessage + 이전 대화 2개 + 새 질문 = 4개
         assert len(messages) == 4
@@ -194,7 +195,8 @@ class TestSupervisorWithMemory:
         messages = memory.get_messages("session-1")
         assert messages == []
 
-    def test_multiple_sessions_isolated(self):
+    @pytest.mark.asyncio
+    async def test_multiple_sessions_isolated(self):
         """여러 세션이 서로 격리되는지 확인"""
         from src.supervisor import Supervisor
 
@@ -204,8 +206,8 @@ class TestSupervisorWithMemory:
         supervisor._save_to_history("session-1", "질문1", "답변1")
         supervisor._save_to_history("session-2", "질문2", "답변2")
 
-        messages_1 = supervisor._build_messages("session-1", "새질문")
-        messages_2 = supervisor._build_messages("session-2", "새질문")
+        messages_1 = await supervisor._build_messages("session-1", "새질문")
+        messages_2 = await supervisor._build_messages("session-2", "새질문")
 
         # session-1: System + 질문1 + 답변1 + 새질문 = 4
         # session-2: System + 질문2 + 답변2 + 새질문 = 4
@@ -214,7 +216,8 @@ class TestSupervisorWithMemory:
         assert messages_1[1].content == "질문1"
         assert messages_2[1].content == "질문2"
 
-    def test_build_messages_without_session_no_history(self):
+    @pytest.mark.asyncio
+    async def test_build_messages_without_session_no_history(self):
         """session_id 없이 호출 시 히스토리 없음 (process 메서드 동작)"""
         from src.supervisor import Supervisor
         from langchain_core.messages import SystemMessage, HumanMessage
@@ -225,7 +228,7 @@ class TestSupervisorWithMemory:
         supervisor = Supervisor(memory=memory)
 
         # session_id 없이 빌드하면 다른 세션으로 취급
-        messages = supervisor._build_messages("new-session", "새 질문")
+        messages = await supervisor._build_messages("new-session", "새 질문")
 
         # new-session에는 히스토리가 없음: System + 새 질문 = 2
         assert len(messages) == 2

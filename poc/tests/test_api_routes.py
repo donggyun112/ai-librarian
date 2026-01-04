@@ -35,28 +35,32 @@ class TestSessionEndpointsWithUserID:
             mock_memory.__class__ = SupabaseChatMemory
             mock_memory.spec = SupabaseChatMemory
 
-            # Configure methods
-            mock_memory.list_sessions = MagicMock()
-            mock_memory.list_sessions.__code__ = MagicMock()
-            mock_memory.list_sessions.__code__.co_varnames = ['self', 'user_id']
+            # Configure async methods (need AsyncMock)
+            mock_memory.list_sessions_async = AsyncMock()
+            mock_memory.list_sessions_async.__code__ = MagicMock()
+            mock_memory.list_sessions_async.__code__.co_varnames = ['self', 'user_id']
 
-            mock_memory.get_message_count = MagicMock(return_value=5)
-            mock_memory.get_message_count.__code__ = MagicMock()
-            mock_memory.get_message_count.__code__.co_varnames = ['self', 'session_id', 'user_id']
+            mock_memory.get_message_count_async = AsyncMock(return_value=5)
+            mock_memory.get_message_count_async.__code__ = MagicMock()
+            mock_memory.get_message_count_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
 
-            mock_memory.delete_session = MagicMock()
-            mock_memory.delete_session.__code__ = MagicMock()
-            mock_memory.delete_session.__code__.co_varnames = ['self', 'session_id', 'user_id']
+            mock_memory.delete_session_async = AsyncMock()
+            mock_memory.delete_session_async.__code__ = MagicMock()
+            mock_memory.delete_session_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
 
-            mock_memory.clear = MagicMock()
-            mock_memory.clear.__code__ = MagicMock()
-            mock_memory.clear.__code__.co_varnames = ['self', 'session_id', 'user_id']
+            mock_memory.clear_async = AsyncMock()
+            mock_memory.clear_async.__code__ = MagicMock()
+            mock_memory.clear_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
+
+            mock_memory.get_messages_async = AsyncMock(return_value=[])
+            mock_memory.get_messages_async.__code__ = MagicMock()
+            mock_memory.get_messages_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
 
             yield mock_memory
 
     def test_list_sessions_with_user_id(self, client, mock_supabase_memory):
         """user_id를 포함하여 세션 목록 조회"""
-        mock_supabase_memory.list_sessions.return_value = ["session-1", "session-2"]
+        mock_supabase_memory.list_sessions_async.return_value = ["session-1", "session-2"]
 
         response = client.get("/sessions?user_id=user-1")
 
@@ -65,7 +69,7 @@ class TestSessionEndpointsWithUserID:
         assert len(data["sessions"]) == 2
 
         # user_id로 필터링이 호출되었는지 확인
-        mock_supabase_memory.list_sessions.assert_called_once_with(user_id="user-1")
+        mock_supabase_memory.list_sessions_async.assert_called_once_with(user_id="user-1")
 
     def test_list_sessions_without_user_id_fails(self, client, mock_supabase_memory):
         """user_id 없이 세션 목록 조회 시도 (Supabase 백엔드는 거부해야 함)"""
@@ -78,7 +82,7 @@ class TestSessionEndpointsWithUserID:
 
     def test_delete_session_with_user_id(self, client, mock_supabase_memory):
         """user_id를 포함하여 세션 삭제"""
-        mock_supabase_memory.list_sessions.return_value = ["session-1"]
+        mock_supabase_memory.list_sessions_async.return_value = ["session-1"]
 
         response = client.delete("/sessions/session-1?user_id=user-1")
 
@@ -88,7 +92,7 @@ class TestSessionEndpointsWithUserID:
         assert data["session_id"] == "session-1"
 
         # user_id로 삭제가 호출되었는지 확인
-        mock_supabase_memory.delete_session.assert_called_once_with("session-1", user_id="user-1")
+        mock_supabase_memory.delete_session_async.assert_called_once_with("session-1", user_id="user-1")
 
     def test_delete_session_without_user_id_fails(self, client, mock_supabase_memory):
         """user_id 없이 세션 삭제 시도 (Supabase 백엔드는 거부해야 함)"""
@@ -102,7 +106,7 @@ class TestSessionEndpointsWithUserID:
     def test_delete_session_denies_access_for_wrong_user(self, client, mock_supabase_memory):
         """잘못된 user_id로는 세션 삭제 불가"""
         # user-1의 세션만 반환
-        mock_supabase_memory.list_sessions.return_value = []
+        mock_supabase_memory.list_sessions_async.return_value = []
 
         response = client.delete("/sessions/session-1?user_id=wrong-user")
 
@@ -112,7 +116,7 @@ class TestSessionEndpointsWithUserID:
 
     def test_clear_session_with_user_id(self, client, mock_supabase_memory):
         """user_id를 포함하여 세션 메시지 초기화"""
-        mock_supabase_memory.list_sessions.return_value = ["session-1"]
+        mock_supabase_memory.list_sessions_async.return_value = ["session-1"]
 
         response = client.delete("/sessions/session-1/messages?user_id=user-1")
 
@@ -122,7 +126,7 @@ class TestSessionEndpointsWithUserID:
         assert data["session_id"] == "session-1"
 
         # user_id로 clear가 호출되었는지 확인
-        mock_supabase_memory.clear.assert_called_once_with("session-1", user_id="user-1")
+        mock_supabase_memory.clear_async.assert_called_once_with("session-1", user_id="user-1")
 
     def test_clear_session_without_user_id_fails(self, client, mock_supabase_memory):
         """user_id 없이 세션 메시지 초기화 시도 (Supabase 백엔드는 거부해야 함)"""
@@ -140,7 +144,7 @@ class TestSessionEndpointsWithUserID:
             HumanMessage(content="Hello", additional_kwargs={"timestamp": "2024-01-01T00:00:00Z"}),
             AIMessage(content="Hi there!", additional_kwargs={"timestamp": "2024-01-01T00:00:01Z"})
         ]
-        mock_supabase_memory.get_messages = MagicMock(return_value=mock_messages)
+        mock_supabase_memory.get_messages_async.return_value = mock_messages
 
         response = client.get("/sessions/session-1/messages?user_id=user-1")
 
@@ -154,7 +158,7 @@ class TestSessionEndpointsWithUserID:
         assert data["messages"][1]["content"] == "Hi there!"
 
         # user_id로 메시지 조회가 호출되었는지 확인
-        mock_supabase_memory.get_messages.assert_called_once_with("session-1", user_id="user-1")
+        mock_supabase_memory.get_messages_async.assert_called_once_with("session-1", user_id="user-1")
 
     def test_get_session_messages_without_user_id_fails(self, client, mock_supabase_memory):
         """user_id 없이 세션 메시지 조회 시도 (Supabase 백엔드는 거부해야 함)"""
