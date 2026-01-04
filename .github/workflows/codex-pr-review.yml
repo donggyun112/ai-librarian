@@ -51,7 +51,7 @@ jobs:
       - name: Check if fork PR (security)
         id: fork_check
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
         run: |
@@ -91,10 +91,36 @@ jobs:
 
           echo "✅ MCP servers configured (context7)"
 
+      - name: Get PR context
+        id: pr_context
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
+        run: |
+          # PR diff
+          gh pr diff "$PR_NUMBER" > /tmp/pr_diff.txt
+          echo "pr_diff_file=/tmp/pr_diff.txt" >> "$GITHUB_OUTPUT"
+
+          # PR metadata
+          gh pr view "$PR_NUMBER" --json title,body,files,headRefOid > /tmp/pr_meta.json
+          echo "PR: $(jq -r '.title' /tmp/pr_meta.json)"
+          echo "Files changed: $(jq '.files | length' /tmp/pr_meta.json)"
+
+          # Existing unresolved bot comments
+          python3 .github/scripts/get_existing_comments.py \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --unresolved-only \
+            --output /tmp/existing_comments.json
+
+          COUNT=$(jq 'length' /tmp/existing_comments.json)
+          echo "Found $COUNT unresolved bot comments"
+
       - name: Run Codex review
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
           REPO: ${{ github.repository }}
           CODEX_PROMPT: |
@@ -116,8 +142,10 @@ jobs:
             AVAILABLE MCP TOOLS:
             - context7: Use to look up LangChain, LangGraph, FastAPI, Pydantic documentation
 
-            When reviewing LangChain/LangGraph code, use context7 to verify correct API usage.
-            For GitHub operations, use the `gh` CLI which is already available.
+            INPUT FILES (pre-fetched, read these first):
+            - /tmp/pr_diff.txt: Full PR diff
+            - /tmp/pr_meta.json: PR metadata (title, body, files, headRefOid)
+            - /tmp/existing_comments.json: Unresolved bot review comments
             </context>
 
             <project_rules>
@@ -247,92 +275,94 @@ jobs:
             </output_format>
 
             <instructions>
-            1. Get PR info:
-               - `gh pr diff "$PR_NUMBER"` for changes
-               - `gh pr view "$PR_NUMBER" --json title,body,headRefOid` for metadata
+            1. Read the pre-fetched input files:
+               - `cat /tmp/pr_diff.txt` for the full diff
+               - `cat /tmp/pr_meta.json` for PR metadata (title, body, files)
+               - `cat /tmp/existing_comments.json` for previous unresolved bot comments
 
-            2. Review code against <project_rules>
+            2. Review code against <project_rules> and <review_checklist>
 
-            3. For fixable issues, post inline suggestions using JSON input:
-               ```bash
-               COMMIT_SHA=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid')
-               cat > /tmp/review_comment.json << EOF
-               {
-                 "commit_id": "$COMMIT_SHA",
-                 "body": "Inline suggestions",
-                 "event": "COMMENT",
-                 "comments": [{"path": "file.py", "line": 42, "body": "\`\`\`suggestion\nfixed code\n\`\`\`\nExplanation"}]
-               }
-               EOF
-               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --method POST --input /tmp/review_comment.json
-               ```
+            3. For each previous comment in existing_comments.json:
+               - Check if the issue is FIXED in the current code
+               - If fixed, add its thread_id to resolve_thread_ids array
 
-            4. Post summary review comment:
-               `gh pr comment "$PR_NUMBER" --body-file review.md`
+            4. For NEW issues found, add them to inline_comments array
 
-            5. Determine approval decision:
-               - If ALL checklist items are ✅ (no ❌): Write "APPROVED" to decision.txt
-               - If ANY checklist item is ❌: Write "CHANGES_REQUESTED" to decision.txt
+            5. Determine decision:
+               - APPROVE if all checklist items pass
+               - CHANGES_REQUESTED if any fail
 
-            6. BEFORE submitting any review, ALWAYS dismiss previous CHANGES_REQUESTED reviews first:
-               ```bash
-               # Dismiss all previous CHANGES_REQUESTED reviews from github-actions bot
-               gh api "repos/$REPO/pulls/$PR_NUMBER/reviews" --jq '.[] | select(.state == "CHANGES_REQUESTED" and .user.login == "github-actions") | .id' | while read review_id; do
-                 gh api --method PUT "repos/$REPO/pulls/$PR_NUMBER/reviews/$review_id/dismissals" -f message="Superseded by new review"
-               done
-               ```
+            6. Output ONLY the JSON object - no markdown fences, no extra text
 
-            7. Execute approval/rejection:
-               - If APPROVED:
-                 1. Resolve all unresolved review threads from github-actions bot:
-                    ```bash
-                    OWNER=$(echo "$REPO" | cut -d'/' -f1)
-                    REPO_NAME=$(echo "$REPO" | cut -d'/' -f2)
-
-                    gh api graphql -f query='
-                      query($owner: String!, $repo: String!, $pr: Int!) {
-                        repository(owner: $owner, name: $repo) {
-                          pullRequest(number: $pr) {
-                            reviewThreads(first: 100) {
-                              nodes {
-                                id
-                                isResolved
-                                comments(first: 1) {
-                                  nodes { author { login } }
-                                }
-                              }
-                            }
-                          }
-                        }
-                      }
-                    ' -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" \
-                      --jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false and .comments.nodes[0].author.login == "github-actions") | .id' | \
-                    while read thread_id; do
-                      gh api graphql -f query='
-                        mutation($threadId: ID!) {
-                          resolveReviewThread(input: {threadId: $threadId}) {
-                            thread { isResolved }
-                          }
-                        }
-                      ' -f threadId="$thread_id"
-                    done
-                    ```
-                 2. Approve: `gh pr review "$PR_NUMBER" --approve --body "✅ AI Review Passed - All checks passed"`
-               - If CHANGES_REQUESTED: `gh pr review "$PR_NUMBER" --request-changes --body "❌ AI Review Failed - Please fix the issues above"`
-
-            8. Exit after completing review
+            IMPORTANT: Do NOT call gh api or gh pr commands. Only output JSON.
+            The post_review.py script handles all GitHub API calls.
             </instructions>
 
-            Now review this PR, post your review comment, and approve or request changes based on the checklist results.
+            <output_protocol>
+            YOU MUST OUTPUT A SINGLE JSON OBJECT TO STDOUT AS YOUR FINAL ACTION.
+
+            JSON Schema:
+            {
+              "decision": "APPROVE" | "CHANGES_REQUESTED",
+              "summary": "## 🔍 Code Review Summary\n\n...(full markdown review)...",
+              "inline_comments": [
+                {
+                  "path": "relative/path/to/file.py",
+                  "line": 42,
+                  "body": "```suggestion\ncorrected code here\n```\nExplanation of what this fixes",
+                  "start_line": null,
+                  "severity": "warning"
+                }
+              ],
+              "resolve_thread_ids": ["PRRT_xxx", "PRRT_yyy"]
+            }
+
+            FIELDS:
+            - decision: APPROVE if all checks pass, CHANGES_REQUESTED if any fail
+            - summary: Full markdown review
+            - inline_comments: NEW issues found in this review (do NOT duplicate existing comments)
+            - resolve_thread_ids: thread_id values from <previous_review_comments> that are now FIXED
+
+            SEVERITY LEVELS (required for each inline_comment):
+            - "critical": Security vulnerabilities, data loss risks, breaking bugs (🚨)
+            - "warning": Logic errors, potential bugs, missing error handling (⚠️)
+            - "suggestion": Code improvements, better patterns, performance (💡)
+            - "nitpick": Style, naming conventions, minor cleanups (📝)
+
+            DUPLICATE PREVENTION:
+            - Check existing_comments.json for comments at the same (path, line)
+            - Do NOT create new comments for issues already commented on
+            - Only add comments for NEW issues not already flagged
+
+            CRITICAL: Do NOT execute gh api calls yourself. Only output JSON.
+            The post_review.py script will handle all GitHub API calls.
+            </output_protocol>
         run: |
           codex exec \
             -m gpt-5-codex \
             --sandbox danger-full-access \
             -c shell_environment_policy.inherit=all \
-            -c ask_for_approval=\"never\" \
+            -c ask_for_approval="never" \
             -C "$GITHUB_WORKSPACE" \
-            -- "$CODEX_PROMPT"
+            -- "$CODEX_PROMPT" > /tmp/review_output.json
+
+          echo "=== Codex Output ==="
+          cat /tmp/review_output.json
+
+      - name: Post review to GitHub
+        env:
+          # Use GITHUB_TOKEN for posting comments (appears as github-actions[bot])
+          # Use GH_TOKEN only for GraphQL mutations (resolve threads) that require elevated permissions
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_ELEVATED: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.review_context.outputs.pr_number }}
+        run: |
+          python3 .github/scripts/post_review.py \
+            --repo "$REPO" \
+            --pr "$PR_NUMBER" \
+            --input /tmp/review_output.json
 
       - name: Cleanup credentials
         if: always()
-        run: rm -f ~/.codex/auth.json ~/.codex/config.toml
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml /tmp/review_output.json
