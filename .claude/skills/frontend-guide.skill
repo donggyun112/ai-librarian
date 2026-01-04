@@ -1,0 +1,55 @@
+---
+description: |
+  프론트엔드 직접 코딩 가이드 로드. Direct Coding Mode에서 프론트 작업 시 사용.
+  "직접 해", "프론트 코드", "UI 수정", "컴포넌트" 등 프론트 직접 코딩 요청 시 자동 호출.
+  Frontend CLAUDE.md와 rules를 로드하여 코딩 표준을 적용.
+---
+
+# Frontend Direct Coding Guide
+
+프론트엔드 직접 코딩 모드입니다. 다음 파일들을 순서대로 읽고 규칙을 따르세요.
+
+## Step 1: 가이드 로드 (필수)
+
+다음 파일들을 **반드시** 읽으세요:
+
+```
+Read: ICJC-Frontend/.claude/CLAUDE.md
+Read: ICJC-Frontend/.claude/rules/styling-and-tokens.md
+Read: ICJC-Frontend/.claude/rules/typescript-rules.md
+Read: ICJC-Frontend/.claude/rules/component-architecture.md
+Read: ICJC-Frontend/.claude/rules/data-and-effects.md
+```
+
+## Step 2: 핵심 규칙 요약
+
+| 규칙 | 설명 |
+|------|------|
+| **Tailwind ONLY** | `style={}` 금지, CSS import 금지 |
+| **any 금지** | `any` 타입 사용 = 쓰레기 코드 |
+| **cn() 사용** | 조건부 클래스는 `cn()` 유틸리티 사용 |
+| **console.log 정리** | 문제 해결 후 `console.log` 전부 삭제 |
+| **상태 처리** | loading/error/empty 상태 모두 처리 |
+
+## Step 3: 코딩 체크리스트
+
+```
+□ Tailwind만 사용 (inline style 금지)
+□ any 타입 사용 안함
+□ cn() 조건부 클래스 사용
+□ console.log 수정 후 제거
+□ import type 사용
+□ loading/error/empty 상태 처리
+□ React Query로 서버 상태 관리
+□ Jotai로 클라이언트 상태 관리
+```
+
+## Step 4: 완료 전 검증
+
+```bash
+pnpm lint
+grep -r "console.log" app/ components/ hooks/ lib/  # 수정 후 비어있어야 함
+grep -r ": any" app/ components/ hooks/ lib/        # 비어있어야 함
+```
+
+검증 실패 시 수정 후 다시 검증하세요.
