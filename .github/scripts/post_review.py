@@ -51,29 +51,85 @@ class ReviewPayload:
 
 
 def get_existing_comment_locations(repo: str, pr_number: int) -> set[tuple[str, int]]:
-    """기존 bot 코멘트의 (path, line) 위치 조회"""
-    try:
-        comments_json = run_gh([
-            "api", f"repos/{repo}/pulls/{pr_number}/comments",
-            "--paginate",
-            "--jq", '[.[] | select(.user.login == "github-actions[bot]") | {path: .path, line: .line}]'
-        ])
-        if not comments_json:
-            return set()
+    """기존 bot 코멘트의 (path, line) 위치 조회 (unresolved 스레드만)
 
-        locations = set()
-        for line in comments_json.strip().split("\n"):
-            if line.strip():
-                try:
-                    page_comments = json.loads(line)
-                    for c in page_comments:
-                        if c.get("path") and c.get("line"):
-                            locations.add((c["path"], c["line"]))
-                except json.JSONDecodeError:
+    Note: resolved된 스레드는 제외하여 회귀 버그 감지 가능하도록 함
+    """
+    owner, repo_name = repo.split("/")
+
+    query = """
+    query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              isResolved
+              comments(first: 1) {
+                nodes {
+                  author { login }
+                  path
+                  line
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+
+    locations = set()
+    cursor = None
+    has_next_page = True
+
+    try:
+        while has_next_page:
+            gh_args = [
+                "api", "graphql",
+                "-f", f"query={query}",
+                "-f", f"owner={owner}",
+                "-f", f"repo={repo_name}",
+                "-F", f"pr={pr_number}",
+            ]
+            if cursor:
+                gh_args.extend(["-f", f"cursor={cursor}"])
+
+            result = run_gh(gh_args)
+
+            if not result:
+                break
+
+            data = json.loads(result)
+            review_threads = data.get("data", {}).get("repository", {}).get("pullRequest", {}).get("reviewThreads", {})
+            threads = review_threads.get("nodes", [])
+            page_info = review_threads.get("pageInfo", {})
+
+            for thread in threads:
+                # Only include UNRESOLVED threads
+                if thread.get("isResolved", False):
                     continue
-        return locations
+
+                comments = thread.get("comments", {}).get("nodes", [])
+                if comments:
+                    first_comment = comments[0]
+                    author_login = first_comment.get("author", {}).get("login", "")
+                    if author_login in ("github-actions[bot]", "github-actions"):
+                        path = first_comment.get("path")
+                        line = first_comment.get("line")
+                        if path and line:
+                            locations.add((path, line))
+
+            has_next_page = page_info.get("hasNextPage", False)
+            cursor = page_info.get("endCursor")
+
     except RuntimeError:
-        return set()
+        pass
+
+    return locations
 
 
 def filter_duplicate_comments(
@@ -218,23 +274,18 @@ def resolve_bot_threads(repo: str, pr_number: int) -> None:
         has_next_page = page_info.get("hasNextPage", False)
         cursor = page_info.get("endCursor")
 
-    mutation = """
-    mutation($threadId: ID!) {
-      resolveReviewThread(input: {threadId: $threadId}) {
-        thread { isResolved }
-      }
-    }
-    """
+    mutation = "mutation ResolveThread($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }"
 
     for thread_id in thread_ids:
         if not thread_id:
             continue
         try:
-            run_gh([
-                "api", "graphql",
-                "-f", f"query={mutation}",
-                "-f", f"threadId={thread_id}"
-            ])
+            # Use JSON input for proper GraphQL variable handling
+            payload = json.dumps({
+                "query": mutation,
+                "variables": {"threadId": thread_id}
+            })
+            run_gh(["api", "graphql", "--input", "-"], input_data=payload)
             print(f"Resolved thread {thread_id}")
         except RuntimeError as e:
             print(f"Warning: Failed to resolve thread {thread_id}: {e}", file=sys.stderr)
@@ -323,23 +374,18 @@ def submit_review_decision(pr_number: int, decision: str) -> None:
 
 def resolve_specific_threads(thread_ids: list[str]) -> None:
     """특정 thread_id 목록을 resolve"""
-    mutation = """
-    mutation($threadId: ID!) {
-      resolveReviewThread(input: {threadId: $threadId}) {
-        thread { isResolved }
-      }
-    }
-    """
+    mutation = "mutation ResolveThread($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }"
 
     for thread_id in thread_ids:
         if not thread_id:
             continue
         try:
-            run_gh([
-                "api", "graphql",
-                "-f", f"query={mutation}",
-                "-f", f"threadId={thread_id}"
-            ])
+            # Use JSON input for proper GraphQL variable handling
+            payload = json.dumps({
+                "query": mutation,
+                "variables": {"threadId": thread_id}
+            })
+            run_gh(["api", "graphql", "--input", "-"], input_data=payload)
             print(f"Resolved thread {thread_id}")
         except RuntimeError as e:
             print(f"Warning: Failed to resolve thread {thread_id}: {e}", file=sys.stderr)

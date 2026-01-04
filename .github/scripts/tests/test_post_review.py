@@ -358,12 +358,78 @@ class TestSeverityAndDuplicates:
 
     @patch("post_review.run_gh")
     def test_get_existing_comment_locations(self, mock_gh):
-        """Test fetching existing comment locations."""
-        mock_gh.return_value = '[{"path": "file.py", "line": 42}]'
+        """Test fetching existing comment locations (unresolved only)."""
+        graphql_response = json.dumps({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [
+                                {
+                                    "isResolved": False,
+                                    "comments": {
+                                        "nodes": [{
+                                            "author": {"login": "github-actions[bot]"},
+                                            "path": "file.py",
+                                            "line": 42
+                                        }]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        })
+        mock_gh.return_value = graphql_response
 
         locations = get_existing_comment_locations("owner/repo", 1)
 
         assert ("file.py", 42) in locations
+
+    @patch("post_review.run_gh")
+    def test_get_existing_comment_locations_excludes_resolved(self, mock_gh):
+        """Test that resolved threads are excluded."""
+        graphql_response = json.dumps({
+            "data": {
+                "repository": {
+                    "pullRequest": {
+                        "reviewThreads": {
+                            "pageInfo": {"hasNextPage": False, "endCursor": None},
+                            "nodes": [
+                                {
+                                    "isResolved": True,  # This should be excluded
+                                    "comments": {
+                                        "nodes": [{
+                                            "author": {"login": "github-actions[bot]"},
+                                            "path": "resolved.py",
+                                            "line": 10
+                                        }]
+                                    }
+                                },
+                                {
+                                    "isResolved": False,  # This should be included
+                                    "comments": {
+                                        "nodes": [{
+                                            "author": {"login": "github-actions"},
+                                            "path": "unresolved.py",
+                                            "line": 20
+                                        }]
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        })
+        mock_gh.return_value = graphql_response
+
+        locations = get_existing_comment_locations("owner/repo", 1)
+
+        assert ("resolved.py", 10) not in locations
+        assert ("unresolved.py", 20) in locations
 
     @patch("post_review.run_gh")
     def test_get_existing_comment_locations_empty(self, mock_gh):

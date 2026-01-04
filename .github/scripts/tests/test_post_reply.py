@@ -101,7 +101,10 @@ class TestResolveThread:
         mock_gh.assert_called_once()
         call_args = mock_gh.call_args[0][0]
         assert "graphql" in call_args
-        assert "threadId=PRRT_abc123" in str(call_args)
+        assert "--input" in call_args
+        # Check the input_data contains the thread ID
+        input_data = mock_gh.call_args[1].get("input_data", "")
+        assert "PRRT_abc123" in input_data
 
     @patch("post_reply.run_gh")
     def test_resolve_empty_thread_id(self, mock_gh, capsys):

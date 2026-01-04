@@ -64,20 +64,15 @@ def resolve_thread(thread_node_id: str) -> None:
         print("No thread_node_id provided, skipping resolve")
         return
 
-    mutation = """
-    mutation($threadId: ID!) {
-      resolveReviewThread(input: {threadId: $threadId}) {
-        thread { isResolved }
-      }
-    }
-    """
+    mutation = "mutation ResolveThread($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { isResolved } } }"
 
     try:
-        run_gh([
-            "api", "graphql",
-            "-f", f"query={mutation}",
-            "-f", f"threadId={thread_node_id}"
-        ])
+        # Use JSON input for proper GraphQL variable handling
+        payload = json.dumps({
+            "query": mutation,
+            "variables": {"threadId": thread_node_id}
+        })
+        run_gh(["api", "graphql", "--input", "-"], input_data=payload)
         print(f"Resolved thread {thread_node_id}")
     except RuntimeError as e:
         print(f"Warning: Failed to resolve thread: {e}", file=sys.stderr)
