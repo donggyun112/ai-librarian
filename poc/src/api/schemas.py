@@ -28,6 +28,19 @@ class SessionListResponse(BaseModel):
     sessions: List[SessionInfo]
 
 
+class MessageInfo(BaseModel):
+    """메시지 정보"""
+    role: str = Field(..., description="메시지 역할 (human, ai, system, tool)")
+    content: str = Field(..., description="메시지 내용")
+    timestamp: Optional[str] = Field(None, description="메시지 생성 시간")
+
+
+class SessionHistoryResponse(BaseModel):
+    """세션 히스토리 응답"""
+    session_id: str
+    messages: List[MessageInfo]
+
+
 class HealthResponse(BaseModel):
     """헬스 체크 응답"""
     status: str = "ok"

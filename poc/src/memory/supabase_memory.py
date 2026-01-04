@@ -1,6 +1,7 @@
 """Supabase 기반 대화 히스토리 저장소"""
 from typing import List, Optional
 import asyncio
+from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import create_client, Client
@@ -147,9 +148,10 @@ class SupabaseChatMemory(ChatMemory):
             await anyio.to_thread.run_sync(_insert_message)
 
             # (선택) chat_sessions의 last_message_at 업데이트
+            # Use Python datetime instead of SQL string "now()" which PostgREST can't cast
             def _update_session():
                 return self.supabase.table(self.sessions_table)\
-                    .update({"last_message_at": "now()"})\
+                    .update({"last_message_at": datetime.now(timezone.utc).isoformat()})\
                     .eq("id", session_id)\
                     .execute()
 

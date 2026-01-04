@@ -16,6 +16,8 @@ from .schemas import (
     ChatResponse,
     SessionInfo,
     SessionListResponse,
+    SessionHistoryResponse,
+    MessageInfo,
     HealthResponse,
 )
 
@@ -50,6 +52,14 @@ async def chat(request: ChatRequest):
     """채팅 (Non-streaming)"""
     session_id = request.session_id or str(uuid.uuid4())
 
+    # SupabaseChatMemory인 경우 user_id 필수
+    if isinstance(memory, SupabaseChatMemory):
+        if not request.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
+
     try:
         kwargs = {}
         if request.user_id:
@@ -64,6 +74,13 @@ async def chat(request: ChatRequest):
             answer=result.answer,
             sources=result.sources,
             session_id=session_id
+        )
+    except ValueError as e:
+        # Handle user_id validation errors from Supervisor._build_messages
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
         )
     except Exception as e:
         logger.exception("Chat processing failed")
@@ -85,6 +102,14 @@ async def chat_stream(request: ChatRequest):
     - done: 스트림 완료
     - error: 에러 발생
     """
+    # SupabaseChatMemory인 경우 user_id 필수
+    if isinstance(memory, SupabaseChatMemory):
+        if not request.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
+
     session_id = request.session_id or str(uuid.uuid4())
 
     async def event_generator() -> AsyncGenerator[dict, None]:
@@ -130,6 +155,14 @@ async def chat_stream(request: ChatRequest):
                 "data": json.dumps({"session_id": session_id})
             }
 
+        except ValueError as e:
+            # Handle user_id validation errors from Supervisor._build_messages
+            logger.error(f"Validation error: {e}")
+            yield {
+                "event": "error",
+                "data": json.dumps({"error": str(e)})
+            }
+            
         except Exception as e:
             logger.exception("Stream processing failed")
             yield {
@@ -174,6 +207,41 @@ async def list_sessions(user_id: Optional[str] = None):
         ]
 
     return SessionListResponse(sessions=sessions)
+
+
+@router.get("/sessions/{session_id}/messages", response_model=SessionHistoryResponse)
+async def get_session_messages(session_id: str, user_id: Optional[str] = None):
+    """세션의 대화 히스토리 조회
+
+    Args:
+        session_id: 세션 ID
+        user_id: 사용자 ID (Supabase 사용 시 필수)
+    """
+    # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
+    if isinstance(memory, SupabaseChatMemory):
+        if not user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="user_id is required when using Supabase backend"
+            )
+        messages = memory.get_messages(session_id, user_id=user_id)
+    else:
+        # InMemoryChatMemory는 user_id 무시
+        messages = memory.get_messages(session_id)
+
+    # Convert BaseMessage objects to MessageInfo
+    message_list = []
+    for msg in messages:
+        message_list.append(MessageInfo(
+            role=msg.type,
+            content=msg.content,
+            timestamp=msg.additional_kwargs.get("timestamp")
+        ))
+
+    return SessionHistoryResponse(
+        session_id=session_id,
+        messages=message_list
+    )
 
 
 @router.delete("/sessions/{session_id}")
