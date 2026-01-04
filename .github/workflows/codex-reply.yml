@@ -226,14 +226,20 @@ jobs:
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
           EVENT_NAME: ${{ github.event_name }}
+          COMMENT_ID: ${{ github.event.comment.id }}
           IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
           THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
         run: |
-          # Build command with optional --in-reply-to
+          # Build command with optional --in-reply-to and --comment-id
           CMD="python3 .github/scripts/post_reply.py --repo \"$REPO\" --pr \"$PR_NUMBER\" --event-type \"$EVENT_NAME\""
 
+          # For review comments, we need a comment ID to reply to.
+          # Use in_reply_to_id if available (replying to a comment in a thread),
+          # otherwise use the triggering comment_id itself (top-level comment case).
           if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
             CMD="$CMD --in-reply-to \"$IN_REPLY_TO_ID\""
+          elif [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
+            CMD="$CMD --in-reply-to \"$COMMENT_ID\""
           fi
 
           if [ -n "$THREAD_NODE_ID" ] && [ "$THREAD_NODE_ID" != "null" ]; then
