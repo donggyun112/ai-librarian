@@ -261,15 +261,15 @@ class TestSupabaseSessionManagement:
         )
 
         # 2. 세션 목록에 표시되는지 확인
-        sessions = memory.list_sessions(user_id="user-1")
+        sessions = await memory.list_sessions_async(user_id="user-1")
         assert "session-1" in sessions
 
         # 3. 메시지 개수 확인
-        count = memory.get_message_count("session-1", user_id="user-1")
+        count = await memory.get_message_count_async("session-1", user_id="user-1")
         assert count == 2  # user + ai message
 
-        # 4. 메시지 조회 (현재는 동기 메서드이므로 직접 호출)
-        messages = memory.get_messages("session-1", user_id="user-1")
+        # 4. 메시지 조회
+        messages = await memory.get_messages_async("session-1", user_id="user-1")
         assert len(messages) == 2
         assert messages[0].content == "첫 번째 질문"
         assert messages[1].content == "첫 번째 답변"
@@ -296,21 +296,21 @@ class TestSupabaseSessionManagement:
         )
 
         # User 1은 자신의 세션만 볼 수 있음
-        user1_sessions = memory.list_sessions(user_id="user-1")
+        user1_sessions = await memory.list_sessions_async(user_id="user-1")
         assert "session-user1" in user1_sessions
         assert "session-user2" not in user1_sessions
 
         # User 2는 자신의 세션만 볼 수 있음
-        user2_sessions = memory.list_sessions(user_id="user-2")
+        user2_sessions = await memory.list_sessions_async(user_id="user-2")
         assert "session-user2" in user2_sessions
         assert "session-user1" not in user2_sessions
 
         # User 1은 User 2의 메시지를 볼 수 없음
-        messages = memory.get_messages("session-user2", user_id="user-1")
+        messages = await memory.get_messages_async("session-user2", user_id="user-1")
         assert len(messages) == 0
 
         # User 2는 자신의 메시지를 볼 수 있음
-        messages = memory.get_messages("session-user2", user_id="user-2")
+        messages = await memory.get_messages_async("session-user2", user_id="user-2")
         assert len(messages) == 2
 
     @pytest.mark.asyncio
@@ -334,7 +334,7 @@ class TestSupabaseSessionManagement:
             )
 
         # 히스토리 조회
-        messages = memory.get_messages("session-history", user_id="user-1")
+        messages = await memory.get_messages_async("session-history", user_id="user-1")
 
         # 6개 메시지 (3 질문 + 3 답변)
         assert len(messages) == 6
@@ -367,38 +367,41 @@ class TestSupabaseSessionManagement:
         )
 
         # 메시지는 저장되어야 함 (메타데이터는 additional_kwargs에)
-        count = memory.get_message_count("session-metadata", user_id="user-1")
+        count = await memory.get_message_count_async("session-metadata", user_id="user-1")
         assert count == 2
 
-    def test_unauthorized_access_denied(self, mock_supabase_client):
+    @pytest.mark.asyncio
+    async def test_unauthorized_access_denied(self, mock_supabase_client):
         """권한 없는 접근 차단 테스트"""
         memory = SupabaseChatMemory(url="http://test", key="test-key")
 
         # User 2는 User 1의 세션에 접근 불가
-        messages = memory.get_messages("session-user1", user_id="user-2")
+        messages = await memory.get_messages_async("session-user1", user_id="user-2")
         assert len(messages) == 0
 
         # User 2는 User 1의 세션 메시지 개수를 볼 수 없음
-        count = memory.get_message_count("session-user1", user_id="user-2")
+        count = await memory.get_message_count_async("session-user1", user_id="user-2")
         assert count == 0
 
-    def test_clear_session_with_ownership(self, mock_supabase_client):
+    @pytest.mark.asyncio
+    async def test_clear_session_with_ownership(self, mock_supabase_client):
         """소유권 검증 후 세션 정리 테스트"""
         memory = SupabaseChatMemory(url="http://test", key="test-key")
 
         # User 2는 User 1의 세션을 정리할 수 없음
-        memory.clear("session-user1", user_id="user-2")
+        await memory.clear_async("session-user1", user_id="user-2")
 
         # User 1은 자신의 세션을 정리할 수 있음
-        memory.clear("session-user1", user_id="user-1")
+        await memory.clear_async("session-user1", user_id="user-1")
 
-    def test_delete_session_with_ownership(self, mock_supabase_client):
+    @pytest.mark.asyncio
+    async def test_delete_session_with_ownership(self, mock_supabase_client):
         """소유권 검증 후 세션 삭제 테스트"""
         memory = SupabaseChatMemory(url="http://test", key="test-key")
 
         # User 1의 세션은 User 1만 삭제 가능
-        memory.delete_session("session-user1", user_id="user-1")
+        await memory.delete_session_async("session-user1", user_id="user-1")
 
         # 삭제 후 조회 불가
-        sessions = memory.list_sessions(user_id="user-1")
+        sessions = await memory.list_sessions_async(user_id="user-1")
         assert "session-user1" not in sessions

@@ -1,13 +1,13 @@
 """Supabase 기반 대화 히스토리 저장소"""
 from typing import List, Optional
 import asyncio
+import concurrent.futures
 from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import create_client, Client
 from loguru import logger
 import anyio
-from anyio.from_thread import run_sync
 
 from .base import ChatMemory
 
@@ -126,9 +126,13 @@ class SupabaseChatMemory(ChatMemory):
         """
         try:
             asyncio.get_running_loop()
-            logger.warning("get_messages called from async context. Consider using get_messages_async directly.")
-            return run_sync(self.get_messages_async, session_id, user_id)
+            logger.warning("get_messages called from async context. Use get_messages_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.get_messages_async(session_id, user_id))
+                return future.result()
         except RuntimeError:
+            # No event loop running - safe to use asyncio.run
             return asyncio.run(self.get_messages_async(session_id, user_id))
 
     def _get_role(self, message: BaseMessage) -> str:
@@ -187,14 +191,14 @@ class SupabaseChatMemory(ChatMemory):
             비동기 컨텍스트에서는 _add_message_async를 직접 사용하세요.
         """
         try:
-            # 현재 실행 중인 이벤트 루프가 있는 경우
             asyncio.get_running_loop()
-            # 비동기 컨텍스트에서 호출된 경우 경고
-            logger.warning("_add_message called from async context. Consider using _add_message_async directly.")
-            # anyio.from_thread를 사용하여 비동기 함수 호출
-            run_sync(self._add_message_async, session_id, message, **kwargs)
+            logger.warning("_add_message called from async context. Use _add_message_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._add_message_async(session_id, message, **kwargs))
+                future.result()
         except RuntimeError:
-            # 이벤트 루프가 없는 경우 (동기 컨텍스트)
+            # No event loop running - safe to use asyncio.run
             asyncio.run(self._add_message_async(session_id, message, **kwargs))
 
     def add_user_message(self, session_id: str, content: str, **kwargs) -> None:
@@ -269,9 +273,13 @@ class SupabaseChatMemory(ChatMemory):
         """
         try:
             asyncio.get_running_loop()
-            logger.warning("clear called from async context. Consider using clear_async directly.")
-            run_sync(self.clear_async, session_id, user_id)
+            logger.warning("clear called from async context. Use clear_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.clear_async(session_id, user_id))
+                future.result()
         except RuntimeError:
+            # No event loop running - safe to use asyncio.run
             asyncio.run(self.clear_async(session_id, user_id))
 
     async def delete_session_async(self, session_id: str, user_id: Optional[str] = None) -> None:
@@ -312,9 +320,13 @@ class SupabaseChatMemory(ChatMemory):
         """
         try:
             asyncio.get_running_loop()
-            logger.warning("delete_session called from async context. Consider using delete_session_async directly.")
-            run_sync(self.delete_session_async, session_id, user_id)
+            logger.warning("delete_session called from async context. Use delete_session_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.delete_session_async(session_id, user_id))
+                future.result()
         except RuntimeError:
+            # No event loop running - safe to use asyncio.run
             asyncio.run(self.delete_session_async(session_id, user_id))
 
     async def list_sessions_async(self, user_id: Optional[str] = None) -> List[str]:
@@ -346,9 +358,13 @@ class SupabaseChatMemory(ChatMemory):
         """
         try:
             asyncio.get_running_loop()
-            logger.warning("list_sessions called from async context. Consider using list_sessions_async directly.")
-            return run_sync(self.list_sessions_async, user_id)
+            logger.warning("list_sessions called from async context. Use list_sessions_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.list_sessions_async(user_id))
+                return future.result()
         except RuntimeError:
+            # No event loop running - safe to use asyncio.run
             return asyncio.run(self.list_sessions_async(user_id))
 
     async def get_message_count_async(self, session_id: str, user_id: Optional[str] = None) -> int:
@@ -393,7 +409,11 @@ class SupabaseChatMemory(ChatMemory):
         """
         try:
             asyncio.get_running_loop()
-            logger.warning("get_message_count called from async context. Consider using get_message_count_async directly.")
-            return run_sync(self.get_message_count_async, session_id, user_id)
+            logger.warning("get_message_count called from async context. Use get_message_count_async directly.")
+            # Create a new thread to run the async function
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self.get_message_count_async(session_id, user_id))
+                return future.result()
         except RuntimeError:
+            # No event loop running - safe to use asyncio.run
             return asyncio.run(self.get_message_count_async(session_id, user_id))
