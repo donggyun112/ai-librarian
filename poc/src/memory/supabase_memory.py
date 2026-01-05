@@ -150,7 +150,9 @@ class SupabaseChatMemory(ChatMemory):
         """메시지 저장 로직 (비동기)"""
         user_id = kwargs.get("user_id")
 
-        # 세션이 있는지 확인 (또는 생성)
+        if not await self._ensure_session(session_id, user_id):
+            logger.error(f"Cannot add message: Session {session_id} could not be established.")
+            raise ValueError("Supabase session could not be established for this user.")
         if not await self._ensure_session(session_id, user_id):
             logger.error(f"Cannot add message: Session {session_id} could not be established.")
             return
