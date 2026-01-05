@@ -33,20 +33,31 @@ class SupabaseChatMemory(ChatMemory):
         self.messages_table = "chat_messages"
 
     async def _ensure_session(self, session_id: str, user_id: Optional[str] = None) -> bool:
-        """세션이 존재하는지 확인하고, 없으면 생성 시도.
-        user_id가 필수값(auth.users 참조)이므로 제공되지 않으면 생성 실패 가능성 있음.
+        """세션이 존재하는지 확인하고 소유권을 검증. 없으면 생성 시도.
+
+        Args:
+            session_id: 세션 ID
+            user_id: 사용자 ID (제공 시 소유권 검증)
+
+        Returns:
+            True if session exists and user owns it (or user_id not provided for backwards compat)
+            False otherwise
         """
         try:
-            # 1. Check existence
+            # 1. Check existence and ownership
             def _check_session():
-                return self.supabase.table(self.sessions_table)\
-                    .select("id")\
-                    .eq("id", session_id)\
-                    .execute()
+                query = self.supabase.table(self.sessions_table).select("id, user_id").eq("id", session_id)
+                return query.execute()
 
             res = await anyio.to_thread.run_sync(_check_session)
 
             if res.data:
+                # Session exists - verify ownership if user_id provided
+                if user_id:
+                    session_owner = res.data[0].get("user_id")
+                    if session_owner != user_id:
+                        logger.warning(f"Session {session_id} exists but is owned by {session_owner}, not {user_id}")
+                        return False
                 return True
 
             # 2. If not exists, create one

@@ -405,3 +405,25 @@ class TestSupabaseSessionManagement:
         # 삭제 후 조회 불가
         sessions = await memory.list_sessions_async(user_id="user-1")
         assert "session-user1" not in sessions
+
+    @pytest.mark.asyncio
+    async def test_cannot_write_to_other_users_session(self, mock_supabase_client):  # noqa: ARG002
+        """다른 사용자의 세션에 메시지 작성 불가 테스트"""
+        memory = SupabaseChatMemory(url="http://test", key="test-key")
+
+        # User 1이 세션 생성
+        await memory.save_conversation_async(
+            "session-user1",
+            "User 1의 질문",
+            "User 1의 답변",
+            user_id="user-1"
+        )
+
+        # User 2가 User 1의 세션에 메시지 추가 시도 -> 실패해야 함
+        with pytest.raises(ValueError, match="could not be established"):
+            await memory.save_conversation_async(
+                "session-user1",  # User 1의 세션
+                "User 2의 질문",
+                "User 2의 답변",
+                user_id="user-2"  # 다른 사용자
+            )
