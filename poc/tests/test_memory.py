@@ -129,6 +129,39 @@ class TestInMemoryChatMemory:
         memory.save_conversation("session-1", "질문", "답변")
         assert memory.get_message_count("session-1") == 2
 
+    def test_user_id_not_in_additional_kwargs(self):
+        """user_id는 additional_kwargs에 포함되지 않음 (LLM API 호환성)"""
+        memory = InMemoryChatMemory()
+
+        # user_id와 함께 메시지 추가
+        memory.add_user_message("session-1", "테스트 메시지", user_id="user-123")
+        memory.add_ai_message("session-1", "AI 응답", user_id="user-123")
+
+        messages = memory.get_messages("session-1")
+
+        # user_id가 additional_kwargs에 없어야 함
+        assert "user_id" not in messages[0].additional_kwargs
+        assert "user_id" not in messages[1].additional_kwargs
+
+    def test_other_metadata_preserved_without_user_id(self):
+        """user_id 제외한 다른 메타데이터는 보존"""
+        memory = InMemoryChatMemory()
+
+        memory.add_user_message(
+            "session-1",
+            "테스트",
+            user_id="user-123",  # 필터링됨
+            timestamp="2024-01-01",  # 보존됨
+            custom_field="value"  # 보존됨
+        )
+
+        messages = memory.get_messages("session-1")
+
+        # user_id만 제외되고 나머지는 보존
+        assert "user_id" not in messages[0].additional_kwargs
+        assert messages[0].additional_kwargs["timestamp"] == "2024-01-01"
+        assert messages[0].additional_kwargs["custom_field"] == "value"
+
 
 class TestSupervisorWithMemory:
     """Supervisor 메모리 주입 테스트"""

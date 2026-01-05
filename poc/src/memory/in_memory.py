@@ -43,17 +43,20 @@ class InMemoryChatMemory(ChatMemory):
         """사용자 메시지 추가"""
         with self._lock:
             msg = HumanMessage(content=content)
-            # 메타데이터가 있으면 additional_kwargs에 저장 (선택사항)
-            if kwargs:
-                msg.additional_kwargs.update(kwargs)
+            # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
+            metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
+            if metadata:
+                msg.additional_kwargs.update(metadata)
             self._store[session_id].append(msg)
 
     def add_ai_message(self, session_id: str, content: str, **kwargs) -> None:
         """AI 메시지 추가"""
         with self._lock:
             msg = AIMessage(content=content)
-            if kwargs:
-                msg.additional_kwargs.update(kwargs)
+            # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
+            metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
+            if metadata:
+                msg.additional_kwargs.update(metadata)
             self._store[session_id].append(msg)
 
     def clear(self, session_id: str) -> None:
