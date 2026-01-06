@@ -11,7 +11,7 @@ class Config:
     # OpenAI
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OPENAI_MODEL = os.getenv("OPENAI_CHAT_MODEL", "gpt-4o")
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+    EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
     # Google Gemini
     GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
@@ -24,8 +24,6 @@ class Config:
     # OpenRouter (기타 모델용)
     OPENROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY")
     OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
-
-
 
 
     # Supervisor 설정

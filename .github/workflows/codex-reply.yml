@@ -1,0 +1,331 @@
+name: Codex Reply
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.event.pull_request.number }}-${{ github.event.comment.id }}
+  cancel-in-progress: true
+
+jobs:
+  codex-reply:
+    if: |
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       !contains(github.event.comment.body, '/codex review') &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+      ||
+      (github.event_name == 'pull_request_review_comment' &&
+       (github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'OWNER' ||
+        github.event.comment.author_association == 'COLLABORATOR'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Check if reply to AI comment
+        id: check_reply
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Only trigger if this is a reply to github-actions bot
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            # Determine API path based on event type
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            fi
+
+            ORIGINAL_AUTHOR=$(gh api "$API_PATH" --jq '.user.login' 2>/dev/null || echo "")
+            if [ "$ORIGINAL_AUTHOR" = "github-actions[bot]" ]; then
+              echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          # Fallback: check for direct mentions
+          if echo "$COMMENT_BODY" | grep -qiE "@github-actions|@codex"; then
+            echo "is_ai_reply=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_ai_reply=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout repository
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Codex CLI
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: npm install -g @openai/codex@latest
+
+      - name: Restore Codex OAuth credentials
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          CODEX_AUTH_JSON: ${{ secrets.CODEX_AUTH_JSON }}
+        run: |
+          if [ -z "$CODEX_AUTH_JSON" ]; then
+            echo "::error::CODEX_AUTH_JSON secret is not configured"
+            exit 1
+          fi
+          mkdir -p ~/.codex
+          printf '%s' "$CODEX_AUTH_JSON" > ~/.codex/auth.json
+          chmod 600 ~/.codex/auth.json
+
+      - name: Setup MCP servers
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        run: |
+          cat >> ~/.codex/config.toml << 'EOF'
+
+          # Context7 - Library documentation (LangChain, LangGraph, FastAPI, Pydantic, etc.)
+          [mcp_servers.context7]
+          command = "npx"
+          args = ["-y", "@upstash/context7-mcp"]
+          EOF
+
+          echo "✅ MCP servers configured (context7)"
+
+      - name: Get context for reply
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        id: context
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          COMMENT_PATH: ${{ github.event.comment.path }}
+          COMMENT_LINE: ${{ github.event.comment.line }}
+          COMMENT_NODE_ID: ${{ github.event.comment.node_id }}
+        run: |
+          # Get original AI comment content and thread node_id
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            # This is a reply to an existing comment - get the parent comment info
+            if [ "$GITHUB_EVENT_NAME" = "issue_comment" ]; then
+              API_PATH="repos/$REPO/issues/comments/$IN_REPLY_TO_ID"
+            else
+              API_PATH="repos/$REPO/pulls/comments/$IN_REPLY_TO_ID"
+            fi
+
+            ORIGINAL=$(gh api "$API_PATH" --jq '{body: .body, path: .path, line: .line, node_id: .node_id}' 2>/dev/null || echo "{}")
+            echo "original_comment<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$ORIGINAL" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Get the review thread node_id (PRRT_...) for resolving
+          # Note: comment.node_id is PRRC_... (comment), but resolveReviewThread needs PRRT_... (thread)
+          # We need to query GraphQL to find the thread that contains this comment
+          if [ "$GITHUB_EVENT_NAME" = "pull_request_review_comment" ]; then
+            QUERY='
+            query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
+              repository(owner: $owner, name: $repo) {
+                pullRequest(number: $pr) {
+                  reviewThreads(first: 100, after: $cursor) {
+                    pageInfo {
+                      hasNextPage
+                      endCursor
+                    }
+                    nodes {
+                      id
+                      comments(first: 1) {
+                        nodes { id }
+                      }
+                    }
+                  }
+                }
+              }
+            }'
+
+            OWNER="${REPO%/*}"
+            REPO_NAME="${REPO#*/}"
+
+            # Find the thread that contains our comment (by comment node_id)
+            # For top-level comments, COMMENT_NODE_ID is the first comment in the thread
+            # For replies, IN_REPLY_TO_ID's node_id is the first comment
+            if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+              # Get the parent comment's node_id first
+              PARENT_NODE_ID=$(gh api "repos/$REPO/pulls/comments/$IN_REPLY_TO_ID" --jq '.node_id' 2>/dev/null || echo "")
+              TARGET_COMMENT_ID="$PARENT_NODE_ID"
+            else
+              TARGET_COMMENT_ID="$COMMENT_NODE_ID"
+            fi
+
+            if [ -n "$TARGET_COMMENT_ID" ]; then
+              # Paginate through all review threads to find the one containing our comment
+              THREAD_NODE_ID=""
+              CURSOR=""
+              while true; do
+                if [ -n "$CURSOR" ]; then
+                  RESULT=$(gh api graphql -f query="$QUERY" \
+                    -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" -f cursor="$CURSOR" 2>/dev/null || echo "{}")
+                else
+                  RESULT=$(gh api graphql -f query="$QUERY" \
+                    -f owner="$OWNER" -f repo="$REPO_NAME" -F pr="$PR_NUMBER" 2>/dev/null || echo "{}")
+                fi
+
+                # Try to find matching thread in current page
+                # Note: jq -r returns "null" string when no match, so we filter it out
+                THREAD_NODE_ID=$(echo "$RESULT" | jq -r ".data.repository.pullRequest.reviewThreads.nodes[] | select(.comments.nodes[0].id == \"$TARGET_COMMENT_ID\") | .id // empty" 2>/dev/null || echo "")
+
+                if [ -n "$THREAD_NODE_ID" ] && [ "$THREAD_NODE_ID" != "null" ]; then
+                  break
+                fi
+                THREAD_NODE_ID=""  # Reset if null
+
+                # Check if there are more pages
+                HAS_NEXT=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage' 2>/dev/null || echo "false")
+                if [ "$HAS_NEXT" != "true" ]; then
+                  break
+                fi
+
+                CURSOR=$(echo "$RESULT" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.endCursor' 2>/dev/null || echo "")
+              done
+
+              echo "thread_node_id=${THREAD_NODE_ID}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+          echo "file_path=${COMMENT_PATH:-}" >> "$GITHUB_OUTPUT"
+          echo "line_number=${COMMENT_LINE:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Reply to user
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          USER_COMMENT: ${{ github.event.comment.body }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          ORIGINAL_CONTEXT: ${{ steps.context.outputs.original_comment }}
+          FILE_PATH: ${{ steps.context.outputs.file_path }}
+          LINE_NUMBER: ${{ steps.context.outputs.line_number }}
+          EVENT_NAME: ${{ github.event_name }}
+          THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
+        run: |
+          CODEX_PROMPT="You are an AI code reviewer assistant. A user has asked a follow-up question about your code review.
+
+          <context>
+          REPO: $REPO
+          PR_NUMBER: $PR_NUMBER
+          EVENT_TYPE: $EVENT_NAME
+          USER_QUESTION: $USER_COMMENT
+          FILE_PATH: $FILE_PATH
+          LINE_NUMBER: $LINE_NUMBER
+          ORIGINAL_AI_COMMENT: $ORIGINAL_CONTEXT
+          IN_REPLY_TO_ID: $IN_REPLY_TO_ID
+          THREAD_NODE_ID: $THREAD_NODE_ID
+          </context>
+
+          <instructions>
+          1. First, get the PR info and understand the context:
+             - \`gh pr view \"$PR_NUMBER\" --json title,body,headRefOid\`
+             - If FILE_PATH is set, read the relevant file: \`cat \"\$FILE_PATH\"\`
+
+          2. Review your original suggestion (in ORIGINAL_AI_COMMENT) and the user's question
+
+          3. Provide a helpful, technical response that:
+             - Directly answers the user's question
+             - Explains the reasoning behind your original suggestion if asked
+             - Provides code examples if helpful
+
+          4. Post your reply using the correct API based on EVENT_TYPE:
+
+             If EVENT_TYPE is 'pull_request_review_comment' (inline code comment):
+             \`\`\`bash
+             gh api \"repos/$REPO/pulls/$PR_NUMBER/comments/$IN_REPLY_TO_ID/replies\" \\
+               --method POST \\
+               -f body=\"Your response here\"
+             \`\`\`
+
+             If EVENT_TYPE is 'issue_comment' (PR conversation comment):
+             \`\`\`bash
+             gh pr comment \"$PR_NUMBER\" --body \"Your response here\"
+             \`\`\`
+
+          5. Keep response concise and focused
+
+          6. Output ONLY the JSON object - no markdown fences, no extra text
+          </instructions>
+
+          <output_protocol>
+          YOU MUST OUTPUT A SINGLE JSON OBJECT TO STDOUT AS YOUR FINAL ACTION.
+
+          JSON Schema:
+          {
+            \"reply\": \"Your response in markdown format\",
+            \"resolve_thread\": true | false
+          }
+
+          - reply: The actual response content (markdown supported)
+          - resolve_thread: Set to true if the question has been fully answered
+
+          CRITICAL: Do NOT execute gh api calls yourself. Only output JSON.
+          The post_reply.py script will handle all GitHub API calls.
+          </output_protocol>
+
+          Answer the user's question about your code review suggestion."
+
+          codex exec \
+            -m gpt-5-codex \
+            --sandbox danger-full-access \
+            -c shell_environment_policy.inherit=all \
+            -c ask_for_approval="never" \
+            -C "$GITHUB_WORKSPACE" \
+            -- "$CODEX_PROMPT" > /tmp/reply_output.json
+
+          echo "=== Codex Output ==="
+          cat /tmp/reply_output.json
+
+      - name: Post reply to GitHub
+        if: steps.check_reply.outputs.is_ai_reply == 'true'
+        env:
+          # Use GITHUB_TOKEN for posting replies (appears as github-actions[bot])
+          # Use GH_TOKEN only for GraphQL mutations (resolve threads) that require elevated permissions
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN_ELEVATED: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+          EVENT_NAME: ${{ github.event_name }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          IN_REPLY_TO_ID: ${{ github.event.comment.in_reply_to_id }}
+          THREAD_NODE_ID: ${{ steps.context.outputs.thread_node_id }}
+        run: |
+          # Build command with optional --in-reply-to and --comment-id
+          CMD="python3 .github/scripts/post_reply.py --repo \"$REPO\" --pr \"$PR_NUMBER\" --event-type \"$EVENT_NAME\""
+
+          # For review comments, we need a comment ID to reply to.
+          # Use in_reply_to_id if available (replying to a comment in a thread),
+          # otherwise use the triggering comment_id itself (top-level comment case).
+          if [ -n "$IN_REPLY_TO_ID" ] && [ "$IN_REPLY_TO_ID" != "null" ]; then
+            CMD="$CMD --in-reply-to \"$IN_REPLY_TO_ID\""
+          elif [ "$EVENT_NAME" = "pull_request_review_comment" ]; then
+            CMD="$CMD --in-reply-to \"$COMMENT_ID\""
+          fi
+
+          if [ -n "$THREAD_NODE_ID" ] && [ "$THREAD_NODE_ID" != "null" ]; then
+            CMD="$CMD --thread-node-id \"$THREAD_NODE_ID\""
+          fi
+
+          CMD="$CMD --input /tmp/reply_output.json"
+
+          eval $CMD
+
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.codex/auth.json ~/.codex/config.toml /tmp/reply_output.json
