@@ -25,6 +25,9 @@ class Config:
     OPENROUTER_API_KEY = os.getenv("OPEN_ROUTER_API_KEY")
     OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "deepseek/deepseek-chat")
 
+    # Supabase (New)
+    SUPABASE_URL = os.getenv("SUPABASE_URL")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
     # Supervisor 설정
     MAX_RETRIES = 2
