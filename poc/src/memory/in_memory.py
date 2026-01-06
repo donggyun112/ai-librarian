@@ -39,15 +39,25 @@ class InMemoryChatMemory(ChatMemory):
         with self._lock:
             return self._store[session_id].copy()
 
-    def add_user_message(self, session_id: str, content: str) -> None:
+    def add_user_message(self, session_id: str, content: str, **kwargs) -> None:
         """사용자 메시지 추가"""
         with self._lock:
-            self._store[session_id].append(HumanMessage(content=content))
+            msg = HumanMessage(content=content)
+            # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
+            metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
+            if metadata:
+                msg.additional_kwargs.update(metadata)
+            self._store[session_id].append(msg)
 
-    def add_ai_message(self, session_id: str, content: str) -> None:
+    def add_ai_message(self, session_id: str, content: str, **kwargs) -> None:
         """AI 메시지 추가"""
         with self._lock:
-            self._store[session_id].append(AIMessage(content=content))
+            msg = AIMessage(content=content)
+            # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
+            metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
+            if metadata:
+                msg.additional_kwargs.update(metadata)
+            self._store[session_id].append(msg)
 
     def clear(self, session_id: str) -> None:
         """세션 히스토리 초기화"""
