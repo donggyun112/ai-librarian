@@ -7,6 +7,7 @@ class ChatRequest(BaseModel):
     """채팅 요청"""
     message: str = Field(..., min_length=1, description="사용자 메시지")
     session_id: Optional[str] = Field(None, description="세션 ID (없으면 히스토리 없이 처리)")
+    user_id: Optional[str] = Field(None, description="사용자 ID (선택 사항)")
 
 
 class ChatResponse(BaseModel):
@@ -25,6 +26,19 @@ class SessionInfo(BaseModel):
 class SessionListResponse(BaseModel):
     """세션 목록 응답"""
     sessions: List[SessionInfo]
+
+
+class MessageInfo(BaseModel):
+    """메시지 정보"""
+    role: str = Field(..., description="메시지 역할 (human, ai, system, tool)")
+    content: str = Field(..., description="메시지 내용")
+    timestamp: Optional[str] = Field(None, description="메시지 생성 시간")
+
+
+class SessionHistoryResponse(BaseModel):
+    """세션 히스토리 응답"""
+    session_id: str
+    messages: List[MessageInfo]
 
 
 class HealthResponse(BaseModel):

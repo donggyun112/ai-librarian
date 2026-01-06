@@ -15,6 +15,7 @@ Adapter 패턴:
 
 from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
+import anyio
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
@@ -28,7 +29,7 @@ from langgraph.prebuilt import ToolNode
 
 from src.schemas.models import SupervisorResponse, StreamEventType, LangGraphEventName
 from src.memory import ChatMemory, InMemoryChatMemory
-from src.adapters import get_adapter, BaseLLMAdapter, ToolChoiceType
+from src.adapters import get_adapter, BaseLLMAdapter
 from .prompts import get_system_prompt
 from .tools import TOOLS
 from config import config
@@ -169,17 +170,47 @@ class Supervisor:
     # ============================================================
     # 히스토리 관리
     # ============================================================
-    def _build_messages(self, session_id: str, question: str) -> List[BaseMessage]:
-        """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성"""
+    async def _build_messages(self, session_id: str, question: str, user_id: Optional[str] = None) -> List[BaseMessage]:
+        """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성
+
+        Args:
+            session_id: 세션 ID
+            question: 사용자 질문
+            user_id: 사용자 ID (SupabaseChatMemory 사용 시 필수)
+
+        Raises:
+            ValueError: SupabaseChatMemory 사용 시 user_id가 None인 경우
+        """
         # 도구 정보를 동적으로 주입하여 프롬프트 생성
         messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))]
-        messages.extend(self.memory.get_messages(session_id))  # 이전 대화 히스토리
+
+        # SupabaseChatMemory인 경우 비동기 메서드 사용
+        if hasattr(self.memory, 'get_messages_async'):
+            if user_id is None:
+                raise ValueError("user_id is required when using SupabaseChatMemory")
+            messages.extend(await self.memory.get_messages_async(session_id, user_id=user_id))
+        else:
+            # InMemoryChatMemory 등 동기 메모리는 그대로 사용
+            messages.extend(self.memory.get_messages(session_id))
+
         messages.append(HumanMessage(content=question))
         return messages
 
-    def _save_to_history(self, session_id: str, question: str, answer: str) -> None:
-        """대화 히스토리에 저장"""
-        self.memory.save_conversation(session_id, question, answer)
+    async def _save_to_history_async(self, session_id: str, question: str, answer: str, **kwargs) -> None:
+        """대화 히스토리에 비동기 저장"""
+        # SupabaseChatMemory의 경우 비동기 메서드 사용
+        if hasattr(self.memory, 'save_conversation_async'):
+            await self.memory.save_conversation_async(session_id, question, answer, **kwargs)
+        else:
+            # 동기 메모리의 경우 스레드에서 실행
+            await anyio.to_thread.run_sync(
+                self.memory.save_conversation,
+                session_id, question, answer, **kwargs
+            )
+
+    def _save_to_history(self, session_id: str, question: str, answer: str, **kwargs) -> None:
+        """대화 히스토리에 저장 (동기 wrapper)"""
+        self.memory.save_conversation(session_id, question, answer, **kwargs)
 
     def clear_history(self, session_id: str) -> None:
         """세션 히스토리 초기화"""
@@ -191,16 +222,19 @@ class Supervisor:
     async def process(
         self,
         question: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        **kwargs
     ) -> SupervisorResponse:
         """질문 처리 (Non-streaming)
 
         Args:
             question: 사용자 질문
             session_id: 세션 ID (None이면 히스토리 없이 처리)
+            **kwargs: 추가 메타데이터 (예: user_id)
         """
         if session_id:
-            messages = self._build_messages(session_id, question)
+            user_id = kwargs.get("user_id")
+            messages = await self._build_messages(session_id, question, user_id=user_id)
         else:
             # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [
@@ -225,7 +259,7 @@ class Supervisor:
 
         # 히스토리에 저장
         if session_id:
-            self._save_to_history(session_id, question, answer)
+            await self._save_to_history_async(session_id, question, answer, **kwargs)
 
         return SupervisorResponse(
             answer=answer,
@@ -240,7 +274,8 @@ class Supervisor:
     async def process_stream(
         self,
         question: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        **kwargs
     ) -> AsyncIterator[dict]:
         """
         스트리밍 처리 - 토큰 단위 실시간 출력
@@ -255,7 +290,8 @@ class Supervisor:
             {"type": "observe", "content": str} - 도구 결과
         """
         if session_id:
-            messages = self._build_messages(session_id, question)
+            user_id = kwargs.get("user_id")
+            messages = await self._build_messages(session_id, question, user_id=user_id)
         else:
             # 도구 정보를 동적으로 주입하여 프롬프트 생성
             messages = [
@@ -317,7 +353,7 @@ class Supervisor:
         # 스트리밍 완료 후 히스토리에 저장
         if session_id and collected_answer:
             full_answer = "".join(collected_answer)
-            self._save_to_history(session_id, question, full_answer)
+            await self._save_to_history_async(session_id, question, full_answer, **kwargs)
 
     # ============================================================
     # 유틸리티 메서드
