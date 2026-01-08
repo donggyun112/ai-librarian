@@ -36,5 +36,7 @@ async def aweb_search(query: str) -> str:
     return f"[웹 검색 결과]\n{result.content}"
 
 
+from src.rag.worker import create_rag_tool
+
 # Supervisor에서 사용할 도구 목록
-TOOLS = [think, aweb_search]
+TOOLS = [think, aweb_search, create_rag_tool()]
