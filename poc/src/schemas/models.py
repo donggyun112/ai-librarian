@@ -5,6 +5,7 @@ from enum import Enum
 
 class WorkerType(str, Enum):
     WEB_SEARCH = "web_search"
+    RAG_SEARCH = "rag_search"
 
 
 class StreamEventType(str, Enum):
