@@ -293,7 +293,7 @@ class TestSupabaseChatMemory:
         """user_id가 제공되면 세션 소유권 검증"""
         # 세션 소유권 확인 쿼리 설정
         session_check = MagicMock()
-        session_check.data = [{"id": "session-1"}]
+        session_check.data = [{"id": "session-1", "user_id": "user-1"}]
         mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = session_check
 
         # 메시지 조회 쿼리 설정
@@ -367,7 +367,7 @@ class TestSupabaseChatMemory:
         """user_id가 제공되면 세션 소유권 검증 후 삭제"""
         # 세션 소유권 확인 설정
         session_check = MagicMock()
-        session_check.data = [{"id": "session-1"}]
+        session_check.data = [{"id": "session-1", "user_id": "user-1"}]
 
         # 쿼리 체인 설정
         mock_table = mock_supabase_client.table.return_value
@@ -393,7 +393,7 @@ class TestSupabaseChatMemory:
         """비동기 save_conversation이 메타데이터를 보존"""
         # _ensure_session 설정
         session_check = MagicMock()
-        session_check.data = [{"id": "session-1"}]
+        session_check.data = [{"id": "session-1", "user_id": "user-1"}]
         mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = session_check
 
         # insert 설정
@@ -419,7 +419,7 @@ class TestSupabaseChatMemory:
         """user_id가 제공되면 세션 소유권 검증 후 개수 조회"""
         # 세션 소유권 확인 설정
         session_check = MagicMock()
-        session_check.data = [{"id": "session-1"}]
+        session_check.data = [{"id": "session-1", "user_id": "user-1"}]
 
         # 쿼리 체인 설정
         mock_table = mock_supabase_client.table.return_value
