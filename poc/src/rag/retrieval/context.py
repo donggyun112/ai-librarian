@@ -9,28 +9,11 @@ Rules:
 - DEP-RET-ALLOW-004: MAY import shared
 """
 
-from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
-
-from .search import SearchResult
-
-
-@dataclass
-class ExpandedResult:
-    """Search result with parent context.
-
-    Attributes:
-        result: Original search result (Fragment)
-        parent_content: Parent Concept content for context
-        parent_metadata: Parent metadata
-    """
-
-    result: SearchResult
-    parent_content: Optional[str] = None
-    parent_metadata: Optional[dict] = None
+from src.rag.types import ExpandedResult, SearchResult
 
 
 class ContextExpander:

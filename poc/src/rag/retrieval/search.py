@@ -15,31 +15,9 @@ from typing import List, Optional
 from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
+from src.rag.types import SearchResult
 
 from .query import QueryPlan
-
-
-@dataclass
-class SearchResult:
-    """Result from vector similarity search.
-
-    Attributes:
-        fragment_id: ID of matching Fragment
-        parent_id: ID of parent Concept (for context expansion)
-        view: View type (text, code, image, etc.)
-        language: Language (python, javascript, etc.)
-        content: Fragment content
-        similarity: Cosine similarity score (0-1)
-        metadata: Additional metadata
-    """
-
-    fragment_id: str
-    parent_id: str
-    view: View
-    language: Optional[str]
-    content: str
-    similarity: float
-    metadata: dict
 
 
 class VectorSearchEngine:

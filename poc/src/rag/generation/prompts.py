@@ -1,14 +1,7 @@
-﻿"""Prompt template management for RAG generation.
+﻿from dataclasses import dataclass
+from typing import List
 
-Handles system prompts, context assembly, and RAG prompt formatting.
-"""
-
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from src.rag.retrieval import ExpandedResult
+from src.rag.types import ExpandedResult
 
 
 @dataclass

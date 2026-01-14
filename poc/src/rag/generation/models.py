@@ -3,13 +3,11 @@
 Contains data classes for query optimization, LLM responses, and generated outputs.
 """
 
-from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 
-if TYPE_CHECKING:
-    from src.rag.retrieval import ExpandedResult
+from src.rag.types import ExpandedResult
 
 
 @dataclass

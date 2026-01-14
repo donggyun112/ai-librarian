@@ -13,7 +13,7 @@ from typing import NoReturn
 from .repl import create_parser, run_repl
 
 
-def main() -> NoReturn:
+def main() -> None:
     """Entry point for `python -m src.rag.cli`."""
     parser = create_parser()
     args = parser.parse_args()
