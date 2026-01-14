@@ -4,6 +4,7 @@ Rule: EMBED-ID-002 - doc_id = hash(parent_id + view + lang + content)
 """
 
 from src.rag.domain import ContentHash, Fragment
+from src.rag.shared.hashing import HashingService
 
 
 def compute_doc_id(fragment: Fragment) -> str:
@@ -64,8 +65,6 @@ def compute_doc_id_from_parts(
     Returns:
         doc_id string in format "doc:{hash}"
     """
-    from shared.hashing import HashingService
-
     hash_value = HashingService.content_hash(
         pid=parent_id,
         view=view,

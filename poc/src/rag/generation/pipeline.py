@@ -5,7 +5,7 @@ Orchestrates LLM generation from retrieved context with source attribution.
 
 from typing import List, Optional
 
-from retrieval import ExpandedResult
+from src.rag.retrieval import ExpandedResult
 
 from .client import LLMClientProtocol
 from .models import Conversation, GeneratedResponse, OptimizedQuery
@@ -120,8 +120,8 @@ class GenerationPipeline:
 
         if has_korean:
             return (
-                "二꾩넚?⑸땲?? 吏덈Ц??愿?⑤맂 ?뺣낫瑜?李얠쓣 ???놁뒿?덈떎. "
-                "?ㅻⅨ ?ㅼ썙?쒕줈 寃?됲븯嫄곕굹 吏덈Ц???ㅼ떆 ?묒꽦??二쇱꽭??"
+                "죄송합니다. 질문에 관련된 정보를 찾을 수 없습니다. "
+                "다른 키워드로 검색하거나 질문을 다시 작성해 주세요."
             )
         return (
             "I couldn't find relevant information to answer your question. "

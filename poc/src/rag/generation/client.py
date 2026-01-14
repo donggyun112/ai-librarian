@@ -8,6 +8,8 @@ import os
 import time
 from typing import Optional, Protocol
 
+import google.generativeai as genai
+
 from .models import LLMResponse
 
 # Retry configuration
@@ -51,8 +53,6 @@ class GeminiLLMClient:
             model: Gemini model to use (default: gemini-2.0-flash)
             api_key: Google API key (falls back to GOOGLE_API_KEY env var)
         """
-        import google.generativeai as genai
-
         key = api_key or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError("GOOGLE_API_KEY is required for Gemini LLM")

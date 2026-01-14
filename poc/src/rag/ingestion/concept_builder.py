@@ -7,7 +7,7 @@ from typing import Dict, List
 from src.rag.domain import Concept, Document, Fragment, View
 
 from .chunking import TextChunker
-from .models import UnitizedSegment
+from .models import RawSegment, UnitizedSegment
 
 
 class ConceptBuilder:
@@ -154,7 +154,6 @@ class ConceptBuilder:
 
             for chunk in chunks:
                 # Create a synthetic UnitizedSegment for the chunk
-                from .models import RawSegment
                 synthetic_seg = UnitizedSegment(
                     unit_id=None,
                     role="chunked_text",

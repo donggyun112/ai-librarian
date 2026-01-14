@@ -7,6 +7,8 @@ OCR is handled by Gemini Vision API, not ocrmypdf.
 import warnings
 from typing import List, Optional
 
+from pdfminer.high_level import extract_text as pdfminer_extract_text
+
 from src.rag.shared.text_utils import TextPreprocessor
 
 from ..models import RawSegment
@@ -28,9 +30,7 @@ class PdfExtractor:
             Extracted text or None if extraction fails
         """
         try:
-            from pdfminer.high_level import extract_text as _extract
-
-            text = _extract(pdf_path)
+            text = pdfminer_extract_text(pdf_path)
             if text and text.strip():
                 return text
         except Exception:

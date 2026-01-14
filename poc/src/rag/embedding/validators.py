@@ -30,14 +30,14 @@ class EmbeddingValidator:
 
     # Copyright-related patterns (Korean + English)
     COPYRIGHT_PATTERNS = [
-        r"^(?i:copyright|COPYRIGHT|??묎텒)\s+짤?\s*\d{4}",
-        r"^(?i:all\s+rights\s+reserved|ALL\s+RIGHTS\s+RESERVED|??묎텒\s*?뚯쑀|臾대떒\s*?꾩옱)",
+        r"^(?i:copyright|COPYRIGHT|저작권)\s+©?\s*\d{4}",
+        r"^(?i:all\s+rights\s+reserved|ALL\s+RIGHTS\s+RESERVED|저작권\s*소유|무단\s*전재)",
     ]
 
     # Page number patterns (Korean + English)
     PAGE_NUMBER_PATTERNS = [
-        r"^\s*(?i:page|PAGE|?섏씠吏|履?\s*\d+\s*$",
-        r"^\s*\d+\s*(?i:page|PAGE|?섏씠吏|履?\s*$",
+        r"^\s*(?i:page|PAGE|페이지|쪽)\s*\d+\s*$",
+        r"^\s*\d+\s*(?i:page|PAGE|페이지|쪽)\s*$",
         r"^\s*\d+\s*$",  # Pure numbers
     ]
 
@@ -45,28 +45,27 @@ class EmbeddingValidator:
     REFERENCE_PATTERNS = [
         # English: "See Figure 3", "Refer to Table 1"
         r"^(?i:see|refer\s+to|reference)\s+(?i:figure|table|section|chapter|appendix)\s+\d+",
-        # Korean: "洹몃┝ 3 李몄“", "??1 李멸퀬", "3??李몄“"
-        r"(洹몃┝|???꾪몴|?ъ쭊|?대?吏|洹몃옒??李⑦듃|肄붾뱶)\s*\d+\s*(李몄“|李멸퀬|蹂닿린|?뺤씤)",
-        r"(?????\s*\d+\s*(??????\s*(李몄“|李멸퀬|蹂닿린)",
-        r"(???꾨옒|?ㅼ쓬|?댁쟾)\s*(?????\s*(?덉젣|?덉떆|?ㅻ챸|?쒕ぉ|肄붾뱶|洹몃┝|??\s*(李몄“|李멸퀬)",
+        # Korean: "그림 3 참조", "표 1 참고", "3장 참조"
+        r"(그림|표|도표|사진|이미지|그래프|차트|코드)\s*\d+\s*(참조|참고|보기|확인)",
+        r"(장|절)?\s*\d+\s*(장|절|항)\s*(참조|참고|보기)",
+        r"(위|아래|다음|이전)\s*(장|절)?\s*(예제|예시|설명|제목|코드|그림|표)\s*(참조|참고)",
     ]
 
     # Korean-specific patterns for technical books
     KOREAN_SPECIFIC_PATTERNS = [
-        r"^\s*\[.*?\]\s*$",  # [二쇱꽍], [Note], etc.
-        r"^(二?李멸퀬|(?i:note|tip|warning|caution))\s*[:]\s*.{0,20}$",  # Short annotations
-        r"^\s*(?ㅼ쓬|???꾨옒)\s*(怨??)?\s*(媛숈씠|媛숈?|泥섎읆)\s*$",  # "?ㅼ쓬怨?媛숈씠" alone
+        r"^\s*\[.*?\]\s*$",  # [주석], [Note], etc.
+        r"^(주|참고|(?i:note|tip|warning|caution))\s*[:]\s*.{0,20}$",  # Short annotations
+        r"^\s*(다음|위|아래)\s*(과|와)?\s*(같이|같은|처럼)\s*$",  # "다음과 같이" alone
         r"^\s*\d+\.\s*$",  # List numbers like "1."
     ]
 
     # Reference action verbs (must appear with target object to be filtered)
     REFERENCE_VERBS_EN = ["see", "refer", "reference"]
-    REFERENCE_VERBS_KO = ["李몄“", "李멸퀬", "蹂닿린", "?뺤씤"]
+    REFERENCE_VERBS_KO = ["참조", "참고", "보기", "확인"]
     
     # Reference target objects (filtered only when paired with action verb)
     REFERENCE_TARGETS_EN = ["figure", "table", "section", "chapter", "appendix"]
-    REFERENCE_TARGETS_KO = ["洹몃┝", "??, "?꾪몴", "??, "??, "??]
-
+    REFERENCE_TARGETS_KO = ["그림", "표", "도표", "장", "절", "항"]
     def __init__(self):
         # Combine all pattern categories into a single regex
         all_patterns = (

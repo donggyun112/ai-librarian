@@ -3,6 +3,10 @@
 import os
 from typing import List, Optional
 
+import google.generativeai as genai
+from langchain_openai import OpenAIEmbeddings
+from langchain_voyageai import VoyageAIEmbeddings
+
 from src.rag.shared.config import EmbeddingConfig
 
 
@@ -10,8 +14,6 @@ class GeminiEmbeddings:
     """Thin adapter around Google Gemini embedding endpoints."""
 
     def __init__(self, model: str = "text-embedding-004", api_key: Optional[str] = None):
-        import google.generativeai as genai  # type: ignore
-
         key = api_key or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError("GOOGLE_API_KEY is required for GEMINI embeddings")
@@ -85,15 +87,13 @@ class EmbeddingProviderFactory:
             return GeminiEmbeddings(model=config.gemini_model)
         
         if config.embedding_provider == "openai":
-            from langchain_openai import OpenAIEmbeddings  # type: ignore
             # Pass dimensions for text-embedding-3 models that support dimension reduction
             return OpenAIEmbeddings(
                 model=config.embedding_model,
                 dimensions=config.embedding_dim,
             )
-        
+
         # Default: VoyageAI (also supports OpenAI models via langchain_voyageai)
-        from langchain_voyageai import VoyageAIEmbeddings  # type: ignore
         # VoyageAI doesn't support dimensions param, but if using OpenAI models via voyage provider,
         # we need to handle it differently
         return VoyageAIEmbeddings(model=config.embedding_model)
