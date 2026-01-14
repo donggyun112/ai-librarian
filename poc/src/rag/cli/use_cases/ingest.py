@@ -8,6 +8,8 @@ import os
 from dataclasses import dataclass
 from typing import List
 
+from loguru import logger
+
 from src.rag.domain import Concept, Document
 from src.rag.embedding import EmbeddingProviderFactory, EmbeddingValidator
 from src.rag.ingestion import (
@@ -102,7 +104,7 @@ class IngestUseCase:
 
     def _ensure_tables(self):
         """Ensure all required database tables exist."""
-        print("[setup] Ensuring database tables...")
+        logger.info("Ensuring database tables...")
         self.schema_manager.apply_db_level_tuning()
         self.schema_manager.ensure_extension_vector()
         self.doc_repo.ensure_table()
@@ -111,7 +113,7 @@ class IngestUseCase:
         self.schema_manager.ensure_parent_docstore()
         if self.config.custom_schema_write:
             self.schema_manager.ensure_custom_schema(self.config.embedding_dim)
-        print("[setup] Database tables ready")
+        logger.info("Database tables ready")
 
     def execute(self, file_paths: List[str]) -> IngestResult:
         """Execute ingestion pipeline.
@@ -127,11 +129,11 @@ class IngestUseCase:
         total_embeddings = 0
 
         for file_path in file_paths:
-            print(f"[ingest] Processing: {file_path}")
+            logger.info(f"Processing: {file_path}")
 
             # 1. Parse file based on extension
             segments = self._parse_file(file_path)
-            print(f"[ingest] Parsed {len(segments)} segments")
+            logger.info(f"Parsed {len(segments)} segments")
 
             # 2. Create Document entity with deterministic ID (based on file path)
             # This ensures idempotent updates: same file -> same Document ID
@@ -139,7 +141,7 @@ class IngestUseCase:
 
             # 2a. Delete existing document data before re-ingest (CASCADE-001)
             # This prevents stale embeddings from accumulating
-            print(f"[ingest] Cleaning up existing data for doc_id: {doc_id[:8]}...")
+            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
             self.cascade_deleter.delete_document(doc_id)
 
             document = Document(
@@ -151,13 +153,13 @@ class IngestUseCase:
 
             # 3. Unitize segments (group related content)
             unitized = self.unitizer.unitize(segments)
-            print(f"[ingest] Created {len(unitized)} semantic units")
+            logger.info(f"Created {len(unitized)} semantic units")
 
             # 4. Build Concepts and Fragments
             concepts = self.concept_builder.build(
                 unitized, document, os.path.basename(file_path)
             )
-            print(f"[ingest] Built {len(concepts)} concepts")
+            logger.info(f"Built {len(concepts)} concepts")
 
             # 5. Save Concepts, Fragments, and Embeddings
             for concept in concepts:
@@ -174,7 +176,7 @@ class IngestUseCase:
                 for fragment in concept.fragments:
                     # Validate fragment (FRAG-LEN-001, etc.)
                     if not self.validator.is_eligible(fragment):
-                        print(f"[skip] Fragment filtered: {fragment.content[:50]}...")
+                        logger.debug(f"Fragment filtered: {fragment.content[:50]}...")
                         continue
 
                     self.fragment_repo.save(fragment)
@@ -214,11 +216,11 @@ class IngestUseCase:
             if self.config.enable_image_ocr:
                 try:
                     ocr = GeminiVisionOcr(model=self.config.gemini_ocr_model)
-                    print(
-                        f"[setup] Gemini Vision OCR enabled (model: {self.config.gemini_ocr_model})"
+                    logger.info(
+                        f"Gemini Vision OCR enabled (model: {self.config.gemini_ocr_model})"
                     )
                 except RuntimeError as e:
-                    print(f"[setup] Gemini Vision OCR disabled: {e}")
+                    logger.warning(f"Gemini Vision OCR disabled: {e}")
 
             # use_cache is enabled by default, disabled when force_ocr is set via CLI
             use_cache = not getattr(self, "disable_cache", False)

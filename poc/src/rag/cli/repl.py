@@ -9,6 +9,8 @@ import argparse
 import sys
 from typing import Optional
 
+from loguru import logger
+
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config, load_generation_config
 
@@ -97,8 +99,8 @@ def run_repl(args: argparse.Namespace) -> int:
             rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
             print("OCR Vector DB RAG REPL (LLM-powered)")
         except Exception as e:
-            print(f"[warn] Failed to initialize RAG: {e}")
-            print("[warn] Falling back to search mode")
+            logger.warning(f"Failed to initialize RAG: {e}")
+            logger.warning("Falling back to search mode")
             rag_mode = False
 
     if not rag_mode:
@@ -187,7 +189,7 @@ def run_repl(args: argparse.Namespace) -> int:
                 try:
                     rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
                 except Exception as e:
-                    print(f"[error] Failed to initialize RAG: {e}")
+                    logger.error(f"Failed to initialize RAG: {e}")
                     continue
             rag_mode = new_rag_mode
             print(f"[ok] RAG mode {'on' if rag_mode else 'off'}")
@@ -251,7 +253,7 @@ def run_repl(args: argparse.Namespace) -> int:
                 last_rag_response = response
                 print(f"\n{response.format_with_sources()}\n")
             except Exception as e:
-                print(f"[error] RAG failed: {e}")
+                logger.error(f"RAG failed: {e}")
         else:
             # Search mode: show results
             results = search_use_case.execute(

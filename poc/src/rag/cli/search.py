@@ -7,6 +7,8 @@ Usage:
 import argparse
 import sys
 
+from loguru import logger
+
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.generation import GeminiLLMClient
 from src.rag.shared.config import load_config
@@ -44,9 +46,9 @@ def main(args: argparse.Namespace) -> int:
         if getattr(args, "optimize", False):
             try:
                 llm_client = GeminiLLMClient()
-                print("[search] Query optimization enabled")
+                logger.info("Query optimization enabled")
             except Exception as e:
-                print(f"[search] Query optimization disabled: {e}")
+                logger.warning(f"Query optimization disabled: {e}")
 
         # Execute search use case
         use_case = SearchUseCase(embeddings_client, config, llm_client=llm_client)
