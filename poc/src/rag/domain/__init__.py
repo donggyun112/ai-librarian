@@ -8,7 +8,10 @@ Rules:
 - DEP-DOM-001: MUST NOT import other project packages (except shared/)
 """
 
-from .entities import Concept, Document, Embedding, Fragment
+# Import order matters! Dependencies first:
+# 1. exceptions (no dependencies)
+# 2. value_objects (may depend on exceptions)
+# 3. entities (depends on exceptions and value_objects)
 from .exceptions import (
     DomainError,
     DuplicateEmbeddingError,
@@ -17,6 +20,7 @@ from .exceptions import (
     OrphanEntityError,
 )
 from .value_objects import ContentHash, View
+from .entities import Concept, Document, Embedding, Fragment
 
 __all__ = [
     # Entities
