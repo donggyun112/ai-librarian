@@ -1,25 +1,17 @@
-﻿"""RAG use case orchestration.
+"""RAG use case orchestration.
 
-Implements PKG-API-004: Orchestrate packages for RAG use case.
-
-Rules:
-- DEP-API-ALLOW-003: MAY import embedding
-- DEP-API-ALLOW-004: MAY import retrieval
-- DEP-API-ALLOW-006: MAY import shared
-- DEP-API-ALLOW-007: MAY import generation
-- PKG-API-BAN-001: MUST NOT implement business logic directly
-- PKG-API-BAN-002: MUST NOT access database directly
+Orchestrates the full RAG pipeline (retrieval + generation).
 """
 
 from typing import List, Optional, Protocol
 
-from generation import (
+from src.rag.generation import (
     Conversation,
     GeneratedResponse,
     GenerationPipeline,
     GeminiLLMClient,
 )
-from retrieval import RetrievalPipeline
+from src.rag.retrieval import RetrievalPipeline
 from src.rag.shared.config import EmbeddingConfig, GenerationConfig
 
 
@@ -33,8 +25,6 @@ class EmbeddingClientProtocol(Protocol):
 
 class RAGUseCase:
     """Orchestrates the full RAG pipeline.
-
-    Implements PKG-API-004 (orchestration).
 
     Pipeline:
     1. Retrieve relevant context (retrieval layer with SelfQueryRetriever)

@@ -1,10 +1,6 @@
-﻿"""Request validation for API layer.
+"""Request validation for CLI.
 
-Implements PKG-API-002: Request validation.
-
-Rules:
-- DEP-API-ALLOW-001: MAY import domain
-- PKG-API-BAN-003: MUST NOT define domain entities
+Validates user input before executing pipeline operations.
 """
 
 import os
@@ -20,10 +16,7 @@ class ValidationError(Exception):
 
 
 class RequestValidator:
-    """Validates API requests.
-
-    Implements PKG-API-002 (request validation).
-    """
+    """Validates CLI requests."""
 
     @staticmethod
     def validate_file_path(path: str) -> None:

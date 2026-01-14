@@ -1,21 +1,21 @@
-﻿"""CLI command for embedding quality checks.
+"""CLI command for embedding quality checks.
 
 Usage:
-    python -m api.cli.quality --metrics
-    python -m api.cli.quality --golden eval_queries.jsonl
+    python -m src.rag.cli.quality --metrics
+    python -m src.rag.cli.quality --golden eval_queries.jsonl
 """
 
 import argparse
 import json
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-from embedding import EmbeddingProviderFactory
+from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
-from storage import EmbeddingMetricsService
+from src.rag.storage import EmbeddingMetricsService
 
-from ..use_cases import SearchUseCase
-from ..validators import RequestValidator, ValidationError
+from .use_cases import SearchUseCase
+from .validators import RequestValidator, ValidationError
 
 
 def load_golden_queries(path: str) -> List[Dict[str, Any]]:
