@@ -10,6 +10,7 @@ Rules:
 from typing import Optional, Tuple
 
 import psycopg_pool  # type: ignore
+from loguru import logger
 
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.storage.schema import DbSchemaManager
@@ -56,7 +57,7 @@ def get_pool(config: EmbeddingConfig) -> psycopg_pool.ConnectionPool:
             open=True,
         )
         _pool_key = key
-        print(f"[pool] Connection pool created (min={min_size}, max={max_size})")
+        logger.info(f"Connection pool created (min={min_size}, max={max_size})")
 
     # Apply DB tuning once per connection string
     if conn_str not in _tuning_attempted:
@@ -78,7 +79,7 @@ def _apply_tuning(config: EmbeddingConfig) -> None:
     try:
         DbSchemaManager(config).apply_db_level_tuning()
     except Exception as exc:
-        print(f"[pool] DB tuning failed (non-fatal): {exc}")
+        logger.warning(f"DB tuning failed (non-fatal): {exc}")
 
 
 def close_pool() -> None:
@@ -93,7 +94,8 @@ def close_pool() -> None:
         _pool = None
         _pool_key = None
         _tuning_attempted = set()
-        print("[pool] Connection pool closed")
+        logger.info("Connection pool closed")
 
 
 __all__ = ["get_pool", "close_pool"]
+
