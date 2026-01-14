@@ -1,13 +1,7 @@
-﻿"""CLI command for document ingestion.
-
-Implements PKG-API-001: External interface (CLI).
+"""CLI command for document ingestion.
 
 Usage:
-    python -m api.cli.ingest file1.txt file2.md --view text --top-k 5
-
-Rules:
-- DEP-API-ALLOW-006: MAY import shared
-- PKG-API-BAN-002: MUST NOT access database directly
+    python -m src.rag.cli.ingest file1.txt file2.md --view text --top-k 5
 """
 
 import argparse
@@ -15,11 +9,11 @@ import glob
 import sys
 from typing import List
 
-from src.rag.shared.config import EmbeddingConfig, load_config
+from src.rag.shared.config import load_config
 
-from ..formatters import ResponseFormatter
-from ..use_cases import IngestUseCase
-from ..validators import RequestValidator, ValidationError
+from .formatters import ResponseFormatter
+from .use_cases import IngestUseCase
+from .validators import RequestValidator, ValidationError
 
 
 def expand_file_patterns(patterns: List[str]) -> List[str]:
@@ -74,13 +68,13 @@ def main(args: argparse.Namespace) -> int:
 
         # Execute ingestion use case
         # --force-ocr flag disables OCR cache and enables force OCR mode
-        disable_cache = getattr(args, 'force_ocr', False)
+        disable_cache = getattr(args, "force_ocr", False)
         if disable_cache:
             print("[cache] Cache disabled (--force-ocr)")
             config.force_ocr = True  # Enable force OCR mode in config
-        
+
         use_case = IngestUseCase(config, disable_cache=disable_cache)
-        
+
         result = use_case.execute(file_paths)
 
         # Format and display results
@@ -114,16 +108,16 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Ingest single file
-  python -m api.cli.ingest document.txt
+  python -m src.rag.cli.ingest document.txt
 
   # Ingest multiple files
-  python -m api.cli.ingest file1.txt file2.md
+  python -m src.rag.cli.ingest file1.txt file2.md
 
   # Ingest with glob pattern
-  python -m api.cli.ingest docs/*.md
+  python -m src.rag.cli.ingest docs/*.md
 
   # Dry run (parse only, no DB writes)
-  python -m api.cli.ingest *.txt --dry-run
+  python -m src.rag.cli.ingest *.txt --dry-run
         """,
     )
 

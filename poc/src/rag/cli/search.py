@@ -1,26 +1,19 @@
-﻿"""CLI command for vector search.
-
-Implements PKG-API-001: External interface (CLI).
+"""CLI command for vector search.
 
 Usage:
-    python -m api.cli.search "python list comprehension" --view code --top-k 5
-
-Rules:
-- DEP-API-ALLOW-003: MAY import embedding
-- DEP-API-ALLOW-006: MAY import shared
-- PKG-API-BAN-002: MUST NOT access database directly
+    python -m src.rag.cli.search "python list comprehension" --view code --top-k 5
 """
 
 import argparse
 import sys
-from typing import Protocol
 
-from embedding import EmbeddingProviderFactory
+from src.rag.embedding import EmbeddingProviderFactory
+from src.rag.generation import GeminiLLMClient
 from src.rag.shared.config import load_config
 
-from ..formatters import ResponseFormatter
-from ..use_cases import SearchUseCase
-from ..validators import RequestValidator, ValidationError
+from .formatters import ResponseFormatter
+from .use_cases import SearchUseCase
+from .validators import RequestValidator, ValidationError
 
 
 def main(args: argparse.Namespace) -> int:
@@ -48,9 +41,8 @@ def main(args: argparse.Namespace) -> int:
 
         # Create LLM client for query optimization (if --optimize flag)
         llm_client = None
-        if getattr(args, 'optimize', False):
+        if getattr(args, "optimize", False):
             try:
-                from generation import GeminiLLMClient
                 llm_client = GeminiLLMClient()
                 print("[search] Query optimization enabled")
             except Exception as e:
@@ -102,22 +94,22 @@ def create_parser() -> argparse.ArgumentParser:
         epilog="""
 Examples:
   # Basic search
-  python -m api.cli.search "python list comprehension"
+  python -m src.rag.cli.search "python list comprehension"
 
   # Search in code view only
-  python -m api.cli.search "async function" --view code
+  python -m src.rag.cli.search "async function" --view code
 
   # Search with language filter
-  python -m api.cli.search "list comprehension" --view code --language python
+  python -m src.rag.cli.search "list comprehension" --view code --language python
 
   # Get more results
-  python -m api.cli.search "machine learning" --top-k 20
+  python -m src.rag.cli.search "machine learning" --top-k 20
 
   # JSON output
-  python -m api.cli.search "neural network" --json
+  python -m src.rag.cli.search "neural network" --json
 
   # No context expansion (faster)
-  python -m api.cli.search "quicksort" --no-context
+  python -m src.rag.cli.search "quicksort" --no-context
         """,
     )
 

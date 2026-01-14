@@ -1,23 +1,16 @@
-﻿"""Response formatting for API layer.
+"""Response formatting for CLI output.
 
-Implements PKG-API-003: Response formatting.
-
-Rules:
-- DEP-API-ALLOW-001: MAY import domain
-- DEP-API-ALLOW-004: MAY import retrieval
+Formats search results and other outputs for human-readable display.
 """
 
 import json
 from typing import List
 
-from retrieval import ExpandedResult, SearchResult
+from src.rag.retrieval import ExpandedResult
 
 
 class ResponseFormatter:
-    """Formats API responses for CLI and REST interfaces.
-
-    Implements PKG-API-003 (response formatting).
-    """
+    """Formats CLI responses for display."""
 
     @staticmethod
     def format_search_results_text(
@@ -56,7 +49,11 @@ class ResponseFormatter:
             if show_context and expanded.parent_content:
                 lines.append("-" * 80)
                 lines.append("Parent Context:")
-                lines.append(expanded.parent_content[:500] + "..." if len(expanded.parent_content) > 500 else expanded.parent_content)
+                lines.append(
+                    expanded.parent_content[:500] + "..."
+                    if len(expanded.parent_content) > 500
+                    else expanded.parent_content
+                )
 
             lines.append("")
 

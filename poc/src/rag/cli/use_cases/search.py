@@ -1,19 +1,11 @@
-﻿"""Search use case orchestration.
+"""Search use case orchestration.
 
-Implements PKG-API-004: Orchestrate packages for search use case.
-
-Rules:
-- DEP-API-ALLOW-003: MAY import embedding
-- DEP-API-ALLOW-004: MAY import retrieval
-- DEP-API-ALLOW-006: MAY import shared
-- PKG-API-BAN-001: MUST NOT implement business logic directly
-- PKG-API-BAN-002: MUST NOT access database directly
+Orchestrates the retrieval pipeline for search operations.
 """
 
 from typing import List, Optional, Protocol
 
-
-from retrieval import ExpandedResult, RetrievalPipeline
+from src.rag.retrieval import ExpandedResult, RetrievalPipeline
 from src.rag.shared.config import EmbeddingConfig
 
 
@@ -27,8 +19,6 @@ class EmbeddingClientProtocol(Protocol):
 
 class SearchUseCase:
     """Orchestrates the search pipeline.
-
-    Implements PKG-API-004 (orchestration).
 
     Pipeline:
     1. Validate query (validators.py)
@@ -49,8 +39,8 @@ class SearchUseCase:
     ):
         # SelfQueryRetriever is enabled by default (creates its own LLM)
         self.pipeline = RetrievalPipeline(
-            embeddings_client, 
-            config, 
+            embeddings_client,
+            config,
             use_self_query=True,
         )
 

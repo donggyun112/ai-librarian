@@ -1,25 +1,16 @@
-﻿"""Ingestion use case orchestration.
+"""Ingestion use case orchestration.
 
-Implements PKG-API-004: Orchestrate packages for ingestion use case.
-
-Rules:
-- DEP-API-ALLOW-002: MAY import ingestion
-- DEP-API-ALLOW-003: MAY import embedding
-- DEP-API-ALLOW-005: MAY import storage
-- DEP-API-ALLOW-006: MAY import shared
-- PKG-API-BAN-001: MUST NOT implement business logic directly
-- PKG-API-BAN-002: MUST NOT access database directly
+Orchestrates the document ingestion pipeline.
 """
 
 import hashlib
 import os
-import uuid
 from dataclasses import dataclass
 from typing import List
 
-from src.rag.domain import Concept, Document, Fragment
-from embedding import EmbeddingProviderFactory, EmbeddingValidator
-from ingestion import (
+from src.rag.domain import Concept, Document
+from src.rag.embedding import EmbeddingProviderFactory, EmbeddingValidator
+from src.rag.ingestion import (
     ConceptBuilder,
     GeminiVisionOcr,
     MarkdownParser,
@@ -30,7 +21,7 @@ from ingestion import (
 )
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.text_utils import TextPreprocessor
-from storage import (
+from src.rag.storage import (
     CascadeDeleter,
     ConceptRepository,
     DbSchemaManager,
@@ -62,8 +53,6 @@ class IngestResult:
 
 class IngestUseCase:
     """Orchestrates the document ingestion pipeline.
-
-    Implements PKG-API-004 (orchestration).
 
     Pipeline:
     1. Parse files (ingestion layer)
@@ -165,7 +154,9 @@ class IngestUseCase:
             print(f"[ingest] Created {len(unitized)} semantic units")
 
             # 4. Build Concepts and Fragments
-            concepts = self.concept_builder.build(unitized, document, os.path.basename(file_path))
+            concepts = self.concept_builder.build(
+                unitized, document, os.path.basename(file_path)
+            )
             print(f"[ingest] Built {len(concepts)} concepts")
 
             # 5. Save Concepts, Fragments, and Embeddings
@@ -190,13 +181,15 @@ class IngestUseCase:
                     total_fragments += 1
 
                     # Convert to LangChain Document with deterministic doc_id
-                    doc_id = fragment.compute_doc_id()
-                    lc_doc = self.adapter.fragment_to_document(fragment, doc_id)
+                    frag_doc_id = fragment.compute_doc_id()
+                    lc_doc = self.adapter.fragment_to_document(fragment, frag_doc_id)
                     docs_to_embed.append(lc_doc)
 
                 # Batch embed and store to PGVector
                 if docs_to_embed:
-                    embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
+                    embedded = self.vector_writer.upsert_batch(
+                        self.vector_store, docs_to_embed
+                    )
                     total_embeddings += embedded
 
         # Ensure indexes after all data is inserted
@@ -221,12 +214,14 @@ class IngestUseCase:
             if self.config.enable_image_ocr:
                 try:
                     ocr = GeminiVisionOcr(model=self.config.gemini_ocr_model)
-                    print(f"[setup] Gemini Vision OCR enabled (model: {self.config.gemini_ocr_model})")
+                    print(
+                        f"[setup] Gemini Vision OCR enabled (model: {self.config.gemini_ocr_model})"
+                    )
                 except RuntimeError as e:
                     print(f"[setup] Gemini Vision OCR disabled: {e}")
 
             # use_cache is enabled by default, disabled when force_ocr is set via CLI
-            use_cache = not getattr(self, 'disable_cache', False)
+            use_cache = not getattr(self, "disable_cache", False)
             return PyMuPdfParser(
                 self.preprocessor,
                 ocr=ocr,
@@ -267,8 +262,6 @@ class IngestUseCase:
     def _save_parent(self, concept: Concept) -> None:
         """Save concept as parent document for context retrieval.
 
-        Implements SEARCH-SEP-003: Parent documents provide context.
-
         Args:
             concept: Concept entity with fragments attached
         """
@@ -283,7 +276,6 @@ class IngestUseCase:
         """Synthesize parent content from fragments.
 
         Combines ALL view fragments (text, code, image) to create parent document.
-        Implements ARCHITECTURE.md 5.5: "紐⑤뱺 View??Fragment ?섏쭛 (text, code, image)"
         Limits to config.parent_context_limit characters to avoid token overflow.
 
         Args:
@@ -292,7 +284,9 @@ class IngestUseCase:
         Returns:
             Synthesized parent content string
         """
-        fragments = getattr(concept, "fragments", None) or concept.metadata.get("fragments", [])
+        fragments = getattr(concept, "fragments", None) or concept.metadata.get(
+            "fragments", []
+        )
         if not fragments:
             return concept.content or ""
 

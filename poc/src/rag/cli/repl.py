@@ -1,20 +1,20 @@
-﻿"""Interactive CLI for running search queries and RAG.
+"""Interactive CLI for running search queries and RAG.
 
 Usage:
-    python -m api.cli.repl          # Search mode
-    python -m api.cli.repl --rag    # RAG mode (with LLM generation)
+    python -m src.rag.cli          # Search mode
+    python -m src.rag.cli --rag    # RAG mode (with LLM generation)
 """
 
 import argparse
 import sys
 from typing import Optional
 
-from embedding import EmbeddingProviderFactory
+from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config, load_generation_config
 
-from ..formatters import ResponseFormatter
-from ..use_cases import RAGUseCase, SearchUseCase
-from ..validators import RequestValidator, ValidationError
+from .formatters import ResponseFormatter
+from .use_cases import RAGUseCase, SearchUseCase
+from .validators import RequestValidator, ValidationError
 
 
 def print_help(rag_mode: bool) -> None:
@@ -43,7 +43,12 @@ def print_help(rag_mode: bool) -> None:
     if rag_mode:
         print(base_commands + rag_commands + "\nEnter any text to ask a question.\n")
     else:
-        print(base_commands + search_commands + rag_commands + "\nEnter any text to run a search.\n")
+        print(
+            base_commands
+            + search_commands
+            + rag_commands
+            + "\nEnter any text to run a search.\n"
+        )
 
 
 def parse_toggle(value: str) -> bool:
@@ -124,7 +129,9 @@ def run_repl(args: argparse.Namespace) -> int:
             continue
 
         if head == ":show":
-            show_settings(view, language, top_k, show_context, as_json, rag_mode, use_conversation)
+            show_settings(
+                view, language, top_k, show_context, as_json, rag_mode, use_conversation
+            )
             continue
 
         if head == ":view":
