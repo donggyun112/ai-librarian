@@ -3,10 +3,10 @@
 import re
 from typing import List
 
-from src.rag.shared.text_utils import TextPreprocessor
+from src.rag.shared.text_utils import TextNormalizerUtil
 
 from ..chunking import TextChunker
-from ..models import RawSegment
+from ..dto import RawSegment
 from .base import BaseSegmentParser
 
 

@@ -10,7 +10,7 @@ from typing import Optional, Protocol
 
 import google.generativeai as genai
 
-from .models import LLMResponse
+from .dto import LLMResponse
 
 # Retry configuration
 MAX_RETRIES = 3

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
-from src.rag.shared.hashing import HashingService
+from src.rag.shared.hashing import ContentHashUtil
 
 
 class View(Enum):
@@ -53,7 +53,7 @@ class ContentHash:
             ContentHash instance
         """
         lang_str = lang or ""
-        hash_value = HashingService.content_hash(
+        hash_value = ContentHashUtil.hash(
             pid=parent_id,
             view=view.value,
             lang=lang_str,

@@ -4,11 +4,11 @@ import unicodedata
 from typing import Sequence
 
 
-class HashingService:
-    """Utility helpers for deterministic hashing of chunk content."""
+class ContentHashUtil:
+    """Utility for deterministic content hashing (deduplication)."""
 
     @staticmethod
-    def content_hash(pid: str, view: str, lang: str, content: str) -> str:
+    def hash(pid: str, view: str, lang: str, content: str) -> str:
         """
         Generate deterministic MD5 hash for content.
 
@@ -25,8 +25,8 @@ class HashingService:
         return hashlib.md5(key).hexdigest()
 
 
-class Slugifier:
-    """Normalize strings into slug identifiers suitable for metadata keys."""
+class SlugifyUtil:
+    """Utility for normalizing strings into URL-safe slug identifiers."""
 
     @staticmethod
     def slugify(value: str) -> str:
@@ -44,4 +44,4 @@ def format_vector_literal(vector: Sequence[float]) -> str:
     return "[" + ",".join(str(float(value)) for value in vector) + "]"
 
 
-__all__ = ["HashingService", "Slugifier", "format_vector_literal"]
+__all__ = ["ContentHashUtil", "SlugifyUtil", "format_vector_literal"]

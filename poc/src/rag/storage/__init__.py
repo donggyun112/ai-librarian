@@ -12,7 +12,7 @@ Rules:
 
 from .adapters import LangChainAdapter
 from .cascade import CascadeDeleter
-from .db import DatabaseHelper
+from .db import DatabaseUtil
 from .parent_store import ParentDocumentStore
 from .metrics import EmbeddingMetricsService
 from .repositories import (
@@ -27,7 +27,7 @@ from .vector_store import VectorStoreWriter
 
 __all__ = [
     # Database
-    "DatabaseHelper",
+    "DatabaseUtil",
     # Schema
     "DbSchemaManager",
     # Cascade

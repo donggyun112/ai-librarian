@@ -2,8 +2,8 @@
 from typing import List, Optional
 
 
-class TextPreprocessor:
-    """High-level text preprocessing helpers for OCR/markdown content."""
+class TextNormalizerUtil:
+    """Utility for OCR/markdown text normalization and code detection."""
 
     # Ligature and smart quote normalization
     NORMALIZE_MAP = {
@@ -146,4 +146,4 @@ class TextPreprocessor:
         return chunks
 
 
-__all__ = ["TextPreprocessor"]
+__all__ = ["TextNormalizerUtil"]

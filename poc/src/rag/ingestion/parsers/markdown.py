@@ -3,9 +3,9 @@
 import re
 from typing import List, Optional
 
-from src.rag.shared.text_utils import TextPreprocessor
+from src.rag.shared.text_utils import TextNormalizerUtil
 
-from ..models import RawSegment
+from ..dto import RawSegment
 from .base import BaseSegmentParser
 
 

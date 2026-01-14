@@ -3,15 +3,15 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from src.rag.shared.text_utils import TextPreprocessor
+from src.rag.shared.text_utils import TextNormalizerUtil
 
-from ..models import RawSegment
+from ..dto import RawSegment
 
 
 class BaseSegmentParser(ABC):
     """Abstract base class for file parsers."""
 
-    def __init__(self, preprocessor: TextPreprocessor):
+    def __init__(self, preprocessor: TextNormalizerUtil):
         self.preprocessor = preprocessor
 
     @abstractmethod

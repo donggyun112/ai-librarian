@@ -3,10 +3,10 @@
 import hashlib
 from typing import List
 
-from .models import RawSegment, UnitizedSegment
+from .dto import RawSegment, UnitizedSegment
 
 
-class SegmentUnitizer:
+class SemanticUnitGrouper:
     """
     Group segments into semantic units that preserve Python/JS adjacency.
 
@@ -22,7 +22,7 @@ class SegmentUnitizer:
         text_unit_threshold: int = 500,
     ):
         """
-        Initialize SegmentUnitizer.
+        Initialize SemanticUnitGrouper.
 
         Args:
             attach_pre_text: Attach text before Python code to the same unit
@@ -182,4 +182,4 @@ class SegmentUnitizer:
         return "txt-" + hashlib.md5(content.encode("utf-8", errors="ignore")).hexdigest()[:12]
 
 
-__all__ = ["SegmentUnitizer"]
+__all__ = ["SemanticUnitGrouper"]
