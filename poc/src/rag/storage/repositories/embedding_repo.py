@@ -10,7 +10,7 @@ Rules:
 
 from src.rag.shared.config import EmbeddingConfig
 
-from ..db import DatabaseHelper
+from ..db import DatabaseUtil
 
 
 class EmbeddingRepository:
@@ -26,7 +26,7 @@ class EmbeddingRepository:
     """
 
     def __init__(self, config: EmbeddingConfig):
-        self.db = DatabaseHelper(config)
+        self.db = DatabaseUtil(config)
 
     def delete_by_fragment_id(self, fragment_id: str) -> None:
         """Delete all embeddings for a Fragment (CASCADE-003)."""

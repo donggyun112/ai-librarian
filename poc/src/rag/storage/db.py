@@ -15,7 +15,7 @@ import psycopg  # type: ignore
 from src.rag.shared.config import EmbeddingConfig
 
 
-class DatabaseHelper:
+class DatabaseUtil:
     """Helper class for common database operations.
 
     Reduces boilerplate in repository implementations by providing:
@@ -24,7 +24,7 @@ class DatabaseHelper:
     - Common query execution patterns
 
     Example:
-        >>> db = DatabaseHelper(config)
+        >>> db = DatabaseUtil(config)
         >>> row = db.fetch_one("SELECT * FROM users WHERE id = %s", (user_id,))
         >>> rows = db.fetch_all("SELECT * FROM users")
         >>> db.execute("INSERT INTO users (id) VALUES (%s)", (user_id,))
@@ -135,4 +135,4 @@ class DatabaseHelper:
         return self.fetch_one(sql, params) is not None
 
 
-__all__ = ["DatabaseHelper"]
+__all__ = ["DatabaseUtil"]

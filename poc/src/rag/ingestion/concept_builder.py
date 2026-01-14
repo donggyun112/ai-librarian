@@ -7,10 +7,10 @@ from typing import Dict, List
 from src.rag.domain import Concept, Document, Fragment, View
 
 from .chunking import TextChunker
-from .models import RawSegment, UnitizedSegment
+from .dto import RawSegment, UnitizedSegment
 
 
-class ConceptBuilder:
+class SegmentToConceptTransformer:
     """
     Transform UnitizedSegments into domain Concepts and Fragments.
 
@@ -240,4 +240,4 @@ class ConceptBuilder:
         return mapping.get(kind, View.TEXT)
 
 
-__all__ = ["ConceptBuilder"]
+__all__ = ["SegmentToConceptTransformer"]

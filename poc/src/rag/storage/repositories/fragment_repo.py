@@ -14,7 +14,7 @@ from typing import Any, List, Optional, Tuple
 from src.rag.domain import Fragment, View
 from src.rag.shared.config import EmbeddingConfig
 
-from ..db import DatabaseHelper
+from ..db import DatabaseUtil
 from .base import BaseRepository
 
 
@@ -26,7 +26,7 @@ class FragmentRepository(BaseRepository[Fragment]):
     """
 
     def __init__(self, config: EmbeddingConfig):
-        self.db = DatabaseHelper(config)
+        self.db = DatabaseUtil(config)
 
     def save(self, fragment: Fragment) -> Fragment:
         """Save a Fragment entity.

@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 
 from src.rag.shared.config import EmbeddingConfig
 
-from .db import DatabaseHelper
+from .db import DatabaseUtil
 
 
 @dataclass
@@ -27,7 +27,7 @@ class EmbeddingMetricsService:
     """Compute basic embedding quality metrics from the DB."""
 
     def __init__(self, config: EmbeddingConfig):
-        self.db = DatabaseHelper(config)
+        self.db = DatabaseUtil(config)
 
     def summarize(self, limit: int = 10, min_content_len: int = 10) -> EmbeddingMetrics:
         metrics = EmbeddingMetrics()

@@ -17,9 +17,9 @@ from typing import List, Optional, Protocol
 import fitz  # PyMuPDF
 import google.generativeai as genai
 
-from src.rag.shared.text_utils import TextPreprocessor
+from src.rag.shared.text_utils import TextNormalizerUtil
 
-from ..models import RawSegment
+from ..dto import RawSegment
 from .base import BaseSegmentParser
 from .ocr import OcrParser
 
@@ -154,7 +154,7 @@ class PyMuPdfParser(BaseSegmentParser):
 
     def __init__(
         self,
-        preprocessor: TextPreprocessor,
+        preprocessor: TextNormalizerUtil,
         *,
         ocr: Optional[OcrProvider] = None,
         min_text_length: int = 10,
