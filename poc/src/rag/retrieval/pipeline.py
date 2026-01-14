@@ -9,12 +9,15 @@ Rules:
 
 from typing import List, Optional
 
+from src.rag.domain import View
+from src.rag.generation import QueryOptimizer
 from src.rag.shared.config import EmbeddingConfig
 
 from .context import ContextExpander, ExpandedResult
 from .grouping import ResultGrouper
 from .query import EmbeddingClientProtocol, QueryInterpreter
 from .search import SearchResult, VectorSearchEngine
+from .self_query import create_self_query_retriever
 
 
 class RetrievalPipeline:
@@ -59,7 +62,6 @@ class RetrievalPipeline:
         # Initialize SelfQueryRetriever (creates its own LLM internally)
         if use_self_query:
             try:
-                from .self_query import create_self_query_retriever
                 self.self_query_retriever = create_self_query_retriever(
                     config=config,
                     embeddings_client=embeddings_client,
@@ -72,18 +74,16 @@ class RetrievalPipeline:
                 # Fall through to legacy QueryOptimizer if available
                 if llm_client is not None:
                     try:
-                        from generation import QueryOptimizer
                         self.query_optimizer = QueryOptimizer(llm_client)
                         print("[pipeline] Falling back to QueryOptimizer (legacy mode)")
-                    except ImportError:
+                    except Exception:
                         pass
         elif llm_client is not None:
             # Explicitly disabled SelfQueryRetriever, use legacy QueryOptimizer
             try:
-                from generation import QueryOptimizer
                 self.query_optimizer = QueryOptimizer(llm_client)
                 print("[pipeline] QueryOptimizer enabled (legacy mode)")
-            except ImportError:
+            except Exception:
                 pass
 
 
@@ -182,15 +182,13 @@ class RetrievalPipeline:
 
     def _convert_self_query_results(self, self_query_results) -> List[SearchResult]:
         """Convert SelfQueryResult to SearchResult format.
-        
+
         Args:
             self_query_results: List of SelfQueryResult from SelfQueryRetriever
-            
+
         Returns:
             List of SearchResult compatible with existing pipeline
         """
-        from domain import View
-        
         results = []
         for i, sqr in enumerate(self_query_results):
             # Parse view from metadata

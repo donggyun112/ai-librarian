@@ -7,13 +7,14 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
+import os
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
-# LangChain 1.x imports (using langchain_classic for chains/retrievers)
 from langchain_classic.chains.query_constructor.base import AttributeInfo
 from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_core.documents import Document
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_postgres import PGVector
 
 from src.rag.shared.config import EmbeddingConfig
@@ -270,9 +271,6 @@ def create_self_query_retriever(
     
     # Create LLM if not provided
     if llm is None:
-        import os
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise RuntimeError("GOOGLE_API_KEY required for SelfQueryRetriever LLM")

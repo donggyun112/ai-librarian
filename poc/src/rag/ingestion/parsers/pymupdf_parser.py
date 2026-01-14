@@ -9,8 +9,13 @@ Block types handled:
 """
 
 import base64
+import json
 import os
+import re
 from typing import List, Optional, Protocol
+
+import fitz  # PyMuPDF
+import google.generativeai as genai
 
 from src.rag.shared.text_utils import TextPreprocessor
 
@@ -49,8 +54,6 @@ class GeminiVisionOcr:
             api_key: Google API key. Falls back to GOOGLE_API_KEY env var.
             model: Gemini model to use for vision tasks.
         """
-        import google.generativeai as genai
-
         key = api_key or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError("GOOGLE_API_KEY is required for Gemini Vision OCR")
@@ -193,8 +196,6 @@ class PyMuPdfParser(BaseSegmentParser):
         Returns:
             List of RawSegment objects with text, images, and metadata
         """
-        import fitz  # PyMuPDF
-
         try:
             doc = fitz.open(path)
         except Exception as e:
@@ -714,7 +715,6 @@ class PyMuPdfParser(BaseSegmentParser):
         Returns:
             True if code patterns detected, Vision should NOT be called
         """
-        import re
         code_patterns = [
             r'\bdef\s+\w+',           # Python function
             r'\bclass\s+\w+',         # Python/JS class
@@ -793,9 +793,8 @@ class PyMuPdfParser(BaseSegmentParser):
 
             # Render page as image (~150 DPI for good OCR quality)
             # fitz.Matrix(scale_x, scale_y) - 2x scale = ~144 DPI from 72 DPI base
-            import fitz as fitz_module
             scale = 3.0  # 3x scale = ~216 DPI for better OCR quality
-            pix = page.get_pixmap(matrix=fitz_module.Matrix(scale, scale))
+            pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
             image_bytes = pix.tobytes("png")
 
             # OCR via Gemini Vision
@@ -827,7 +826,6 @@ class PyMuPdfParser(BaseSegmentParser):
 
         Format: JSON for exact reconstruction of segments.
         """
-        import json
         try:
             # Use .json extension instead of .md
             json_path = cache_path.replace('.ocr.md', '.ocr.json')
@@ -851,7 +849,6 @@ class PyMuPdfParser(BaseSegmentParser):
 
         Loads JSON cache and reconstructs RawSegment objects.
         """
-        import json
         try:
             # Check for JSON cache first
             json_path = cache_path.replace('.ocr.md', '.ocr.json')

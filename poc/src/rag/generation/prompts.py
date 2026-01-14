@@ -6,7 +6,7 @@ Handles system prompts, context assembly, and RAG prompt formatting.
 from dataclasses import dataclass
 from typing import List
 
-from retrieval import ExpandedResult
+from src.rag.retrieval import ExpandedResult
 
 
 @dataclass

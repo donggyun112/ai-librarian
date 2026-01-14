@@ -1,4 +1,4 @@
-﻿"""Query optimization using LLM for better retrieval.
+"""Query optimization using LLM for better retrieval.
 
 Extracts keywords and hints from user queries to improve search relevance.
 Uses keyword-based approach instead of HyDE for better term matching.
@@ -24,8 +24,6 @@ warnings.warn(
     DeprecationWarning,
     stacklevel=2,
 )
-
-
 
 
 class QueryOptimizer:
@@ -190,21 +188,25 @@ class QueryOptimizer:
             "the", "a", "an", "to", "of", "in", "for", "on", "with",
             "i", "you", "me", "my", "we", "our",
             # Korean
-            "??, "媛", "??, "瑜?, "?", "??, "??, "?먯꽌", "濡?, "?쇰줈",
-            "?", "怨?, "??, "??, "留?, "源뚯?", "遺??,
-            "臾댁뾿", "?대뼸寃?, "??, "?몄젣", "?대뵒",
+            "은", "는", "이", "가", "을", "를", "의", "에서", "로", "으로",
+            "과", "와", "도", "만", "까지", "부터",
+            "무엇", "어떻게", "왜", "언제", "어디",
         }
 
         # Extract words
-        words = re.findall(r"[a-zA-Z媛-??+", query.lower())
+        words = re.findall(r"[a-zA-Z가-힣]+", query.lower())
         keywords = [w for w in words if w not in stopwords and len(w) > 1]
 
         # Detect view hint
         view_hint = None
-        code_indicators = ["code", "function", "class", "method", "implement",
-                          "肄붾뱶", "?⑥닔", "?대옒??, "硫붿꽌??, "援ы쁽"]
-        text_indicators = ["explain", "what", "concept", "mean",
-                          "?ㅻ챸", "媛쒕뀗", "??, "?섎?"]
+        code_indicators = [
+            "code", "function", "class", "method", "implement",
+            "코드", "함수", "클래스", "메서드", "구현",
+        ]
+        text_indicators = [
+            "explain", "what", "concept", "mean",
+            "설명", "개념", "뜻", "의미",
+        ]
 
         query_lower = query.lower()
         if any(ind in query_lower for ind in code_indicators):
@@ -215,12 +217,12 @@ class QueryOptimizer:
         # Detect language hint
         language_hint = None
         language_patterns = {
-            "python": ["python", "?뚯씠??, "py"],
-            "javascript": ["javascript", "?먮컮?ㅽ겕由쏀듃", "js", "node"],
-            "java": ["java", "?먮컮"],
-            "typescript": ["typescript", "??낆뒪?щ┰??, "ts"],
-            "go": ["golang", "go?몄뼱"],
-            "rust": ["rust", "?ъ뒪??],
+            "python": ["python", "파이썬", "py"],
+            "javascript": ["javascript", "자바스크립트", "js", "node"],
+            "java": ["java", "자바"],
+            "typescript": ["typescript", "타입스크립트", "ts"],
+            "go": ["golang", "go언어"],
+            "rust": ["rust", "러스트"],
         }
         for lang, patterns in language_patterns.items():
             if any(p in query_lower for p in patterns):

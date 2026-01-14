@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
 
-from retrieval import ExpandedResult
+from src.rag.retrieval import ExpandedResult
 
 
 @dataclass

@@ -1,9 +1,11 @@
-﻿from typing import List, Dict, Any, Optional
+﻿import os
+from typing import List, Dict, Any, Optional
+
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from src.rag.retrieval import RetrievalPipeline, ExpandedResult
-from src.rag.shared.config import load_config as load_rag_config
 from src.rag.retrieval.query import EmbeddingClientProtocol
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from src.rag.shared.config import load_config as load_rag_config
 
 
 class EmbeddingClientAdapter(EmbeddingClientProtocol):
@@ -31,7 +33,6 @@ class RagService:
         
         # 2.Initialize Embedding Client (Gemini)
         # Note: In a real app, this might come from a central provider or factory
-        import os
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable is not set")

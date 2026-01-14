@@ -5,6 +5,7 @@ from typing import List
 
 from src.rag.shared.text_utils import TextPreprocessor
 
+from ..chunking import TextChunker
 from ..models import RawSegment
 from .base import BaseSegmentParser
 
@@ -118,8 +119,6 @@ class OcrParser(BaseSegmentParser):
         if is_ocr:
             merged = self._merge_ocr_lines(raw)
             if merged.strip():
-                # Import here to avoid circular dependency
-                from ..chunking import TextChunker
                 chunker = TextChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
                 chunks = chunker.chunk(merged)
                 # Detect code blocks in each chunk

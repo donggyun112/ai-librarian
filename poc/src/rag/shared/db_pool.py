@@ -12,6 +12,7 @@ from typing import Optional, Tuple
 import psycopg_pool  # type: ignore
 
 from src.rag.shared.config import EmbeddingConfig
+from src.rag.storage.schema import DbSchemaManager
 
 # Module-level singleton
 _pool: Optional[psycopg_pool.ConnectionPool] = None
@@ -74,9 +75,6 @@ def _apply_tuning(config: EmbeddingConfig) -> None:
     Args:
         config: Embedding configuration with tuning parameters
     """
-    # Import here to avoid circular dependency
-    from storage.schema import DbSchemaManager
-
     try:
         DbSchemaManager(config).apply_db_level_tuning()
     except Exception as exc:
