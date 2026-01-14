@@ -1,9 +1,12 @@
-﻿from typing import List, Dict, Any, Optional
-import asyncio
+﻿import asyncio
+import traceback
+from typing import Any, Dict, List, Optional
+
 from langchain_core.tools import Tool
 
+from src.schemas.models import WorkerResult, WorkerType
 from src.workers.base import BaseWorker
-from src.schemas.models import WorkerType, WorkerResult
+
 from .service import RagService
 
 
@@ -31,13 +34,7 @@ class RagWorker(BaseWorker):
         Execute RAG search.
         """
         try:
-            # Run in thread pool if service is sync, but RagService.search appears async
-            # service.search IS async def, so we await it directly on the event loop
             service = self._get_service()
-            
-            # The service.pipeline.run might be blocking or async? 
-            # In service.py we defined async def search, calling await pipeline.run
-            # So this is correct.
             results = await service.search(query)
             
             if not results:
@@ -48,34 +45,29 @@ class RagWorker(BaseWorker):
                     sources=["RAG"]
                 )
             
-            # Format content for minimal token usage but high visibility
-            content_parts = []
-            sources = set()
+            # Format context using enhanced formatter
+            formatted_content = self._format_context(results)
+            sources = list({
+                item.get("metadata", {}).get("source") 
+                or item.get("metadata", {}).get("file_name") 
+                or "RAG" 
+                for item in results
+            })
             
-            for idx, item in enumerate(results, 1):
-                meta = item.get("metadata", {})
-                source = meta.get("source") or meta.get("file_name") or "Unknown"
-                sources.add(source)
-                
-                # Context formatting
-                # We show the fragment content mainly, maybe hint at parent context if short
-                text = item["content"].strip()
-                similarity = item.get("similarity", 0.0)
-                
-                content_parts.append(f"[{idx}] Source: {source} (Score: {similarity:.2f})\n{text}")
-                
-            formatted_content = "\n\n".join(content_parts)
+            # Use max similarity as confidence
+            max_similarity = max(
+                (item.get("similarity", 0.0) for item in results),
+                default=0.0
+            )
             
             return self._create_result(
                 query=query,
                 content=formatted_content,
-                confidence=0.8, # Placeholder confidence
-                sources=list(sources)
+                confidence=max_similarity,
+                sources=sources
             )
             
         except Exception as e:
-            # Log error
-            import traceback
             traceback.print_exc()
             return self._create_result(
                 query=query,
@@ -84,8 +76,47 @@ class RagWorker(BaseWorker):
                 sources=[]
             )
 
+    def _format_context(self, results: List[Dict[str, Any]]) -> str:
+        """Format RAG results with parent context for Supervisor LLM.
+        
+        Applies GenerationPipeline's PromptTemplate.build_context() structure:
+        - Parent context (broader context, truncated to 800 chars)
+        - Matched fragment with view/language labels
+        - Source citations [Source N: filename]
+        """
+        context_parts = []
+        
+        for i, item in enumerate(results, 1):
+            meta = item.get("metadata", {})
+            source = meta.get("source") or meta.get("file_name") or "unknown"
+            view = meta.get("view", "text").upper()
+            lang = meta.get("lang")
+            similarity = item.get("similarity", 0.0)
+            
+            # Build context entry
+            entry = f"[Source {i}: {source}] (Score: {similarity:.2f})\n"
+            
+            # Parent context (broader document context)
+            parent_content = item.get("parent_content")
+            if parent_content:
+                parent_preview = parent_content[:800]
+                if len(parent_content) > 800:
+                    parent_preview += "..."
+                entry += f"Context:\n{parent_preview}\n\n"
+            
+            # Matched fragment with view/language label
+            view_label = f"{view} ({lang})" if lang else view
+            entry += f"Matched Content [{view_label}]:\n{item['content'].strip()}\n"
+            
+            context_parts.append(entry)
+        
+        # Join with separator
+        separator = "\n" + "=" * 40 + "\n"
+        return separator + separator.join(context_parts)
+
     def _create_result(self, query: str, content: str, confidence: float, sources: List[str]) -> WorkerResult:
         return WorkerResult(
+            worker=self.worker_type,
             query=query,
             content=content,
             confidence=confidence,
