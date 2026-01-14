@@ -3,10 +3,12 @@
 Handles system prompts, context assembly, and RAG prompt formatting.
 """
 
+from __future__ import annotations
 from dataclasses import dataclass
-from typing import List
+from typing import List, TYPE_CHECKING
 
-from src.rag.retrieval import ExpandedResult
+if TYPE_CHECKING:
+    from src.rag.retrieval import ExpandedResult
 
 
 @dataclass

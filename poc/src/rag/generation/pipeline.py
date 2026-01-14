@@ -3,9 +3,11 @@
 Orchestrates LLM generation from retrieved context with source attribution.
 """
 
-from typing import List, Optional
+from __future__ import annotations
+from typing import List, Optional, TYPE_CHECKING
 
-from src.rag.retrieval import ExpandedResult
+if TYPE_CHECKING:
+    from src.rag.retrieval import ExpandedResult
 
 from .client import LLMClientProtocol
 from .models import Conversation, GeneratedResponse, OptimizedQuery
