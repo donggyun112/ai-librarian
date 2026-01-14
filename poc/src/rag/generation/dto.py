@@ -1,13 +1,18 @@
-﻿"""Data models for generation layer.
+﻿"""Generation layer Data Transfer Objects.
 
-Contains data classes for query optimization, LLM responses, and generated outputs.
+Defines output schemas for the generation pipeline.
+
+Rules:
+- MUST NOT depend on logic layers (generation internals, storage).
+- MAY depend on retrieval DTOs (ExpandedResult for sources).
+- SHOULD be pure data classes.
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import List, Optional
 
-from src.rag.types import ExpandedResult
+from src.rag.retrieval.dto import ExpandedResult
 
 
 @dataclass

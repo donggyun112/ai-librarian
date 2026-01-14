@@ -13,16 +13,16 @@ from typing import Dict, List, Optional
 
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
-from src.rag.types import ExpandedResult, SearchResult
+from .dto import ExpandedResult, SearchResult
 
 
-class ContextExpander:
+class ParentContextEnricher:
     """Expands search results with parent document context.
 
     Implements PKG-RET-003 (context expansion) and SEARCH-SEP-003 (parent context).
 
     Example:
-        >>> expander = ContextExpander(config)
+        >>> expander = ParentContextEnricher(config)
         >>> results = [SearchResult(...), ...]
         >>> expanded = expander.expand(results)
         >>> expanded[0].parent_content  # Full parent document
@@ -102,4 +102,4 @@ class ContextExpander:
         }
 
 
-__all__ = ["ContextExpander", "ExpandedResult"]
+__all__ = ["ParentContextEnricher", "ExpandedResult"]

@@ -6,7 +6,7 @@ Formats search results and other outputs for human-readable display.
 import json
 from typing import List
 
-from src.rag.types import ExpandedResult
+from src.rag.retrieval.dto import ExpandedResult
 
 
 class ResponseFormatter:

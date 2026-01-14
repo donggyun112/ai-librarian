@@ -15,9 +15,7 @@ from typing import List, Optional
 from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
-from src.rag.types import SearchResult
-
-from .query import QueryPlan
+from .dto import QueryPlan, SearchResult
 
 
 class VectorSearchEngine:

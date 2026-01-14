@@ -8,7 +8,6 @@ Rules:
 """
 
 import os
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from langchain_classic.chains.query_constructor.base import AttributeInfo
@@ -18,6 +17,8 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_postgres import PGVector
 
 from src.rag.shared.config import EmbeddingConfig
+
+from .dto import SelfQueryResult
 
 
 # Metadata schema definition for LangChain SelfQueryRetriever
@@ -38,20 +39,6 @@ DOCUMENT_CONTENT_DESCRIPTION = """
 Technical documentation and code examples from OCR-processed PDFs.
 Contains explanatory text about programming concepts and code snippets in various languages.
 """
-
-
-@dataclass
-class SelfQueryResult:
-    """Result from self-query retrieval.
-    
-    Attributes:
-        content: Document content
-        metadata: Document metadata including view, lang, parent_id
-        score: Relevance score (cosine similarity)
-    """
-    content: str
-    metadata: dict
-    score: Optional[float] = None
 
 
 class SelfQueryRetrieverWrapper:

@@ -8,14 +8,12 @@ Rules:
 - DEP-RET-ALLOW-004: MAY import shared
 """
 
-from dataclasses import dataclass
 from typing import List, Optional, Protocol
 
 from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 
-# Maximum allowed top_k to prevent excessive resource usage
-MAX_TOP_K = 100
+from .dto import QueryPlan
 
 
 class EmbeddingClientProtocol(Protocol):
@@ -24,32 +22,6 @@ class EmbeddingClientProtocol(Protocol):
     def embed_query(self, text: str) -> List[float]:
         """Generate embedding for a query string."""
         ...
-
-
-@dataclass
-class QueryPlan:
-    """Parsed query with filters and embedding.
-
-    Attributes:
-        query_text: Original query string
-        query_embedding: Vector embedding of query
-        view_filter: Optional view filter (text, code, image, etc.)
-        language_filter: Optional language filter (python, javascript, etc.)
-        top_k: Number of results to retrieve (capped at MAX_TOP_K)
-    """
-
-    query_text: str
-    query_embedding: List[float]
-    view_filter: Optional[View] = None
-    language_filter: Optional[str] = None
-    top_k: int = 10
-
-    def __post_init__(self):
-        """Validate and cap top_k to prevent excessive resource usage."""
-        if self.top_k > MAX_TOP_K:
-            self.top_k = MAX_TOP_K
-        elif self.top_k < 1:
-            self.top_k = 1
 
 
 class QueryInterpreter:
