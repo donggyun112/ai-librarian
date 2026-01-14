@@ -3,7 +3,8 @@ from typing import List, Dict, Any, Optional
 
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-from src.rag.retrieval import RetrievalPipeline, ExpandedResult
+from src.rag.retrieval import RetrievalPipeline
+from src.rag.types import ExpandedResult
 from src.rag.retrieval.query import EmbeddingClientProtocol
 from src.rag.shared.config import load_config as load_rag_config
 

@@ -5,7 +5,8 @@ Orchestrates the retrieval pipeline for search operations.
 
 from typing import List, Optional, Protocol
 
-from src.rag.retrieval import ExpandedResult, RetrievalPipeline
+from src.rag.retrieval import RetrievalPipeline
+from src.rag.types import ExpandedResult
 from src.rag.shared.config import EmbeddingConfig
 
 
