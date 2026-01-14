@@ -13,16 +13,16 @@ from loguru import logger
 from src.rag.domain import Concept, Document
 from src.rag.embedding import EmbeddingProviderFactory, EmbeddingValidator
 from src.rag.ingestion import (
-    ConceptBuilder,
+    SegmentToConceptTransformer,
     GeminiVisionOcr,
     MarkdownParser,
     OcrParser,
     PdfParser,
     PyMuPdfParser,
-    SegmentUnitizer,
+    SemanticUnitGrouper,
 )
 from src.rag.shared.config import EmbeddingConfig
-from src.rag.shared.text_utils import TextPreprocessor
+from src.rag.shared.text_utils import TextNormalizerUtil
 from src.rag.storage import (
     CascadeDeleter,
     ConceptRepository,
@@ -71,10 +71,10 @@ class IngestUseCase:
     def __init__(self, config: EmbeddingConfig, disable_cache: bool = False):
         self.config = config
         self.disable_cache = disable_cache
-        self.preprocessor = TextPreprocessor()
+        self.preprocessor = TextNormalizerUtil()
         self.validator = EmbeddingValidator()
-        self.unitizer = SegmentUnitizer(text_unit_threshold=config.text_unit_threshold)
-        self.concept_builder = ConceptBuilder()
+        self.unitizer = SemanticUnitGrouper(text_unit_threshold=config.text_unit_threshold)
+        self.concept_builder = SegmentToConceptTransformer()
         self.md_parser = MarkdownParser(self.preprocessor)
         self.ocr_parser = OcrParser(self.preprocessor)
         self.pdf_parser = self._create_pdf_parser()

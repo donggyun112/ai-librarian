@@ -1,6 +1,13 @@
-﻿"""Data models for ingestion layer."""
+﻿"""Ingestion layer Data Transfer Objects.
 
-from dataclasses import dataclass, field
+Defines output schemas for the ingestion pipeline stages.
+
+Rules:
+- MUST NOT depend on other layers (retrieval, generation, storage).
+- SHOULD be pure data classes.
+"""
+
+from dataclasses import dataclass
 from typing import Optional, Tuple
 
 

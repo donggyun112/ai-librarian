@@ -14,7 +14,7 @@ import warnings
 from typing import Optional
 
 from .client import LLMClientProtocol
-from .models import OptimizedQuery
+from .dto import OptimizedQuery
 from .prompts import PromptTemplate
 
 # Emit deprecation warning on import

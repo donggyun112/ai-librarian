@@ -17,7 +17,7 @@ Rules:
 """
 
 from .client import GeminiLLMClient, LLMClientProtocol
-from .models import (
+from .dto import (
     Conversation,
     ConversationTurn,
     GeneratedResponse,
@@ -29,18 +29,18 @@ from .prompts import PromptContext, PromptTemplate
 from .query_optimizer import QueryOptimizer
 
 __all__ = [
-    # Client
-    "GeminiLLMClient",
-    "LLMClientProtocol",
-    # Models
+    # DTOs
     "OptimizedQuery",
     "LLMResponse",
     "GeneratedResponse",
     "ConversationTurn",
     "Conversation",
+    "PromptContext",
+    # Client
+    "GeminiLLMClient",
+    "LLMClientProtocol",
     # Prompts
     "PromptTemplate",
-    "PromptContext",
     # Query Optimization
     "QueryOptimizer",
     # Pipeline

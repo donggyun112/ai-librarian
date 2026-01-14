@@ -5,10 +5,10 @@ Orchestrates LLM generation from retrieved context with source attribution.
 
 from typing import List, Optional
 
-from src.rag.types import ExpandedResult
+from src.rag.retrieval.dto import ExpandedResult
 
 from .client import LLMClientProtocol
-from .models import Conversation, GeneratedResponse, OptimizedQuery
+from .dto import Conversation, GeneratedResponse, OptimizedQuery
 from .prompts import PromptTemplate
 
 

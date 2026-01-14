@@ -9,8 +9,8 @@ Rules:
 """
 
 from .chunking import TextChunker
-from .concept_builder import ConceptBuilder
-from .models import RawSegment, UnitizedSegment
+from .concept_builder import SegmentToConceptTransformer
+from .dto import RawSegment, UnitizedSegment
 from .parsers import (
     BaseSegmentParser,
     GeminiVisionOcr,
@@ -20,10 +20,10 @@ from .parsers import (
     PdfParser,
     PyMuPdfParser,
 )
-from .segmentation import SegmentUnitizer
+from .segmentation import SemanticUnitGrouper
 
 __all__ = [
-    # Models
+    # DTOs
     "RawSegment",
     "UnitizedSegment",
     # Parsers
@@ -35,9 +35,9 @@ __all__ = [
     "GeminiVisionOcr",
     "PyMuPdfParser",
     # Segmentation
-    "SegmentUnitizer",
+    "SemanticUnitGrouper",
     # Chunking
     "TextChunker",
     # Concept Building
-    "ConceptBuilder",
+    "SegmentToConceptTransformer",
 ]

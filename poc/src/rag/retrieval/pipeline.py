@@ -13,7 +13,7 @@ from src.rag.domain import View
 from src.rag.generation import QueryOptimizer
 from src.rag.shared.config import EmbeddingConfig
 
-from .context import ContextExpander, ExpandedResult
+from .context import ParentContextEnricher, ExpandedResult
 from .grouping import ResultGrouper
 from .query import EmbeddingClientProtocol, QueryInterpreter
 from .search import SearchResult, VectorSearchEngine
@@ -27,7 +27,7 @@ class RetrievalPipeline:
     1. Query optimization (SelfQueryRetriever or QueryOptimizer) - optional
     2. Query interpretation (QueryInterpreter)
     3. Vector similarity search (VectorSearchEngine)
-    4. Context expansion (ContextExpander)
+    4. Context expansion (ParentContextEnricher)
     5. Result grouping (ResultGrouper)
 
     Example:
@@ -51,7 +51,7 @@ class RetrievalPipeline:
         self.embeddings_client = embeddings_client
         self.query_interpreter = QueryInterpreter(embeddings_client, config)
         self.search_engine = VectorSearchEngine(config)
-        self.context_expander = ContextExpander(config)
+        self.context_expander = ParentContextEnricher(config)
         self.grouper = ResultGrouper()
         
         # SelfQueryRetriever (preferred, auto-extracts metadata filters)

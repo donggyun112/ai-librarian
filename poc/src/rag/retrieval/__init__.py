@@ -9,28 +9,31 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding (clients), shared
 """
 
-from .context import ContextExpander, ExpandedResult
+from .context import ParentContextEnricher
+from .dto import ExpandedResult, QueryPlan, SearchResult, SelfQueryResult
 from .grouping import ResultGrouper
 from .pipeline import RetrievalPipeline
 from .query import QueryInterpreter
-from .search import SearchResult, VectorSearchEngine
-from .self_query import SelfQueryResult, SelfQueryRetrieverWrapper, create_self_query_retriever
+from .search import VectorSearchEngine
+from .self_query import SelfQueryRetrieverWrapper, create_self_query_retriever
 
 __all__ = [
+    # DTOs
+    "QueryPlan",
+    "SearchResult",
+    "ExpandedResult",
+    "SelfQueryResult",
     # Query
     "QueryInterpreter",
     # Search
     "VectorSearchEngine",
-    "SearchResult",
     # Context
-    "ContextExpander",
-    "ExpandedResult",
+    "ParentContextEnricher",
     # Grouping
     "ResultGrouper",
     # Pipeline
     "RetrievalPipeline",
-    # Self-Query (new)
+    # Self-Query
     "SelfQueryRetrieverWrapper",
-    "SelfQueryResult",
     "create_self_query_retriever",
 ]

@@ -1,7 +1,7 @@
 ﻿from dataclasses import dataclass
 from typing import List
 
-from src.rag.types import ExpandedResult
+from src.rag.retrieval.dto import ExpandedResult
 
 
 @dataclass
