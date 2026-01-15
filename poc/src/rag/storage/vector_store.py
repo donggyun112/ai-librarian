@@ -12,6 +12,7 @@ from typing import List
 
 from langchain_core.documents import Document
 from langchain_postgres import PGVector
+from loguru import logger
 
 from src.rag.shared.batching import iter_by_char_budget
 from src.rag.shared.config import EmbeddingConfig
@@ -98,7 +99,7 @@ class VectorStoreWriter:
 
         # 4. Process batches with retry logic
         for index, batch in enumerate(groups, 1):
-            print(f"[upsert_batch] storing batch {index}/{total_groups} ({len(batch)} docs)")
+            logger.info(f"Storing batch {index}/{total_groups} ({len(batch)} docs)")
             ids = [doc.metadata["doc_id"] for doc in batch]
             attempt = 0
             max_attempts = 6
@@ -112,7 +113,7 @@ class VectorStoreWriter:
                     except TypeError:
                         # Fallback for older LangChain versions
                         store.add_documents(batch)
-                    print(f"[upsert_batch] batch {index}/{total_groups} inserted {len(batch)} docs")
+                    logger.info(f"Batch {index}/{total_groups} inserted {len(batch)} docs")
                     break
                 except Exception as exc:
                     message = str(exc).lower()
@@ -120,12 +121,12 @@ class VectorStoreWriter:
                         token in message for token in ("ratelimit", "rate limit", "rpm", "tpm")
                     )
                     if not rate_limited or attempt >= max_attempts - 1:
-                        print(f"[upsert_batch] batch {index}/{total_groups} failed: {exc}")
+                        logger.error(f"Batch {index}/{total_groups} failed: {exc}")
                         raise
                     attempt += 1
                     sleep_for = backoff * (1.5**attempt)
-                    print(
-                        f"[rate-limit] retry {attempt}/{max_attempts} in {int(sleep_for)}s "
+                    logger.warning(
+                        f"Rate-limit retry {attempt}/{max_attempts} in {int(sleep_for)}s "
                         f"(batch {index}/{total_groups})"
                     )
                     time.sleep(sleep_for)
