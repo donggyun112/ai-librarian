@@ -1,56 +1,58 @@
-# Use Python 3.12 slim image
-FROM python:3.12-slim
+# Stage 1: Builder
+# Install dependencies and build tools
+FROM python:3.12-slim AS builder
 
-# Install uv for fast package management
+# Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies required for building (e.g. C extensions)
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user and set permissions
+# Copy dependency files first to cache this layer
+COPY uv.lock pyproject.toml ./
+
+# Install dependencies into a virtual environment
+# We use --no-install-project because we only want dependencies here; 
+# the source code will be copied in the runner stage.
+RUN uv sync --frozen --no-install-project --no-dev
+
+
+# Stage 2: Runner
+# Final minimal image
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Install runtime system dependencies if any (none for now, but kept clean)
+# Note: gcc and uv are NOT installed here to reduce size and improve security.
+
+# Create a non-root user
 RUN useradd -m -u 1000 appuser && \
     chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser
 
-# Install dependencies
-COPY --chown=appuser:appuser uv.lock pyproject.toml ./
-RUN uv sync --frozen --no-install-project --no-dev
+# Copy the virtual environment from the builder stage
+COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 
 # Copy application code
 COPY --chown=appuser:appuser . .
 
-# Install the project itself
-RUN uv sync --frozen --no-dev
-
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
+# Add venv bin to PATH (optional if using direct path in ENTRYPOINT, but good practice)
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PORT=8080
 ENV HOST=0.0.0.0
 
-# Expose port 8080 (Cloud Run default)
+# Expose port 8080
 EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import sys, urllib.request, urllib.error; \
-    from urllib.error import URLError, HTTPError; \
-    import socket; \
-    URL = 'http://localhost:8080/health'; \
-    TIMEOUT = 5; \
-    try: \
-    with urllib.request.urlopen(URL, timeout=TIMEOUT) as resp: \
-    status = resp.getcode(); \
-    sys.exit(0 if 200 <= status < 400 else 1); \
-    except (HTTPError, URLError, socket.timeout, Exception): \
-    sys.exit(1)" || exit 1
-
-
-ENTRYPOINT ["sh", "-c", "exec uv run uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
+# Use the python executable from the venv directly
+# This avoids needing 'uv' in the final image
+ENTRYPOINT ["sh", "-c", "exec /app/.venv/bin/uvicorn src.api:app --host 0.0.0.0 --port ${PORT:-8080}"]
