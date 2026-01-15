@@ -1,6 +1,7 @@
 ﻿import asyncio
-import traceback
 from typing import Any, Dict, List, Optional
+
+from loguru import logger
 
 from langchain_core.tools import Tool
 
@@ -68,7 +69,7 @@ class RagWorker(BaseWorker):
             )
             
         except Exception as e:
-            traceback.print_exc()
+            logger.error(f"RAG search failed: {e}", exc_info=True)
             return self._create_result(
                 query=query,
                 content=f"Error during RAG search: {str(e)}",
