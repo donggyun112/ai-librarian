@@ -9,6 +9,8 @@ Rules:
 
 from typing import List, Optional
 
+from loguru import logger
+
 from src.rag.domain import View
 from src.rag.generation import QueryOptimizer
 from src.rag.shared.config import EmbeddingConfig
@@ -68,21 +70,21 @@ class RetrievalPipeline:
                     llm=None,  # Will create LangChain LLM internally
                     verbose=False,
                 )
-                print("[pipeline] SelfQueryRetriever enabled for automatic filter extraction")
+                logger.info("SelfQueryRetriever enabled for automatic filter extraction")
             except Exception as e:
-                print(f"[pipeline] SelfQueryRetriever unavailable: {e}")
+                logger.warning(f"SelfQueryRetriever unavailable: {e}")
                 # Fall through to legacy QueryOptimizer if available
                 if llm_client is not None:
                     try:
                         self.query_optimizer = QueryOptimizer(llm_client)
-                        print("[pipeline] Falling back to QueryOptimizer (legacy mode)")
+                        logger.info("Falling back to QueryOptimizer (legacy mode)")
                     except Exception:
                         pass
         elif llm_client is not None:
             # Explicitly disabled SelfQueryRetriever, use legacy QueryOptimizer
             try:
                 self.query_optimizer = QueryOptimizer(llm_client)
-                print("[pipeline] QueryOptimizer enabled (legacy mode)")
+                logger.info("QueryOptimizer enabled (legacy mode)")
             except Exception:
                 pass
 
@@ -117,7 +119,7 @@ class RetrievalPipeline:
                 self_query_results = self.self_query_retriever.retrieve(query, k=top_k)
                 
                 if self_query_results:
-                    print(f"[self_query] Retrieved {len(self_query_results)} results with auto-filters")
+                    logger.debug(f"SelfQuery retrieved {len(self_query_results)} results with auto-filters")
                     
                     # Convert SelfQueryResult to SearchResult format
                     search_results = self._convert_self_query_results(self_query_results)
@@ -132,7 +134,7 @@ class RetrievalPipeline:
                     else:
                         return [ExpandedResult(result=r) for r in search_results]
             except Exception as e:
-                print(f"[self_query] Falling back to standard search: {e}")
+                logger.warning(f"SelfQuery failed, falling back to standard search: {e}")
         
         # Legacy path: QueryOptimizer or direct search
         search_query = query
@@ -151,11 +153,11 @@ class RetrievalPipeline:
                 if not language and optimized.language_hint:
                     optimized_language = optimized.language_hint
                     
-                print(f"[optimize] '{query}' -> '{search_query}'")
+                logger.debug(f"Query optimized: '{query}' -> '{search_query}'")
                 if optimized.keywords:
-                    print(f"[optimize] Keywords: {optimized.keywords}")
+                    logger.debug(f"Extracted keywords: {optimized.keywords}")
             except Exception as e:
-                print(f"[optimize] Fallback to original query: {e}")
+                logger.warning(f"Query optimization failed, using original: {e}")
         
         # Stage 1: Query interpretation
         query_plan = self.query_interpreter.interpret(

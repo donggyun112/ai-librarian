@@ -68,8 +68,8 @@ class RagService:
             - parent_content: Full content of the parent document (context)
             - parent_metadata: Metadata of the parent document
         """
-        # Execute search via pipeline
-        results: List[ExpandedResult] = await self.pipeline.run(query)
+        # Execute search via pipeline (retrieve is synchronous)
+        results: List[ExpandedResult] = self.pipeline.retrieve(query)
         
         # Format results for the caller
         formatted_results = []
