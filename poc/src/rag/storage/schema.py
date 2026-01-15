@@ -11,6 +11,7 @@ import re
 from typing import Optional
 
 import psycopg  # type: ignore
+from loguru import logger
 
 from src.rag.shared.config import EmbeddingConfig
 
@@ -48,9 +49,9 @@ class DbSchemaManager:
                 with conn.cursor() as cur:
                     for setting, value in values.items():
                         cur.execute(f"ALTER DATABASE CURRENT SET {setting} = {int(value)};")
-                        print(f"[tuning] set {setting}={int(value)}")
+                        logger.info(f"DB tuning: {setting}={int(value)}")
         except Exception as exc:
-            print(f"[warn] DB-level tuning not applied: {exc}")
+            logger.warning(f"DB tuning skipped: {exc}")
 
     def ensure_extension_vector(self) -> None:
         """Ensure pgvector extension is installed."""
@@ -122,7 +123,7 @@ class DbSchemaManager:
             with conn.cursor() as cur:
                 for idx_sql in indexes:
                     cur.execute(idx_sql)
-        print(f"[index] Global indexes ensured on {table}")
+        logger.info(f"Global indexes ensured on {table}")
 
     def ensure_parent_docstore(self) -> None:
         """Create docstore_parent table for parent documents."""

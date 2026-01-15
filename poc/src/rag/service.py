@@ -1,8 +1,6 @@
-﻿import os
-from typing import List, Dict, Any, Optional
+﻿from typing import Any, Dict, List
 
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
-
+from src.rag.embedding.provider import EmbeddingProviderFactory
 from src.rag.retrieval import RetrievalPipeline
 from src.rag.retrieval.dto import ExpandedResult
 from src.rag.retrieval.query import EmbeddingClientProtocol
@@ -31,25 +29,17 @@ class RagService:
     def __init__(self):
         # 1. Load RAG configuration
         self.config = load_rag_config()
-        
-        # 2.Initialize Embedding Client (Gemini)
-        # Note: In a real app, this might come from a central provider or factory
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise ValueError("GOOGLE_API_KEY environment variable is not set")
-            
-        embeddings = GoogleGenerativeAIEmbeddings(
-            model=self.config.embedding.model_name,
-            google_api_key=api_key
-        )
-        
+
+        # 2. Create embeddings via factory (respects EMBEDDING_PROVIDER env var)
+        embeddings = EmbeddingProviderFactory.create(self.config)
+
         # 3. Create Adapter
         embedding_client = EmbeddingClientAdapter(embeddings)
-        
+
         # 4. Initialize Pipeline
         self.pipeline = RetrievalPipeline(
+            embeddings_client=embedding_client,
             config=self.config,
-            embedding_client=embedding_client
         )
 
     async def search(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
@@ -69,11 +59,11 @@ class RagService:
             - parent_metadata: Metadata of the parent document
         """
         # Execute search via pipeline (retrieve is synchronous)
-        results: List[ExpandedResult] = self.pipeline.retrieve(query)
-        
+        results: List[ExpandedResult] = self.pipeline.retrieve(query, top_k=k)
+
         # Format results for the caller
         formatted_results = []
-        for res in results[:k]:
+        for res in results:
             formatted_results.append({
                 "content": res.result.content,
                 "metadata": res.result.metadata,
