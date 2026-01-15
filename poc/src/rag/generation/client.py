@@ -9,6 +9,7 @@ import time
 from typing import Optional, Protocol
 
 import google.generativeai as genai
+from loguru import logger
 
 from .dto import LLMResponse
 
@@ -136,12 +137,12 @@ class GeminiLLMClient:
             except Exception as e:
                 last_error = e
                 if attempt < MAX_RETRIES - 1 and self._should_retry(e):
-                    print(f"[llm] Retry {attempt + 1}/{MAX_RETRIES} after error: {e}")
+                    logger.warning(f"LLM retry {attempt + 1}/{MAX_RETRIES}: {e}")
                     time.sleep(RETRY_DELAYS[attempt])
                     continue
                 break
 
-        print(f"[llm] Generation failed: {last_error}")
+        logger.error(f"LLM generation failed: {last_error}")
         return LLMResponse(
             content=f"Generation error: {str(last_error)}",
             model=self._model_name,

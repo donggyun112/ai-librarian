@@ -79,12 +79,29 @@ def _parse_bool(value: Optional[str], default: bool = False) -> bool:
     return value.lower() in ("1", "true", "yes", "y", "on")
 
 
+def _get_embedding_model_for_provider(provider: str) -> str:
+    """Get embedding model name based on provider.
+
+    Each provider uses its own environment variable:
+    - openai: OPENAI_EMBEDDING_MODEL (default: text-embedding-3-small)
+    - gemini: Uses gemini_model field separately
+    - voyage: VOYAGE_MODEL (default: voyage-3)
+    """
+    if provider == "openai":
+        return os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+    if provider == "gemini":
+        # gemini uses gemini_model field
+        return ""
+    # voyage (default)
+    return os.getenv("VOYAGE_MODEL", "voyage-3")
+
+
 def load_config() -> EmbeddingConfig:
     """Load configuration from environment variables."""
     load_dotenv()
 
-    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "voyage").lower()
-    embedding_dim = _parse_int(os.getenv("EMBEDDING_DIM"), 768)
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+    embedding_dim = _parse_int(os.getenv("EMBEDDING_DIM"), 1536)
     if os.getenv("EMBEDDING_DIM") in (None, "") and embedding_provider == "gemini":
         embedding_dim = 768
     pg_pool_min_size = max(0, _parse_int(os.getenv("PG_POOL_MIN_SIZE"), 0))
@@ -95,7 +112,7 @@ def load_config() -> EmbeddingConfig:
     config = EmbeddingConfig(
         pg_conn=os.getenv("PG_CONN", ""),
         collection_name=os.getenv("COLLECTION_NAME", ""),
-        embedding_model=os.getenv("VOYAGE_MODEL", "voyage-3"),
+        embedding_model=_get_embedding_model_for_provider(embedding_provider),
         embedding_dim=embedding_dim,
         embedding_provider=embedding_provider,
         gemini_model=os.getenv("GEMINI_EMBED_MODEL", "text-embedding-004"),
