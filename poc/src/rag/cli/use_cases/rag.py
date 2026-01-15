@@ -44,7 +44,7 @@ class RAGUseCase:
         embeddings_client: EmbeddingClientProtocol,
         embed_config: EmbeddingConfig,
         gen_config: GenerationConfig,
-    ):
+    ) -> None:
         """Initialize RAGUseCase.
 
         Args:
