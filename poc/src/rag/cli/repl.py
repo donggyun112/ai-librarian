@@ -58,7 +58,13 @@ def parse_toggle(value: str) -> bool:
 
 
 def show_settings(
-    view, language, top_k, show_context, as_json, rag_mode, use_conversation
+    view: Optional[str],
+    language: Optional[str],
+    top_k: int,
+    show_context: bool,
+    as_json: bool,
+    rag_mode: bool,
+    use_conversation: bool,
 ) -> None:
     print("Current settings:")
     print(f"  rag_mode:    {'on' if rag_mode else 'off'}")

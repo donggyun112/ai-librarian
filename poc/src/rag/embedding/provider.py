@@ -4,6 +4,7 @@ import os
 from typing import List, Optional
 
 import google.generativeai as genai
+from loguru import logger
 from langchain_openai import OpenAIEmbeddings
 from langchain_voyageai import VoyageAIEmbeddings
 
@@ -124,15 +125,15 @@ def validate_embedding_dimension(
     try:
         vectors = embeddings.embed_documents(["__dim_check__"])
         if not vectors or not isinstance(vectors, list) or not isinstance(vectors[0], (list, tuple)):
-            print("[warn] Unable to validate embedding dimension (unexpected response)")
+            logger.warning("Unable to validate embedding dimension (unexpected response)")
             return
         actual = len(vectors[0])
         if actual != expected:
-            print(
-                f"[WARN] EMBEDDING_DIM mismatch for {label}: expected {expected}, received {actual}"
+            logger.warning(
+                f"EMBEDDING_DIM mismatch for {label}: expected {expected}, received {actual}"
             )
     except Exception as exc:
-        print(f"[warn] Skipping dimension validation for {label}: {exc}")
+        logger.warning(f"Skipping dimension validation for {label}: {exc}")
 
 
 __all__ = ["EmbeddingProviderFactory", "GeminiEmbeddings", "validate_embedding_dimension"]
