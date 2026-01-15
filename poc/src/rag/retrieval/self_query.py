@@ -15,6 +15,7 @@ from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
 from langchain_core.documents import Document
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_postgres import PGVector
+from loguru import logger
 
 from src.rag.shared.config import EmbeddingConfig
 
@@ -98,7 +99,7 @@ class SelfQueryRetrieverWrapper:
             structured_query = self.retriever.query_constructor.invoke({"query": query})
             
             if self.verbose:
-                print(f"[self_query] Structured query: {structured_query}")
+                logger.debug(f"Structured query: {structured_query}")
             
             # Extract filter from structured query
             if structured_query and hasattr(structured_query, 'filter') and structured_query.filter:
@@ -107,7 +108,7 @@ class SelfQueryRetrieverWrapper:
             
         except Exception as e:
             if self.verbose:
-                print(f"[self_query] Filter extraction failed: {e}")
+                logger.warning(f"Filter extraction failed: {e}")
             return None
     
     def _convert_filter_to_dict(self, filter_obj) -> Dict[str, Any]:
@@ -137,7 +138,7 @@ class SelfQueryRetrieverWrapper:
                 
         except Exception as e:
             if self.verbose:
-                print(f"[self_query] Filter conversion error: {e}")
+                logger.warning(f"Filter conversion error: {e}")
         
         return filter_dict
     
@@ -163,7 +164,7 @@ class SelfQueryRetrieverWrapper:
             filters = self._extract_filters(query)
             
             if self.verbose and filters:
-                print(f"[self_query] Extracted filters: {filters}")
+                logger.debug(f"Extracted filters: {filters}")
             
             # Step 2: Search with filters and get actual similarity scores
             if filters:
@@ -181,7 +182,7 @@ class SelfQueryRetrieverWrapper:
                 )
             
             if self.verbose:
-                print(f"[self_query] Retrieved {len(docs_with_scores)} documents with scores")
+                logger.debug(f"Retrieved {len(docs_with_scores)} documents with scores")
             
             # Convert to SelfQueryResult with actual scores
             return [
@@ -194,7 +195,7 @@ class SelfQueryRetrieverWrapper:
             ]
             
         except Exception as e:
-            print(f"[self_query] Error: {e}")
+            logger.exception(f"Self-query failed, falling back: {e}")
             # Fallback to simple similarity search without filters
             return self._fallback_search(query, k)
     
@@ -224,7 +225,7 @@ class SelfQueryRetrieverWrapper:
                 for doc, score in docs_with_scores
             ]
         except Exception as e:
-            print(f"[self_query] Fallback search also failed: {e}")
+            logger.error(f"Fallback search also failed: {e}")
             return []
 
 
