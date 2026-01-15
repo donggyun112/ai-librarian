@@ -3,7 +3,7 @@
 Orchestrates the retrieval pipeline for search operations.
 """
 
-from typing import List, Optional, Protocol
+from typing import Any, List, Optional, Protocol
 
 from src.rag.retrieval import RetrievalPipeline
 from src.rag.retrieval.dto import ExpandedResult
@@ -36,8 +36,8 @@ class SearchUseCase:
         self,
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
-        llm_client=None,  # Deprecated, kept for backwards compatibility
-    ):
+        llm_client: Optional[Any] = None,  # Deprecated, kept for backwards compatibility
+    ) -> None:
         # SelfQueryRetriever is enabled by default (creates its own LLM)
         self.pipeline = RetrievalPipeline(
             embeddings_client,
