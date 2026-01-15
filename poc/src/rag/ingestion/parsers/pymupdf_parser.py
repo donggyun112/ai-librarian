@@ -16,6 +16,7 @@ from typing import List, Optional, Protocol
 
 import fitz  # PyMuPDF
 import google.generativeai as genai
+from loguru import logger
 
 from src.rag.shared.text_utils import TextNormalizerUtil
 
@@ -93,45 +94,45 @@ class GeminiVisionOcr:
             # Check if response was blocked or has no candidates
             if not response.candidates:
                 # Detailed diagnostic logging
-                print(f"[ocr] DEBUG: Image size: {image_size_kb:.1f} KB")
+                logger.debug(f"OCR: Image size: {image_size_kb:.1f} KB")
                 
                 # Print all available response attributes
-                print(f"[ocr] DEBUG: Response type: {type(response)}")
-                print(f"[ocr] DEBUG: Response attributes: {[a for a in dir(response) if not a.startswith('_')]}")
+                logger.debug(f"OCR: Response type: {type(response)}")
+                logger.debug(f"OCR: Response attributes: {[a for a in dir(response) if not a.startswith('_')]}")
                 
                 # Try to access text directly (some API versions)
                 try:
                     if hasattr(response, 'text'):
-                        print(f"[ocr] DEBUG: response.text exists: '{response.text[:100] if response.text else 'None'}...'")
+                        logger.debug(f"OCR: response.text exists: '{response.text[:100] if response.text else 'None'}...'")
                 except Exception as text_err:
-                    print(f"[ocr] DEBUG: response.text access error: {text_err}")
+                    logger.debug(f"OCR: response.text access error: {text_err}")
                 
                 # Check prompt_feedback in detail
                 if hasattr(response, 'prompt_feedback'):
                     pf = response.prompt_feedback
-                    print(f"[ocr] DEBUG: prompt_feedback type: {type(pf)}")
-                    print(f"[ocr] DEBUG: prompt_feedback: {pf}")
+                    logger.debug(f"OCR: prompt_feedback type: {type(pf)}")
+                    logger.debug(f"OCR: prompt_feedback: {pf}")
                     if pf:
-                        print(f"[ocr] DEBUG: prompt_feedback attrs: {[a for a in dir(pf) if not a.startswith('_')]}")
+                        logger.debug(f"OCR: prompt_feedback attrs: {[a for a in dir(pf) if not a.startswith('_')]}")
                         if hasattr(pf, 'block_reason') and pf.block_reason:
-                            print(f"[ocr] Gemini Vision prompt blocked: {pf.block_reason}")
+                            logger.warning(f"OCR: Gemini Vision prompt blocked: {pf.block_reason}")
                         if hasattr(pf, 'safety_ratings') and pf.safety_ratings:
                             for rating in pf.safety_ratings:
-                                print(f"[ocr] DEBUG: Safety - {rating.category}: {rating.probability}")
+                                logger.debug(f"OCR: Safety - {rating.category}: {rating.probability}")
                 
-                print("[ocr] Gemini Vision returned no candidates")
+                logger.warning("OCR: Gemini Vision returned no candidates")
                 return ""
             
             # Safely access text from first candidate
             candidate = response.candidates[0]
             if not candidate.content or not candidate.content.parts:
-                print("[ocr] DEBUG: Candidate has no content or parts")
+                logger.debug("OCR: Candidate has no content or parts")
                 return ""
             
             text = "".join(part.text for part in candidate.content.parts if hasattr(part, 'text'))
             return text.strip()
         except Exception as e:
-            print(f"[ocr] Gemini Vision OCR failed: {e}")
+            logger.warning(f"OCR: Gemini Vision OCR failed: {e}")
             return ""
 
 
@@ -199,7 +200,7 @@ class PyMuPdfParser(BaseSegmentParser):
         try:
             doc = fitz.open(path)
         except Exception as e:
-            print(f"[parse] Failed to open PDF: {e}")
+            logger.warning(f"Parse: Failed to open PDF: {e}")
             return []
 
         # === STEP 1: ?띿뒪??異붿텧 ?쒕룄 ===
@@ -218,8 +219,8 @@ class PyMuPdfParser(BaseSegmentParser):
 
         # === STEP 3: ?띿뒪??異⑸텇??寃??(Rule 1) ===
         if self._is_text_sufficient(deterministic_segments):
-            print(
-                f"[policy] Text sufficient ({len(deterministic_segments)} segments), "
+            logger.info(
+                f"Policy: Text sufficient ({len(deterministic_segments)} segments), "
                 "skipping Vision"
             )
             doc.close()
@@ -227,7 +228,7 @@ class PyMuPdfParser(BaseSegmentParser):
 
         # === STEP 4: 肄붾뱶 ?⑦꽩 寃??(Rule 2) ===
         if self._has_code_patterns(deterministic_segments):
-            print("[policy] Code patterns detected, preserving deterministic extraction")
+            logger.info("Policy: Code patterns detected, preserving deterministic extraction")
             doc.close()
             return self._detect_code_blocks(deterministic_segments)
 
@@ -267,7 +268,7 @@ class PyMuPdfParser(BaseSegmentParser):
 
         # Merge adjacent text blocks to improve embedding quality
         merged_segments = self._merge_adjacent_text_blocks(segments)
-        print(f"[merge] {len(segments)} segments ??{len(merged_segments)} merged segments")
+        logger.info(f"Merge: {len(segments)} segments ??{len(merged_segments)} merged segments")
 
         return merged_segments, total_text_blocks, total_image_blocks
 
@@ -403,12 +404,12 @@ class PyMuPdfParser(BaseSegmentParser):
         Returns:
             OCR segments or empty list
         """
-        print("[policy] Image-only document detected, invoking Vision OCR")
+        logger.info("Policy: Image-only document detected, invoking Vision OCR")
 
         # Check cache first
         cache_path = path + ".ocr.json"
         if self.use_cache and os.path.exists(cache_path):
-            print(f"[cache] Loading OCR cache from {os.path.basename(cache_path)}")
+            logger.info(f"Cache: Loading OCR cache from {os.path.basename(cache_path)}")
             doc.close()
             return self._load_cache(cache_path)
 
@@ -419,7 +420,7 @@ class PyMuPdfParser(BaseSegmentParser):
         # Save to cache
         if self.use_cache and segments:
             self._save_cache(cache_path, segments)
-            print(f"[cache] Saved OCR cache to {os.path.basename(cache_path)}")
+            logger.info(f"Cache: Saved OCR cache to {os.path.basename(cache_path)}")
 
         return segments
 
@@ -438,18 +439,18 @@ class PyMuPdfParser(BaseSegmentParser):
         Returns:
             Fallback segments or OCR result if available
         """
-        print("[policy] Empty document detected (no text or image blocks)")
+        logger.info("Policy: Empty document detected (no text or image blocks)")
 
         # Try OCR fallback if enabled
         if self.enable_auto_ocr and self.ocr:
-            print("[policy] Attempting OCR fallback for empty document")
+            logger.info("Policy: Attempting OCR fallback for empty document")
             try:
                 segments = self._ocr_all_pages(doc)
                 doc.close()
                 if segments:
                     return segments
             except Exception as e:
-                print(f"[parse] OCR fallback failed: {e}")
+                logger.warning(f"Parse: OCR fallback failed: {e}")
 
         doc.close()
         return fallback
@@ -468,18 +469,18 @@ class PyMuPdfParser(BaseSegmentParser):
 
         # Check cache first
         if self.use_cache and os.path.exists(cache_path):
-            print(f"[cache] Loading OCR cache from {os.path.basename(cache_path)}")
+            logger.info(f"Cache: Loading OCR cache from {os.path.basename(cache_path)}")
             doc.close()
             return self._load_cache(cache_path)
 
-        print("[policy] force_ocr enabled, invoking Vision OCR")
+        logger.info("Policy: force_ocr enabled, invoking Vision OCR")
         segments = self._ocr_all_pages(doc)
         doc.close()
 
         # Save to cache
         if self.use_cache and segments:
             self._save_cache(cache_path, segments)
-            print(f"[cache] Saved OCR cache to {os.path.basename(cache_path)}")
+            logger.info(f"Cache: Saved OCR cache to {os.path.basename(cache_path)}")
 
         return segments
 
@@ -496,7 +497,7 @@ class PyMuPdfParser(BaseSegmentParser):
         Returns:
             OCR segments or fallback
         """
-        print("[policy] Sparse text detected, falling back to Vision OCR")
+        logger.info("Policy: Sparse text detected, falling back to Vision OCR")
 
         try:
             segments = self._ocr_all_pages(doc)
@@ -506,11 +507,11 @@ class PyMuPdfParser(BaseSegmentParser):
                 if self.use_cache:
                     cache_path = path + ".ocr.json"
                     self._save_cache(cache_path, segments)
-                    print(f"[cache] Saved OCR cache to {os.path.basename(cache_path)}")
+                    logger.info(f"Cache: Saved OCR cache to {os.path.basename(cache_path)}")
                 doc.close()
                 return segments
         except Exception as e:
-            print(f"[parse] Vision OCR fallback failed: {e}")
+            logger.warning(f"Parse: Vision OCR fallback failed: {e}")
 
         doc.close()
         # Rule 4: Vision ?ㅽ뙣 ???먮낯 蹂댁〈
@@ -626,7 +627,7 @@ class PyMuPdfParser(BaseSegmentParser):
         mime_type = mime_map.get(ext, "image/png")
 
         # Run OCR
-        print(f"[ocr] DEBUG: Called from _process_image_block for page {page_num}")
+        logger.debug(f"OCR: Called from _process_image_block for page {page_num}")
         text = self.ocr.ocr_image(image_bytes, mime_type)
         if not text or len(text.strip()) < self.min_text_length:
             return None
@@ -752,7 +753,7 @@ class PyMuPdfParser(BaseSegmentParser):
 
         # Rule 2: If code patterns exist, preserve deterministic output
         if self._has_code_patterns(segments):
-            print("[policy] Code patterns detected, preserving deterministic extraction")
+            logger.info("Policy: Code patterns detected, preserving deterministic extraction")
             return False
 
         # Only allow fallback if both checks fail
@@ -782,7 +783,7 @@ class PyMuPdfParser(BaseSegmentParser):
             List of RawSegment from OCR text
         """
         if not self.ocr:
-            print("[parse] No OCR provider available for page-level OCR")
+            logger.warning("Parse: No OCR provider available for page-level OCR")
             return []
 
         segments: List[RawSegment] = []
@@ -798,7 +799,7 @@ class PyMuPdfParser(BaseSegmentParser):
             image_bytes = pix.tobytes("png")
 
             # OCR via Gemini Vision
-            print(f"[ocr] DEBUG: Called from _ocr_all_pages for page {page_num}, image size: {len(image_bytes)/1024:.1f} KB")
+            logger.debug(f"OCR: Called from _ocr_all_pages for page {page_num}, image size: {len(image_bytes)/1024:.1f} KB")
             try:
                 text = self.ocr.ocr_image(image_bytes, "image/png")
                 if text and len(text.strip()) >= self.min_text_length:
@@ -817,7 +818,7 @@ class PyMuPdfParser(BaseSegmentParser):
                         )
                         order += 1
             except Exception as e:
-                print(f"[parse] Gemini Vision OCR failed for page {page_num}: {e}")
+                logger.warning(f"Parse: Gemini Vision OCR failed for page {page_num}: {e}")
 
         return segments
 
@@ -842,7 +843,7 @@ class PyMuPdfParser(BaseSegmentParser):
             with open(json_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[cache] Failed to save cache: {e}")
+            logger.info(f"Cache: Failed to save cache: {e}")
 
     def _load_cache(self, cache_path: str) -> List[RawSegment]:
         """Load OCR results from cache file.
@@ -871,7 +872,7 @@ class PyMuPdfParser(BaseSegmentParser):
             ]
             return segments
         except Exception as e:
-            print(f"[cache] Failed to load cache: {e}")
+            logger.info(f"Cache: Failed to load cache: {e}")
             return []
 
 
