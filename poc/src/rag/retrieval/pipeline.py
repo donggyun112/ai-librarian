@@ -15,6 +15,7 @@ from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 
 from .context import ParentContextEnricher, ExpandedResult
+from .dto import SelfQueryResult
 from .grouping import ResultGrouper
 from .query import EmbeddingClientProtocol, QueryInterpreter
 from .search import SearchResult, VectorSearchEngine
@@ -143,7 +144,7 @@ class RetrievalPipeline:
 
         return expanded_results
 
-    def _convert_self_query_results(self, self_query_results) -> List[SearchResult]:
+    def _convert_self_query_results(self, self_query_results: List[SelfQueryResult]) -> List[SearchResult]:
         """Convert SelfQueryResult to SearchResult format.
 
         Args:

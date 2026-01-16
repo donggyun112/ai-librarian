@@ -307,26 +307,12 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
 from typing import List
 from pydantic import BaseModel, Field
 
-from src.rag.api.use_cases import IngestUseCase, SearchUseCase
+from src.rag.api.use_cases import SearchUseCase
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config as load_rag_config
 
 
 # Request/Response schemas for RAG endpoints
-class IngestRequest(BaseModel):
-    """파일 임베딩 요청"""
-    file_paths: List[str] = Field(..., description="임베딩할 파일 경로들")
-    force_ocr: bool = Field(False, description="OCR 강제 적용")
-
-
-class IngestResult(BaseModel):
-    """임베딩 결과"""
-    documents_processed: int
-    concepts_created: int
-    fragments_created: int
-    embeddings_generated: int
-
-
 class SearchRequest(BaseModel):
     """검색 요청"""
     query: str = Field(..., min_length=1, description="검색어")
@@ -353,35 +339,38 @@ class SearchResultResponse(BaseModel):
     results: List[SearchResultItem]
 
 
-@router.post("/rag/ingest", response_model=IngestResult)
-async def rag_ingest(request: IngestRequest) -> IngestResult:
-    """문서 임베딩
+@router.post(
+    "/rag/ingest",
+    response_model=None,
+    status_code=501,
+    deprecated=True,
+    summary="문서 임베딩 (보안상 비활성화됨)",
+    responses={
+        501: {
+            "description": "Not Implemented - 보안상 비활성화됨. CLI 사용: python -m src.rag.api.cli ingest <files>",
+        }
+    },
+)
+async def rag_ingest() -> None:
+    """문서 임베딩 (보안상 비활성화됨)
 
-    지정된 파일들을 파싱하여 벡터 DB에 임베딩합니다.
+    ⚠️ SECURITY: 이 엔드포인트는 Remote File Read 취약점으로 인해 비활성화되었습니다.
+    사용자가 제공한 파일 경로를 직접 open()하면 서버의 임의 파일을 읽을 수 있습니다.
 
-    Args:
-        request: 파일 경로 목록 및 OCR 옵션
+    TODO: 안전한 구현을 위해 다음 중 하나 필요:
+    - 파일 업로드 API + 안전한 스테이징 디렉토리 기반 처리
+    - 사전에 등록된 문서 ID만 처리
+    - 허용된 디렉토리 화이트리스트 검증
 
-    Returns:
-        임베딩 결과 (문서/Fragment/Embedding 수)
+    현재는 CLI (python -m src.rag.api.cli ingest)를 통해서만 사용 가능합니다.
     """
-    try:
-        config = load_rag_config()
-        if request.force_ocr:
-            config.force_ocr = True
-
-        use_case = IngestUseCase(config, disable_cache=request.force_ocr)
-        result = await run_in_threadpool(use_case.execute, request.file_paths)
-
-        return IngestResult(
-            documents_processed=result.documents_processed,
-            concepts_created=result.concepts_created,
-            fragments_created=result.fragments_created,
-            embeddings_generated=result.embeddings_generated,
-        )
-    except Exception as e:
-        logger.exception("Ingestion failed")
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {e}")
+    # SECURITY: 사용자 제공 파일 경로 직접 접근 금지
+    # 이 엔드포인트는 파일 업로드 + 안전한 저장 시스템 구현 전까지 비활성화
+    raise HTTPException(
+        status_code=501,
+        detail="Ingestion via REST API is disabled for security reasons. "
+               "Use CLI instead: python -m src.rag.api.cli ingest <files>"
+    )
 
 
 @router.post("/rag/search", response_model=SearchResultResponse)
