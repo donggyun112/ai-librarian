@@ -94,31 +94,7 @@ class GeminiVisionOcr:
             # Check if response was blocked or has no candidates
             if not response.candidates:
                 # Detailed diagnostic logging
-                logger.debug(f"OCR: Image size: {image_size_kb:.1f} KB")
-                
-                # Print all available response attributes
-                logger.debug(f"OCR: Response type: {type(response)}")
-                logger.debug(f"OCR: Response attributes: {[a for a in dir(response) if not a.startswith('_')]}")
-                
-                # Try to access text directly (some API versions)
-                try:
-                    if hasattr(response, 'text'):
-                        logger.debug(f"OCR: response.text exists: '{response.text[:100] if response.text else 'None'}...'")
-                except Exception as text_err:
-                    logger.debug(f"OCR: response.text access error: {text_err}")
-                
-                # Check prompt_feedback in detail
-                if hasattr(response, 'prompt_feedback'):
-                    pf = response.prompt_feedback
-                    logger.debug(f"OCR: prompt_feedback type: {type(pf)}")
-                    logger.debug(f"OCR: prompt_feedback: {pf}")
-                    if pf:
-                        logger.debug(f"OCR: prompt_feedback attrs: {[a for a in dir(pf) if not a.startswith('_')]}")
-                        if hasattr(pf, 'block_reason') and pf.block_reason:
-                            logger.warning(f"OCR: Gemini Vision prompt blocked: {pf.block_reason}")
-                        if hasattr(pf, 'safety_ratings') and pf.safety_ratings:
-                            for rating in pf.safety_ratings:
-                                logger.debug(f"OCR: Safety - {rating.category}: {rating.probability}")
+
                 
                 logger.warning("OCR: Gemini Vision returned no candidates")
                 return ""
@@ -126,7 +102,6 @@ class GeminiVisionOcr:
             # Safely access text from first candidate
             candidate = response.candidates[0]
             if not candidate.content or not candidate.content.parts:
-                logger.debug("OCR: Candidate has no content or parts")
                 return ""
             
             text = "".join(part.text for part in candidate.content.parts if hasattr(part, 'text'))
@@ -627,7 +602,6 @@ class PyMuPdfParser(BaseSegmentParser):
         mime_type = mime_map.get(ext, "image/png")
 
         # Run OCR
-        logger.debug(f"OCR: Called from _process_image_block for page {page_num}")
         text = self.ocr.ocr_image(image_bytes, mime_type)
         if not text or len(text.strip()) < self.min_text_length:
             return None
@@ -799,7 +773,6 @@ class PyMuPdfParser(BaseSegmentParser):
             image_bytes = pix.tobytes("png")
 
             # OCR via Gemini Vision
-            logger.debug(f"OCR: Called from _ocr_all_pages for page {page_num}, image size: {len(image_bytes)/1024:.1f} KB")
             try:
                 text = self.ocr.ocr_image(image_bytes, "image/png")
                 if text and len(text.strip()) >= self.min_text_length:

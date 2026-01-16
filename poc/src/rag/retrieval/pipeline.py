@@ -100,8 +100,6 @@ class RetrievalPipeline:
                 self_query_results = self.self_query_retriever.retrieve(query, k=top_k)
                 
                 if self_query_results:
-                    logger.debug(f"SelfQuery retrieved {len(self_query_results)} results with auto-filters")
-                    
                     # Convert SelfQueryResult to SearchResult format
                     search_results = self._convert_self_query_results(self_query_results)
                     

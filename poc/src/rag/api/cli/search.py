@@ -17,6 +17,8 @@ from typing import Protocol
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
+from src.rag.generation import GeminiLLMClient
+from loguru import logger
 
 from ..formatters import ResponseFormatter
 from ..use_cases import SearchUseCase
@@ -50,11 +52,10 @@ def main(args: argparse.Namespace) -> int:
         llm_client = None
         if getattr(args, 'optimize', False):
             try:
-                from generation import GeminiLLMClient
                 llm_client = GeminiLLMClient()
-                print("[search] Query optimization enabled")
+                logger.info("[search] Query optimization enabled")
             except Exception as e:
-                print(f"[search] Query optimization disabled: {e}")
+                logger.warning(f"[search] Query optimization disabled: {e}")
 
         # Execute search use case
         use_case = SearchUseCase(embeddings_client, config, llm_client=llm_client)
@@ -79,14 +80,14 @@ def main(args: argparse.Namespace) -> int:
                 show_context=not args.no_context,
             )
 
-        print(output)
+        print(output)  # Keep print for final result output as it is CLI stdout
         return 0
 
     except ValidationError as e:
-        print(ResponseFormatter.format_error(e))
+        logger.error(ResponseFormatter.format_error(e))
         return 1
     except Exception as e:
-        print(ResponseFormatter.format_error(e))
+        logger.error(ResponseFormatter.format_error(e))
         return 2
 
 

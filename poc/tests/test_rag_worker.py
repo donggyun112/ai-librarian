@@ -1,24 +1,44 @@
-"""RagWorker 컨텍스트 포맷팅 테스트"""
+"""RagWorker context formatting tests."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.rag.worker import RagWorker
+from src.rag.retrieval import ExpandedResult, SearchResult
+from src.rag.domain import View
 
 
 class TestRagWorkerFormatContext:
-    """_format_context 메서드 테스트"""
+    """Tests for _format_context method."""
 
     def setup_method(self):
-        """테스트 전 RagWorker 인스턴스 생성"""
+        """Create RagWorker instance."""
         self.worker = RagWorker()
 
+    def _create_result(self, content, source, view=View.TEXT, lang=None, similarity=0.9, parent_content=None):
+        return ExpandedResult(
+            result=SearchResult(
+                fragment_id="f1",
+                parent_id="p1", 
+                view=view,
+                content=content,
+                similarity=similarity,
+                metadata={"source": source, "file_name": source},
+                language=lang
+            ),
+            parent_content=parent_content
+        )
+
     def test_format_context_basic_structure(self):
-        """기본 컨텍스트 포맷 구조 확인"""
-        results = [{
-            "content": "Python decorator example",
-            "metadata": {"source": "guide.pdf", "view": "code", "lang": "python"},
-            "similarity": 0.92,
-        }]
+        """Check basic context format structure."""
+        results = [
+            self._create_result(
+                content="Python decorator example",
+                source="guide.pdf", 
+                view=View.CODE,
+                lang="python",
+                similarity=0.92
+            )
+        ]
         
         formatted = self.worker._format_context(results)
         
@@ -28,13 +48,16 @@ class TestRagWorkerFormatContext:
         assert "Python decorator example" in formatted
 
     def test_format_context_includes_parent_content(self):
-        """parent_content가 포함되는지 확인"""
-        results = [{
-            "content": "specific fragment",
-            "parent_content": "This is the broader context explaining the concept in detail.",
-            "metadata": {"source": "doc.pdf", "view": "text"},
-            "similarity": 0.85,
-        }]
+        """Check if parent_content is included."""
+        results = [
+            self._create_result(
+                content="specific fragment",
+                source="doc.pdf",
+                view=View.TEXT,
+                parent_content="This is the broader context explaining the concept in detail.",
+                similarity=0.85
+            )
+        ]
         
         formatted = self.worker._format_context(results)
         
@@ -44,50 +67,59 @@ class TestRagWorkerFormatContext:
         assert "specific fragment" in formatted
 
     def test_format_context_truncates_long_parent(self):
-        """800자 초과 parent_content가 잘리는지 확인"""
+        """Check if parent_content > 800 chars is truncated."""
         long_parent = "A" * 1000
-        results = [{
-            "content": "fragment",
-            "parent_content": long_parent,
-            "metadata": {"source": "doc.pdf"},
-            "similarity": 0.8,
-        }]
+        results = [
+            self._create_result(
+                content="fragment",
+                source="doc.pdf",
+                parent_content=long_parent,
+                similarity=0.8
+            )
+        ]
         
         formatted = self.worker._format_context(results)
         
-        # 800자 + "..." 
+        # 800 chars + "..." 
         assert "A" * 800 in formatted
         assert "..." in formatted
-        # 전체 1000자가 포함되지 않음
+        # Full 1000 chars should not be present
         assert "A" * 900 not in formatted
 
     def test_format_context_shows_view_without_language(self):
-        """언어 정보 없을 때 view만 표시"""
-        results = [{
-            "content": "text content",
-            "metadata": {"source": "doc.pdf", "view": "text"},
-            "similarity": 0.75,
-        }]
+        """Check format when language is missing."""
+        results = [
+            self._create_result(
+                content="text content",
+                source="doc.pdf",
+                view=View.TEXT,
+                lang=None,
+                similarity=0.75
+            )
+        ]
         
         formatted = self.worker._format_context(results)
         
         assert "Matched Content [TEXT]:" in formatted
-        # (lang)이 없어야 함
+        # (lang) should not be present
         assert "TEXT (" not in formatted
 
     def test_format_context_multiple_results(self):
-        """여러 결과 포맷 확인"""
+        """Check formatting of multiple results."""
         results = [
-            {
-                "content": "first result",
-                "metadata": {"source": "a.pdf", "view": "text"},
-                "similarity": 0.9,
-            },
-            {
-                "content": "second result",
-                "metadata": {"source": "b.pdf", "view": "code", "lang": "javascript"},
-                "similarity": 0.8,
-            },
+            self._create_result(
+                content="first result",
+                source="a.pdf",
+                view=View.TEXT,
+                similarity=0.9
+            ),
+            self._create_result(
+                content="second result",
+                source="b.pdf",
+                view=View.CODE,
+                lang="javascript",
+                similarity=0.8
+            )
         ]
         
         formatted = self.worker._format_context(results)
@@ -99,38 +131,55 @@ class TestRagWorkerFormatContext:
         assert "========================================" in formatted
 
     def test_format_context_defaults(self):
-        """메타데이터 기본값 처리 확인"""
-        results = [{
-            "content": "content without metadata",
-            "metadata": {},
-            "similarity": 0.5,
-        }]
+        """Check metadata defaults."""
+        # Manually create result with minimal fields to test defaults
+        res = ExpandedResult(
+            result=SearchResult(
+                fragment_id="f1",
+                parent_id="p1", 
+                view=View.TEXT,
+                content="content without metadata",
+                similarity=0.5,
+                metadata={}, # Empty metadata
+                language=None
+            ),
+            parent_content=None
+        )
         
-        formatted = self.worker._format_context(results)
+        formatted = self.worker._format_context([res])
         
         assert "[Source 1: unknown]" in formatted
         assert "Matched Content [TEXT]:" in formatted
 
 
 class TestRagWorkerExecute:
-    """execute 메서드 테스트"""
+    """Tests for execute method."""
 
     def setup_method(self):
-        """테스트 전 RagWorker 인스턴스 생성"""
+        """Create RagWorker instance."""
         self.worker = RagWorker()
 
     @pytest.mark.asyncio
     async def test_execute_returns_formatted_result(self):
-        """execute가 포맷된 결과를 반환하는지 확인"""
-        mock_service = MagicMock()
-        mock_service.search = AsyncMock(return_value=[{
-            "content": "test content",
-            "parent_content": "parent context here",
-            "metadata": {"source": "test.pdf", "view": "text"},
-            "similarity": 0.88,
-        }])
+        """execute should return formatted result string in content."""
+        # Use helper to create DTO
+        expanded_result = ExpandedResult(
+            result=SearchResult(
+                fragment_id="f1",
+                parent_id="p1", 
+                view=View.TEXT,
+                content="test content",
+                similarity=0.88,
+                metadata={"source": "test.pdf", "file_name": "test.pdf"},
+                language="python"
+            ),
+            parent_content="parent context here"
+        )
         
-        with patch.object(self.worker, "_get_service", return_value=mock_service):
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(return_value=[expanded_result])
+        
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
             result = await self.worker.execute("test query")
         
         assert "test.pdf" in result.content
@@ -141,11 +190,11 @@ class TestRagWorkerExecute:
 
     @pytest.mark.asyncio
     async def test_execute_no_results(self):
-        """결과 없을 때 처리 확인"""
-        mock_service = MagicMock()
-        mock_service.search = AsyncMock(return_value=[])
+        """Handle no results."""
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(return_value=[])
         
-        with patch.object(self.worker, "_get_service", return_value=mock_service):
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
             result = await self.worker.execute("no match query")
         
         assert result.content == "No results found."
@@ -153,15 +202,15 @@ class TestRagWorkerExecute:
 
     @pytest.mark.asyncio
     async def test_execute_uses_max_similarity_as_confidence(self):
-        """confidence가 최대 similarity 값인지 확인"""
-        mock_service = MagicMock()
-        mock_service.search = AsyncMock(return_value=[
-            {"content": "a", "metadata": {}, "similarity": 0.7},
-            {"content": "b", "metadata": {}, "similarity": 0.95},
-            {"content": "c", "metadata": {}, "similarity": 0.8},
-        ])
+        """confidence should be max similarity."""
+        r1 = ExpandedResult(result=SearchResult(fragment_id="1", parent_id="p", view=View.TEXT, content="a", similarity=0.7, metadata={}, language=None))
+        r2 = ExpandedResult(result=SearchResult(fragment_id="2", parent_id="p", view=View.TEXT, content="b", similarity=0.95, metadata={}, language=None))
+        r3 = ExpandedResult(result=SearchResult(fragment_id="3", parent_id="p", view=View.TEXT, content="c", similarity=0.8, metadata={}, language=None))
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(return_value=[r1, r2, r3])
         
-        with patch.object(self.worker, "_get_service", return_value=mock_service):
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
             result = await self.worker.execute("query")
         
         assert result.confidence == 0.95

@@ -1,4 +1,5 @@
-﻿"""Database schema management for OCR Vector DB.
+﻿
+"""Database schema management for OCR Vector DB.
 
 Handles schema creation, index management, and database tuning.
 
