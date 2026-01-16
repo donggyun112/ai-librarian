@@ -35,7 +35,7 @@ class QueryPlan:
     language_filter: Optional[str] = None
     top_k: int = 10
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate and cap top_k to prevent excessive resource usage."""
         if self.top_k > MAX_TOP_K:
             self.top_k = MAX_TOP_K

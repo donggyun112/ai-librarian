@@ -1,7 +1,7 @@
 ﻿"""Embedding provider abstraction for multiple backends."""
 
 import os
-from typing import List, Optional
+from typing import Any, List, Optional, Protocol, Union
 
 import google.generativeai as genai
 from loguru import logger
@@ -9,6 +9,22 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_voyageai import VoyageAIEmbeddings
 
 from src.rag.shared.config import EmbeddingConfig
+
+
+class EmbeddingsProtocol(Protocol):
+    """Protocol for embedding clients."""
+
+    def embed_query(self, text: str) -> List[float]:
+        """Embed a query string."""
+        ...
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Embed a list of documents."""
+        ...
+
+
+# Type alias for embedding clients
+EmbeddingsClient = Union["GeminiEmbeddings", OpenAIEmbeddings, VoyageAIEmbeddings]
 
 
 class GeminiEmbeddings:
@@ -23,7 +39,7 @@ class GeminiEmbeddings:
         self._model = model
 
     @staticmethod
-    def _extract_vec(response) -> List[float]:
+    def _extract_vec(response: Any) -> List[float]:
         if isinstance(response, dict):
             embedding = response.get("embedding") or (response.get("data") or {}).get("embedding")
         else:
@@ -74,7 +90,7 @@ class EmbeddingProviderFactory:
     """Factory for producing embedding clients based on configuration."""
 
     @staticmethod
-    def create(config: EmbeddingConfig):
+    def create(config: EmbeddingConfig) -> EmbeddingsClient:
         """
         Create embedding client based on config.
 
@@ -101,7 +117,7 @@ class EmbeddingProviderFactory:
 
 
 def validate_embedding_dimension(
-    embeddings,
+    embeddings: EmbeddingsProtocol,
     expected: int,
     *,
     provider: Optional[str] = None,
@@ -136,4 +152,10 @@ def validate_embedding_dimension(
         logger.warning(f"Skipping dimension validation for {label}: {exc}")
 
 
-__all__ = ["EmbeddingProviderFactory", "GeminiEmbeddings", "validate_embedding_dimension"]
+__all__ = [
+    "EmbeddingProviderFactory",
+    "EmbeddingsClient",
+    "EmbeddingsProtocol",
+    "GeminiEmbeddings",
+    "validate_embedding_dimension",
+]
