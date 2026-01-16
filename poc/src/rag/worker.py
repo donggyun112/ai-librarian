@@ -8,35 +8,41 @@ from langchain_core.tools import Tool
 from src.schemas.models import WorkerResult, WorkerType
 from src.workers.base import BaseWorker
 
-from .service import RagService
+from src.rag.api.use_cases import SearchUseCase
+from src.rag.embedding import EmbeddingProviderFactory
+from src.rag.retrieval import ExpandedResult
+from src.rag.shared.config import load_config as load_rag_config
 
 
 class RagWorker(BaseWorker):
     """
     Worker for RAG (Retrieval Augmented Generation) search.
-    Wraps RagService to be used as a tool in the Supervisor agent.
+    Wraps SearchUseCase to be used as a tool in the Supervisor agent.
     """
     
     def __init__(self) -> None:
-        self._service: Optional[RagService] = None
+        self._use_case: Optional[SearchUseCase] = None
 
     @property
     def worker_type(self) -> WorkerType:
         return WorkerType.RAG_SEARCH
 
-    def _get_service(self) -> RagService:
-        """Lazy initialization of RagService"""
-        if self._service is None:
-            self._service = RagService()
-        return self._service
+    def _get_use_case(self) -> SearchUseCase:
+        """Lazy initialization of SearchUseCase"""
+        if self._use_case is None:
+            config = load_rag_config()
+            embeddings = EmbeddingProviderFactory.create(config)
+            self._use_case = SearchUseCase(embeddings, config)
+        return self._use_case
 
     async def execute(self, query: str) -> WorkerResult:
         """
         Execute RAG search.
         """
         try:
-            service = self._get_service()
-            results = await service.search(query)
+            use_case = self._get_use_case()
+            # Execute search (returns List[ExpandedResult])
+            results: List[ExpandedResult] = use_case.execute(query)
             
             if not results:
                 return self._create_result(
@@ -49,15 +55,15 @@ class RagWorker(BaseWorker):
             # Format context using enhanced formatter
             formatted_content = self._format_context(results)
             sources = list({
-                item.get("metadata", {}).get("source") 
-                or item.get("metadata", {}).get("file_name") 
+                item.result.metadata.get("source") 
+                or item.result.metadata.get("file_name") 
                 or "RAG" 
                 for item in results
             })
             
             # Use max similarity as confidence
             max_similarity = max(
-                (item.get("similarity", 0.0) for item in results),
+                (item.result.similarity for item in results),
                 default=0.0
             )
             
@@ -77,7 +83,7 @@ class RagWorker(BaseWorker):
                 sources=[]
             )
 
-    def _format_context(self, results: List[Dict[str, Any]]) -> str:
+    def _format_context(self, results: List[ExpandedResult]) -> str:
         """Format RAG results with parent context for Supervisor LLM.
         
         Applies GenerationPipeline's PromptTemplate.build_context() structure:
@@ -88,17 +94,20 @@ class RagWorker(BaseWorker):
         context_parts = []
         
         for i, item in enumerate(results, 1):
-            meta = item.get("metadata", {})
+            # Access DTO attributes
+            res = item.result
+            
+            meta = res.metadata
             source = meta.get("source") or meta.get("file_name") or "unknown"
-            view = meta.get("view", "text").upper()
-            lang = meta.get("lang")
-            similarity = item.get("similarity", 0.0)
+            view = res.view.value.upper() if getattr(res.view, "value", None) else str(res.view).upper()
+            lang = res.language
+            similarity = res.similarity
             
             # Build context entry
             entry = f"[Source {i}: {source}] (Score: {similarity:.2f})\n"
             
             # Parent context (broader document context)
-            parent_content = item.get("parent_content")
+            parent_content = item.parent_content
             if parent_content:
                 parent_preview = parent_content[:800]
                 if len(parent_content) > 800:
@@ -107,7 +116,7 @@ class RagWorker(BaseWorker):
             
             # Matched fragment with view/language label
             view_label = f"{view} ({lang})" if lang else view
-            entry += f"Matched Content [{view_label}]:\n{item['content'].strip()}\n"
+            entry += f"Matched Content [{view_label}]:\n{res.content.strip()}\n"
             
             context_parts.append(entry)
         
