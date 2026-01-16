@@ -15,7 +15,7 @@ import hashlib
 import os
 import uuid
 from dataclasses import dataclass
-from typing import List, Any
+from typing import List
 
 from loguru import logger
 
@@ -26,6 +26,7 @@ from src.rag.ingestion import (
     MarkdownParser,
     OcrParser,
     PyMuPdfParser,
+    RawSegment,
     SemanticUnitGrouper,
     SegmentToConceptTransformer,
 )
@@ -245,7 +246,7 @@ class IngestUseCase:
             use_cache=use_cache,
         )
 
-    def _parse_file(self, file_path: str) -> List[Any]:
+    def _parse_file(self, file_path: str) -> List[RawSegment]:
         """Parse file based on extension.
 
         Args:

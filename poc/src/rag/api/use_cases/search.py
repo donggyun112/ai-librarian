@@ -45,12 +45,11 @@ class SearchUseCase:
         self,
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
-        llm_client=None,  # Deprecated, kept for backwards compatibility
     ) -> None:
         # SelfQueryRetriever is enabled by default (creates its own LLM)
         self.pipeline = RetrievalPipeline(
-            embeddings_client, 
-            config, 
+            embeddings_client,
+            config,
             use_self_query=True,
         )
 
@@ -61,7 +60,6 @@ class SearchUseCase:
         language: Optional[str] = None,
         top_k: int = 10,
         expand_context: bool = True,
-        optimize_query: bool = True,  # Deprecated, ignored (SelfQueryRetriever handles this)
     ) -> List[ExpandedResult]:
         """Execute search pipeline.
 
@@ -71,7 +69,6 @@ class SearchUseCase:
             language: Optional language filter (python, javascript, etc.)
             top_k: Number of results to retrieve
             expand_context: Whether to fetch parent context
-            optimize_query: Deprecated, ignored (SelfQueryRetriever auto-extracts)
 
         Returns:
             List of search results with optional context

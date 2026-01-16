@@ -42,7 +42,7 @@ class RagWorker(BaseWorker):
         try:
             use_case = self._get_use_case()
             # Execute search (returns List[ExpandedResult])
-            results: List[ExpandedResult] = use_case.execute(query)
+            results: List[ExpandedResult] = await asyncio.to_thread(use_case.execute, query)
             
             if not results:
                 return self._create_result(
