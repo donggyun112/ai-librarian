@@ -323,3 +323,26 @@ class TestChatEndpoints:
             assert response.status_code == 400
             data = response.json()
             assert "user_id is required" in data["detail"]
+
+
+class TestRagIngestSecurity:
+    """RAG Ingest 엔드포인트 보안 테스트"""
+
+    def test_rag_ingest_disabled_returns_501(self, client):
+        """POST /rag/ingest는 보안상 비활성화되어 501 반환"""
+        response = client.post("/rag/ingest")
+
+        assert response.status_code == 501
+        data = response.json()
+        assert "disabled for security reasons" in data["detail"]
+        assert "CLI" in data["detail"]
+
+    def test_rag_ingest_disabled_with_any_payload(self, client):
+        """POST /rag/ingest는 payload 유무와 관계없이 항상 501 반환"""
+        # 빈 요청
+        response = client.post("/rag/ingest")
+        assert response.status_code == 501
+
+        # JSON payload 포함 요청 (무시됨)
+        response = client.post("/rag/ingest", json={"any": "data"})
+        assert response.status_code == 501
