@@ -7,16 +7,13 @@ Usage:
     python -m api.cli ingest /path    # Ingest documents
 """
 
-import sys
-
-from .repl import run_repl, create_parser
-
-
 import argparse
 import sys
+
 from src.rag.api.cli import ingest, search, repl
 
-def main():
+
+def main() -> None:
     """Entry point for `python -m src.rag.api.cli`."""
     # Check for subcommands
     if len(sys.argv) > 1 and sys.argv[1] in ("ingest", "search"):

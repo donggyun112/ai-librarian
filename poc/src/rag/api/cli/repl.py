@@ -53,7 +53,13 @@ def parse_toggle(value: str) -> bool:
 
 
 def show_settings(
-    view, language, top_k, show_context, as_json, rag_mode, use_conversation
+    view: Optional[str],
+    language: Optional[str],
+    top_k: int,
+    show_context: bool,
+    as_json: bool,
+    rag_mode: bool,
+    use_conversation: bool,
 ) -> None:
     settings = [
         "Current settings:",
@@ -111,7 +117,7 @@ def run_repl(args: argparse.Namespace) -> int:
             prompt = "RAG> " if rag_mode else "> "
             line = input(prompt).strip()
         except (EOFError, KeyboardInterrupt):
-            print()
+            logger.info("")
             break
 
         if not line:
