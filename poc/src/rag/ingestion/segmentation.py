@@ -20,7 +20,7 @@ class SemanticUnitGrouper:
         bridge_text_max: int = 0,
         max_pre_text_chars: int = 4000,
         text_unit_threshold: int = 500,
-    ):
+    ) -> None:
         """
         Initialize SemanticUnitGrouper.
 

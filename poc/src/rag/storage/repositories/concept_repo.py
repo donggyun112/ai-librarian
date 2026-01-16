@@ -25,7 +25,7 @@ class ConceptRepository(BaseRepository[Concept]):
     Concepts group related Fragments together.
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.db = DatabaseUtil(config)
 
     def save(self, concept: Concept) -> Concept:

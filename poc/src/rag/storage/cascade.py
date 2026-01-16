@@ -74,7 +74,7 @@ class CascadeDeleter:
         concept_repo: ConceptRepositoryProtocol,
         fragment_repo: FragmentRepositoryProtocol,
         embedding_repo: EmbeddingRepositoryProtocol,
-    ):
+    ) -> None:
         self.document_repo = document_repo
         self.concept_repo = concept_repo
         self.fragment_repo = fragment_repo

@@ -73,7 +73,7 @@ class PdfParser(BaseSegmentParser):
         enable_auto_ocr: bool = False,
         force_ocr: bool = False,
         ocr_languages: str = "kor+eng",
-    ):
+    ) -> None:
         super().__init__(preprocessor)
         self.extractor = PdfExtractor()
         self.text_parser = OcrParser(preprocessor)

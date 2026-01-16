@@ -34,7 +34,7 @@ class GenerationPipeline:
         *,
         temperature: float = 0.7,
         max_tokens: int = 2048,
-    ):
+    ) -> None:
         """Initialize GenerationPipeline.
 
         Args:

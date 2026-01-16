@@ -35,7 +35,7 @@ class QueryInterpreter:
         >>> plan.query_embedding  # List[float]
     """
 
-    def __init__(self, embeddings_client: EmbeddingClientProtocol, config: EmbeddingConfig):
+    def __init__(self, embeddings_client: EmbeddingClientProtocol, config: EmbeddingConfig) -> None:
         self.embeddings_client = embeddings_client
         self.config = config
 

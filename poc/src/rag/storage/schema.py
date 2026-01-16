@@ -21,7 +21,7 @@ class DbSchemaManager:
 
     _tuning_attempted: set[str] = set()
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
 
     @property

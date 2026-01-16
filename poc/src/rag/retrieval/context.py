@@ -28,7 +28,7 @@ class ParentContextEnricher:
         >>> expanded[0].parent_content  # Full parent document
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
         self._pool = get_pool(config)
 

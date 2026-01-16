@@ -47,7 +47,7 @@ class GeminiLLMClient:
         self,
         model: str = "gemini-2.0-flash",
         api_key: Optional[str] = None,
-    ):
+    ) -> None:
         """Initialize Gemini LLM client.
 
         Args:

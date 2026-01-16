@@ -25,7 +25,7 @@ class EmbeddingRepository:
     - Checking if embeddings exist
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.db = DatabaseUtil(config)
 
     def delete_by_fragment_id(self, fragment_id: str) -> None:
