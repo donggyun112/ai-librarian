@@ -66,7 +66,7 @@ class EmbeddingValidator:
     # Reference target objects (filtered only when paired with action verb)
     REFERENCE_TARGETS_EN = ["figure", "table", "section", "chapter", "appendix"]
     REFERENCE_TARGETS_KO = ["그림", "표", "도표", "장", "절", "항"]
-    def __init__(self):
+    def __init__(self) -> None:
         # Combine all pattern categories into a single regex
         all_patterns = (
             self.COPYRIGHT_PATTERNS +

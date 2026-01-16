@@ -63,7 +63,7 @@ class SelfQueryRetrieverWrapper:
         *,
         enable_limit: bool = True,
         verbose: bool = False,
-    ):
+    ) -> None:
         """Initialize SelfQueryRetriever wrapper.
         
         Args:

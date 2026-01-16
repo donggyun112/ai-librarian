@@ -25,7 +25,7 @@ class DocumentRepository(BaseRepository[Document]):
     Uses a simple documents table for metadata storage.
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.db = DatabaseUtil(config)
 
     def save(self, document: Document) -> Document:

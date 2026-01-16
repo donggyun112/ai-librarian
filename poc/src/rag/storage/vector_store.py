@@ -24,7 +24,7 @@ class VectorStoreWriter:
     Reuses patterns from app/storage.py:VectorStoreWriter.
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
 
     def create_store(self, embeddings_client) -> PGVector:

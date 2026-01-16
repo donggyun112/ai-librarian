@@ -11,7 +11,7 @@ from ..dto import RawSegment
 class BaseSegmentParser(ABC):
     """Abstract base class for file parsers."""
 
-    def __init__(self, preprocessor: TextNormalizerUtil):
+    def __init__(self, preprocessor: TextNormalizerUtil) -> None:
         self.preprocessor = preprocessor
 
     @abstractmethod

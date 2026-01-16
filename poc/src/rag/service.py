@@ -1,5 +1,7 @@
 ﻿from typing import Any, Dict, List
 
+from langchain_core.embeddings import Embeddings
+
 from src.rag.embedding.provider import EmbeddingProviderFactory
 from src.rag.retrieval import RetrievalPipeline
 from src.rag.retrieval.dto import ExpandedResult
@@ -10,7 +12,7 @@ from src.rag.shared.config import load_config as load_rag_config
 class EmbeddingClientAdapter(EmbeddingClientProtocol):
     """Adapter to make LangChain Embeddings compatible with RAG protocol."""
     
-    def __init__(self, embeddings):
+    def __init__(self, embeddings: Embeddings) -> None:
         self._embeddings = embeddings
         
     def embed_query(self, text: str) -> List[float]:
@@ -26,7 +28,7 @@ class RagService:
     Exposes a simple API for searching the vector database.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         # 1. Load RAG configuration
         self.config = load_rag_config()
 

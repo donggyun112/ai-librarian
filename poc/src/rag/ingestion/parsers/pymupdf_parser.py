@@ -48,7 +48,7 @@ class GeminiVisionOcr:
         self,
         api_key: Optional[str] = None,
         model: str = "gemini-2.0-flash",
-    ):
+    ) -> None:
         """Initialize Gemini Vision OCR.
 
         Args:
@@ -162,7 +162,7 @@ class PyMuPdfParser(BaseSegmentParser):
         enable_auto_ocr: bool = False,
         force_ocr: bool = False,
         use_cache: bool = True,
-    ):
+    ) -> None:
         """Initialize PyMuPDF parser.
 
         Args:

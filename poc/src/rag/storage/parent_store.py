@@ -21,7 +21,7 @@ class ParentDocumentStore:
     to Fragment embeddings via parent_id (concept_id).
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
 
     @property

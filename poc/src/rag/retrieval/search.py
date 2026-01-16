@@ -29,7 +29,7 @@ class VectorSearchEngine:
         >>> results = engine.search(plan)
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
         # DB tuning is now applied once via shared.db_pool when pool is first created
         self._pool = get_pool(config)

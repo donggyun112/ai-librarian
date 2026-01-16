@@ -30,7 +30,7 @@ EmbeddingsClient = Union["GeminiEmbeddings", OpenAIEmbeddings, VoyageAIEmbedding
 class GeminiEmbeddings:
     """Thin adapter around Google Gemini embedding endpoints."""
 
-    def __init__(self, model: str = "text-embedding-004", api_key: Optional[str] = None):
+    def __init__(self, model: str = "text-embedding-004", api_key: Optional[str] = None) -> None:
         key = api_key or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise RuntimeError("GOOGLE_API_KEY is required for GEMINI embeddings")

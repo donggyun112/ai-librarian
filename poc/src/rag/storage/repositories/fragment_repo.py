@@ -25,7 +25,7 @@ class FragmentRepository(BaseRepository[Fragment]):
     Fragments are the children of Concepts and the targets for embedding.
     """
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.db = DatabaseUtil(config)
 
     def save(self, fragment: Fragment) -> Fragment:

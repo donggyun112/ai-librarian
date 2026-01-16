@@ -26,7 +26,7 @@ class EmbeddingMetrics:
 class EmbeddingMetricsService:
     """Compute basic embedding quality metrics from the DB."""
 
-    def __init__(self, config: EmbeddingConfig):
+    def __init__(self, config: EmbeddingConfig) -> None:
         self.db = DatabaseUtil(config)
 
     def summarize(self, limit: int = 10, min_content_len: int = 10) -> EmbeddingMetrics:

@@ -17,7 +17,7 @@ class RagWorker(BaseWorker):
     Wraps RagService to be used as a tool in the Supervisor agent.
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self._service: Optional[RagService] = None
 
     @property
@@ -69,7 +69,7 @@ class RagWorker(BaseWorker):
             )
             
         except Exception as e:
-            logger.error(f"RAG search failed: {e}", exc_info=True)
+            logger.exception(f"RAG search failed: {e}")
             return self._create_result(
                 query=query,
                 content=f"Error during RAG search: {str(e)}",
