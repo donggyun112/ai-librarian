@@ -15,6 +15,7 @@ from loguru import logger
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
 from src.rag.storage import EmbeddingMetricsService
+from src.rag.storage.metrics import EmbeddingMetrics
 
 from ..use_cases import SearchUseCase
 from ..validators import RequestValidator, ValidationError
@@ -93,7 +94,7 @@ def evaluate_queries(
     return passed, total, failures
 
 
-def print_metrics_summary(metrics) -> None:
+def print_metrics_summary(metrics: EmbeddingMetrics) -> None:
     output = ["Embedding Metrics", "=" * 80]
     if metrics.errors:
         for err in metrics.errors:

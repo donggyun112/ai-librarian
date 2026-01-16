@@ -13,7 +13,6 @@ Rules:
 
 import argparse
 import sys
-from typing import Protocol
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
@@ -69,7 +68,7 @@ def main(args: argparse.Namespace) -> int:
                 show_context=not args.no_context,
             )
 
-        print(output)  # Keep print for final result output as it is CLI stdout
+        logger.info(output)
         return 0
 
     except ValidationError as e:
