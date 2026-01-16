@@ -37,7 +37,6 @@ def main():
         search_parser.add_argument("--top-k", type=int, default=10)
         search_parser.add_argument("--no-context", action="store_true")
         search_parser.add_argument("--json", action="store_true")
-        search_parser.add_argument("--optimize", action="store_true")
 
         args = parser.parse_args()
 

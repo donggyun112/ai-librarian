@@ -9,6 +9,8 @@ import argparse
 import sys
 from typing import Optional
 
+from loguru import logger
+
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config, load_generation_config
 
@@ -41,9 +43,9 @@ def print_help(rag_mode: bool) -> None:
     )
 
     if rag_mode:
-        print(base_commands + rag_commands + "\nEnter any text to ask a question.\n")
+        logger.info(base_commands + rag_commands + "\nEnter any text to ask a question.\n")
     else:
-        print(base_commands + search_commands + rag_commands + "\nEnter any text to run a search.\n")
+        logger.info(base_commands + search_commands + rag_commands + "\nEnter any text to run a search.\n")
 
 
 def parse_toggle(value: str) -> bool:
@@ -53,16 +55,19 @@ def parse_toggle(value: str) -> bool:
 def show_settings(
     view, language, top_k, show_context, as_json, rag_mode, use_conversation
 ) -> None:
-    print("Current settings:")
-    print(f"  rag_mode:    {'on' if rag_mode else 'off'}")
-    print(f"  view:        {view or '<none>'}")
-    print(f"  language:    {language or '<none>'}")
-    print(f"  top_k:       {top_k}")
+    settings = [
+        "Current settings:",
+        f"  rag_mode:    {'on' if rag_mode else 'off'}",
+        f"  view:        {view or '<none>'}",
+        f"  language:    {language or '<none>'}",
+        f"  top_k:       {top_k}",
+    ]
     if not rag_mode:
-        print(f"  context:     {'on' if show_context else 'off'}")
-        print(f"  json:        {'on' if as_json else 'off'}")
+        settings.append(f"  context:     {'on' if show_context else 'off'}")
+        settings.append(f"  json:        {'on' if as_json else 'off'}")
     else:
-        print(f"  conversation: {'on' if use_conversation else 'off'}")
+        settings.append(f"  conversation: {'on' if use_conversation else 'off'}")
+    logger.info("\n".join(settings))
 
 
 def run_repl(args: argparse.Namespace) -> int:
@@ -90,16 +95,16 @@ def run_repl(args: argparse.Namespace) -> int:
     if rag_mode:
         try:
             rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
-            print("OCR Vector DB RAG REPL (LLM-powered)")
+            logger.info("OCR Vector DB RAG REPL (LLM-powered)")
         except Exception as e:
-            print(f"[warn] Failed to initialize RAG: {e}")
-            print("[warn] Falling back to search mode")
+            logger.warning(f"Failed to initialize RAG: {e}")
+            logger.warning("Falling back to search mode")
             rag_mode = False
 
     if not rag_mode:
-        print("OCR Vector DB Search REPL")
+        logger.info("OCR Vector DB Search REPL")
 
-    print("Type :help for commands.")
+    logger.info("Type :help for commands.")
 
     while True:
         try:
@@ -129,95 +134,96 @@ def run_repl(args: argparse.Namespace) -> int:
 
         if head == ":view":
             if len(cmd) < 2:
-                print("[error] usage: :view <type|none>")
+                logger.warning("usage: :view <type|none>")
                 continue
             value = cmd[1].lower()
             view = None if value == "none" else value
-            print(f"[ok] view set to {view or '<none>'}")
+            logger.info(f"view set to {view or '<none>'}")
             continue
 
         if head == ":lang":
             if len(cmd) < 2:
-                print("[error] usage: :lang <name|none>")
+                logger.warning("usage: :lang <name|none>")
                 continue
             value = cmd[1]
             language = None if value.lower() == "none" else value
-            print(f"[ok] language set to {language or '<none>'}")
+            logger.info(f"language set to {language or '<none>'}")
             continue
 
         if head == ":topk":
             if len(cmd) < 2 or not cmd[1].isdigit():
-                print("[error] usage: :topk <int>")
+                logger.warning("usage: :topk <int>")
                 continue
             top_k = int(cmd[1])
-            print(f"[ok] top_k set to {top_k}")
+            logger.info(f"top_k set to {top_k}")
             continue
 
         # Search-only commands
         if head == ":context":
             if len(cmd) < 2:
-                print("[error] usage: :context <on|off>")
+                logger.warning("usage: :context <on|off>")
                 continue
             show_context = parse_toggle(cmd[1])
-            print(f"[ok] context {'on' if show_context else 'off'}")
+            logger.info(f"context {'on' if show_context else 'off'}")
             continue
 
         if head == ":json":
             if len(cmd) < 2:
-                print("[error] usage: :json <on|off>")
+                logger.warning("usage: :json <on|off>")
                 continue
             as_json = parse_toggle(cmd[1])
-            print(f"[ok] json {'on' if as_json else 'off'}")
+            logger.info(f"json {'on' if as_json else 'off'}")
             continue
 
         # RAG commands
         if head == ":rag":
             if len(cmd) < 2:
-                print("[error] usage: :rag <on|off>")
+                logger.warning("usage: :rag <on|off>")
                 continue
             new_rag_mode = parse_toggle(cmd[1])
             if new_rag_mode and not rag_use_case:
                 try:
                     rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
                 except Exception as e:
-                    print(f"[error] Failed to initialize RAG: {e}")
+                    logger.error(f"Failed to initialize RAG: {e}")
                     continue
             rag_mode = new_rag_mode
-            print(f"[ok] RAG mode {'on' if rag_mode else 'off'}")
+            logger.info(f"RAG mode {'on' if rag_mode else 'off'}")
             continue
 
         if head == ":sources":
             if last_rag_response and last_rag_response.sources:
-                print("\nSources from last response:")
+                sources_output = ["\nSources from last response:"]
                 for i, expanded in enumerate(last_rag_response.sources, 1):
                     source = expanded.result.metadata.get("source", "unknown")
                     view_type = expanded.result.view.value
                     sim = f"{expanded.result.similarity:.3f}"
-                    print(f"  [{i}] {source} ({view_type}, sim: {sim})")
+                    sources_output.append(f"  [{i}] {source} ({view_type}, sim: {sim})")
                 if last_rag_response.optimized_query:
                     opt = last_rag_response.optimized_query
-                    print(f"\nQuery optimization:")
-                    print(f"  Keywords: {', '.join(opt.keywords)}")
+                    sources_output.append(f"\nQuery optimization:")
+                    sources_output.append(f"  Keywords: {', '.join(opt.keywords)}")
                     if opt.view_hint:
-                        print(f"  View hint: {opt.view_hint}")
+                        sources_output.append(f"  View hint: {opt.view_hint}")
                     if opt.language_hint:
-                        print(f"  Language hint: {opt.language_hint}")
+                        sources_output.append(f"  Language hint: {opt.language_hint}")
+                logger.info("\n".join(sources_output))
             else:
-                print("[info] No previous RAG response")
+                logger.info("No previous RAG response")
             continue
 
         if head == ":conversation":
             if len(cmd) < 2:
-                print("[error] usage: :conversation <on|off>")
+                logger.warning("usage: :conversation <on|off>")
                 continue
             use_conversation = parse_toggle(cmd[1])
-            print(f"[ok] conversation {'on' if use_conversation else 'off'}")
+            logger.info(f"conversation {'on' if use_conversation else 'off'}")
             continue
 
         if head == ":clear-history":
             if rag_use_case:
                 rag_use_case.clear_conversation()
-            print("[ok] conversation history cleared")
+            logger.info("conversation history cleared")
             continue
 
         # Execute query
@@ -228,7 +234,7 @@ def run_repl(args: argparse.Namespace) -> int:
                 RequestValidator.validate_view(view)
             RequestValidator.validate_top_k(top_k)
         except ValidationError as exc:
-            print(ResponseFormatter.format_error(exc))
+            logger.warning(ResponseFormatter.format_error(exc))
             continue
 
         if rag_mode and rag_use_case:
@@ -242,9 +248,9 @@ def run_repl(args: argparse.Namespace) -> int:
                     use_conversation=use_conversation,
                 )
                 last_rag_response = response
-                print(f"\n{response.format_with_sources()}\n")
+                logger.info(f"\n{response.format_with_sources()}\n")
             except Exception as e:
-                print(f"[error] RAG failed: {e}")
+                logger.error(f"RAG failed: {e}")
         else:
             # Search mode: show results
             results = search_use_case.execute(
@@ -264,7 +270,7 @@ def run_repl(args: argparse.Namespace) -> int:
                     results,
                     show_context=show_context,
                 )
-            print(output)
+            logger.info(output)
 
     return 0
 

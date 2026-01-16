@@ -17,7 +17,6 @@ from typing import Protocol
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
-from src.rag.generation import GeminiLLMClient
 from loguru import logger
 
 from ..formatters import ResponseFormatter
@@ -48,24 +47,14 @@ def main(args: argparse.Namespace) -> int:
         # Create embedding client
         embeddings_client = EmbeddingProviderFactory.create(config)
 
-        # Create LLM client for query optimization (if --optimize flag)
-        llm_client = None
-        if getattr(args, 'optimize', False):
-            try:
-                llm_client = GeminiLLMClient()
-                logger.info("[search] Query optimization enabled")
-            except Exception as e:
-                logger.warning(f"[search] Query optimization disabled: {e}")
-
         # Execute search use case
-        use_case = SearchUseCase(embeddings_client, config, llm_client=llm_client)
+        use_case = SearchUseCase(embeddings_client, config)
         results = use_case.execute(
             query=args.query,
             view=args.view,
             language=args.language,
             top_k=args.top_k or 10,
             expand_context=not args.no_context,
-            optimize_query=llm_client is not None,
         )
 
         # Format and display results
@@ -155,12 +144,6 @@ Examples:
         "--json",
         action="store_true",
         help="Output results as JSON",
-    )
-
-    parser.add_argument(
-        "--optimize",
-        action="store_true",
-        help="Enable query optimization (extract keywords using LLM)",
     )
 
     return parser

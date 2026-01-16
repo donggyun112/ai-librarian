@@ -10,6 +10,8 @@ import json
 import sys
 from typing import Any, Dict, List, Optional, Tuple
 
+from loguru import logger
+
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
 from src.rag.storage import EmbeddingMetricsService
@@ -92,36 +94,40 @@ def evaluate_queries(
 
 
 def print_metrics_summary(metrics) -> None:
-    print("Embedding Metrics")
-    print("=" * 80)
+    output = ["Embedding Metrics", "=" * 80]
     if metrics.errors:
         for err in metrics.errors:
-            print(f"[error] {err}")
+            logger.error(err)
         return
 
-    print(f"Total embeddings:       {metrics.total_embeddings}")
-    print(f"Missing doc_id:         {metrics.missing_doc_id}")
-    print(f"Missing parent_id:      {metrics.missing_parent_id}")
-    print(f"Missing fragment_id:    {metrics.missing_fragment_id}")
-    print(f"Short content (<min):   {metrics.short_content}")
-    print(f"Duplicate doc_id groups:{metrics.duplicate_doc_id_groups}")
-
-    print("\nTop views:")
+    output.extend([
+        f"Total embeddings:       {metrics.total_embeddings}",
+        f"Missing doc_id:         {metrics.missing_doc_id}",
+        f"Missing parent_id:      {metrics.missing_parent_id}",
+        f"Missing fragment_id:    {metrics.missing_fragment_id}",
+        f"Short content (<min):   {metrics.short_content}",
+        f"Duplicate doc_id groups:{metrics.duplicate_doc_id_groups}",
+        "",
+        "Top views:",
+    ])
     for view, count in metrics.view_counts:
-        print(f"  {view:12} {count}")
+        output.append(f"  {view:12} {count}")
 
-    print("\nTop languages:")
+    output.append("\nTop languages:")
     for lang, count in metrics.lang_counts:
-        print(f"  {lang:12} {count}")
+        output.append(f"  {lang:12} {count}")
+
+    logger.info("\n".join(output))
 
 
 def print_short_samples(samples: List[Tuple[str, str, str, str]]) -> None:
     if not samples:
         return
-    print("\nShort-content samples:")
+    output = ["\nShort-content samples:"]
     for frag_id, parent_id, view, content in samples:
         preview = content.replace("\n", " ")[:120]
-        print(f"- fragment={frag_id} parent={parent_id} view={view} | {preview}")
+        output.append(f"- fragment={frag_id} parent={parent_id} view={view} | {preview}")
+    logger.info("\n".join(output))
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -189,22 +195,21 @@ def main(args: argparse.Namespace) -> int:
         try:
             queries = load_golden_queries(args.golden)
         except Exception as exc:
-            print(f"[error] failed to load golden file: {exc}")
+            logger.error(f"failed to load golden file: {exc}")
             return 2
 
         embeddings_client = EmbeddingProviderFactory.create(config)
         use_case = SearchUseCase(embeddings_client, config)
         passed, total, failures = evaluate_queries(queries, use_case)
-        print("\nGolden Query Results")
-        print("=" * 80)
-        print(f"Passed: {passed}/{total}")
+        golden_output = ["\nGolden Query Results", "=" * 80, f"Passed: {passed}/{total}"]
         if failures:
             failed = True
             for msg in failures:
-                print(f"[fail] {msg}")
+                golden_output.append(f"[fail] {msg}")
+        logger.info("\n".join(golden_output))
 
     if not ran_any:
-        print("[error] no checks were run")
+        logger.error("no checks were run")
         return 2
     return 1 if failed else 0
 
