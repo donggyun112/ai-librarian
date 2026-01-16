@@ -12,7 +12,6 @@ from typing import List, Optional
 from loguru import logger
 
 from src.rag.domain import View
-from src.rag.generation import QueryOptimizer
 from src.rag.shared.config import EmbeddingConfig
 
 from .context import ParentContextEnricher, ExpandedResult
@@ -26,7 +25,7 @@ class RetrievalPipeline:
     """Orchestrates the complete retrieval pipeline.
 
     Pipeline stages:
-    1. Query optimization (SelfQueryRetriever or QueryOptimizer) - optional
+    1. Query optimization (SelfQueryRetriever - auto-extracts metadata filters)
     2. Query interpretation (QueryInterpreter)
     3. Vector similarity search (VectorSearchEngine)
     4. Context expansion (ParentContextEnricher)
@@ -36,9 +35,9 @@ class RetrievalPipeline:
         >>> pipeline = RetrievalPipeline(embeddings_client, config)
         >>> results = pipeline.retrieve("python list comprehension", view="code", top_k=5)
         
-        # With SelfQueryRetriever (recommended):
-        >>> pipeline = RetrievalPipeline(embeddings_client, config, llm_client=llm, use_self_query=True)
-        >>> results = pipeline.retrieve("Python ?곗퐫?덉씠??肄붾뱶 ?덉젣留?蹂댁뿬以?)
+        # With SelfQueryRetriever (default, recommended):
+        >>> pipeline = RetrievalPipeline(embeddings_client, config, use_self_query=True)
+        >>> results = pipeline.retrieve("Python decorator code examples")
         # Automatically extracts: view="code", lang="python"
     """
 
@@ -46,8 +45,7 @@ class RetrievalPipeline:
         self,
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
-        llm_client=None,  # Optional LLM client for legacy QueryOptimizer
-        use_self_query: bool = True,  # Use SelfQueryRetriever (recommended)
+        use_self_query: bool = True,
     ) -> None:
         self.config = config
         self.embeddings_client = embeddings_client
@@ -56,12 +54,9 @@ class RetrievalPipeline:
         self.context_expander = ParentContextEnricher(config)
         self.grouper = ResultGrouper()
         
-        # SelfQueryRetriever (preferred, auto-extracts metadata filters)
+        # SelfQueryRetriever (auto-extracts metadata filters from natural language)
         self.self_query_retriever = None
-        # Legacy QueryOptimizer (deprecated, kept for backwards compatibility)
-        self.query_optimizer = None
         
-        # Initialize SelfQueryRetriever (creates its own LLM internally)
         if use_self_query:
             try:
                 self.self_query_retriever = create_self_query_retriever(
@@ -73,20 +68,6 @@ class RetrievalPipeline:
                 logger.info("SelfQueryRetriever enabled for automatic filter extraction")
             except Exception as e:
                 logger.warning(f"SelfQueryRetriever unavailable: {e}")
-                # Fall through to legacy QueryOptimizer if available
-                if llm_client is not None:
-                    try:
-                        self.query_optimizer = QueryOptimizer(llm_client)
-                        logger.info("Falling back to QueryOptimizer (legacy mode)")
-                    except Exception:
-                        pass
-        elif llm_client is not None:
-            # Explicitly disabled SelfQueryRetriever, use legacy QueryOptimizer
-            try:
-                self.query_optimizer = QueryOptimizer(llm_client)
-                logger.info("QueryOptimizer enabled (legacy mode)")
-            except Exception:
-                pass
 
 
     def retrieve(
@@ -140,24 +121,6 @@ class RetrievalPipeline:
         search_query = query
         optimized_view = view
         optimized_language = language
-        
-        # Stage 0 (legacy): Query optimization
-        if self.query_optimizer:
-            try:
-                optimized = self.query_optimizer.optimize(query)
-                search_query = optimized.rewritten
-                
-                # Use optimizer hints if not explicitly provided
-                if not view and optimized.view_hint:
-                    optimized_view = optimized.view_hint
-                if not language and optimized.language_hint:
-                    optimized_language = optimized.language_hint
-                    
-                logger.debug(f"Query optimized: '{query}' -> '{search_query}'")
-                if optimized.keywords:
-                    logger.debug(f"Extracted keywords: {optimized.keywords}")
-            except Exception as e:
-                logger.warning(f"Query optimization failed, using original: {e}")
         
         # Stage 1: Query interpretation
         query_plan = self.query_interpreter.interpret(

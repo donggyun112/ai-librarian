@@ -4,7 +4,7 @@ Provides character-budget-aware batching to avoid exceeding
 model token limits and rate limits.
 """
 
-from typing import Generator, List, TypeVar
+from typing import Callable, Generator, List, Optional, TypeVar
 
 T = TypeVar("T")
 
@@ -14,7 +14,7 @@ def iter_by_char_budget(
     char_budget: int,
     max_batch_size: int,
     max_items_per_request: int = 0,
-    get_content: callable = None,
+    get_content: Optional[Callable[[T], str]] = None,
 ) -> Generator[List[T], None, None]:
     """Iterate items in batches respecting character budget.
 
@@ -35,7 +35,6 @@ def iter_by_char_budget(
     """
     if not items:
         return
-
     # Default content extractor for LangChain Documents
     if get_content is None:
         get_content = lambda x: getattr(x, "page_content", str(x))
