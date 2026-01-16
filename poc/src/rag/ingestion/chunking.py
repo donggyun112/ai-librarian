@@ -26,7 +26,7 @@ class TextChunker:
         chunk_size: int = 600,
         chunk_overlap: int = 100,
         separators: List[str] = None,
-    ):
+    ) -> None:
         """Initialize TextChunker.
         
         Args:

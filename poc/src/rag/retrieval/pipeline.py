@@ -48,7 +48,7 @@ class RetrievalPipeline:
         config: EmbeddingConfig,
         llm_client=None,  # Optional LLM client for legacy QueryOptimizer
         use_self_query: bool = True,  # Use SelfQueryRetriever (recommended)
-    ):
+    ) -> None:
         self.config = config
         self.embeddings_client = embeddings_client
         self.query_interpreter = QueryInterpreter(embeddings_client, config)
