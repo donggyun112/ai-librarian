@@ -1,3 +1,5 @@
 """CLI commands for OCR Vector DB."""
 
-__all__ = []
+from . import ingest, search
+
+__all__ = ["ingest", "search"]

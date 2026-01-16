@@ -4,6 +4,7 @@ import uuid
 from typing import AsyncGenerator, Optional, Dict
 
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
@@ -370,7 +371,7 @@ async def rag_ingest(request: IngestRequest) -> IngestResult:
             config.force_ocr = True
 
         use_case = IngestUseCase(config, disable_cache=request.force_ocr)
-        result = use_case.execute(request.file_paths)
+        result = await run_in_threadpool(use_case.execute, request.file_paths)
 
         return IngestResult(
             documents_processed=result.documents_processed,
@@ -400,7 +401,8 @@ async def rag_search(request: SearchRequest) -> SearchResultResponse:
         embeddings_client = EmbeddingProviderFactory.create(config)
         use_case = SearchUseCase(embeddings_client, config)
 
-        results = use_case.execute(
+        results = await run_in_threadpool(
+            use_case.execute,
             query=request.query,
             view=request.view,
             language=request.language,

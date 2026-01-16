@@ -16,6 +16,7 @@ import sys
 from typing import List
 
 from src.rag.shared.config import EmbeddingConfig, load_config
+from loguru import logger
 
 from ..formatters import ResponseFormatter
 from ..use_cases import IngestUseCase
@@ -70,16 +71,16 @@ def main(args: argparse.Namespace) -> int:
         # Validate files
         RequestValidator.validate_file_paths(file_paths)
 
-        print(f"[ingest] Processing {len(file_paths)} file(s)")
+        logger.info(f"[ingest] Processing {len(file_paths)} file(s)")
 
         # Execute ingestion use case
         # --force-ocr flag disables OCR cache and enables force OCR mode
         disable_cache = getattr(args, 'force_ocr', False)
         if disable_cache:
-            print("[cache] Cache disabled (--force-ocr)")
+            logger.info("[cache] Cache disabled (--force-ocr)")
             config.force_ocr = True  # Enable force OCR mode in config
         
-        use_case = IngestUseCase(config, disable_cache=disable_cache)
+        use_case = IngestUseCase(config, disable_cache=disable_cache, dry_run=args.dry_run)
         
         result = use_case.execute(file_paths)
 
@@ -90,15 +91,15 @@ def main(args: argparse.Namespace) -> int:
             total_fragments=result.fragments_created,
             total_embeddings=result.embeddings_generated,
         )
-        print(summary)
+        logger.info("\n" + summary)
 
         return 0
 
     except ValidationError as e:
-        print(ResponseFormatter.format_error(e))
+        logger.error(ResponseFormatter.format_error(e))
         return 1
     except Exception as e:
-        print(ResponseFormatter.format_error(e))
+        logger.error(ResponseFormatter.format_error(e))
         return 2
 
 

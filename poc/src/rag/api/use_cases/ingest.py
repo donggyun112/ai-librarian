@@ -15,7 +15,7 @@ import hashlib
 import os
 import uuid
 from dataclasses import dataclass
-from typing import List
+from typing import List, Any
 
 from loguru import logger
 
@@ -29,6 +29,8 @@ from src.rag.ingestion import (
     SemanticUnitGrouper,
     SegmentToConceptTransformer,
 )
+from .dto import IngestResult
+
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.text_utils import TextNormalizerUtil
 from src.rag.storage import (
@@ -44,21 +46,7 @@ from src.rag.storage import (
 from langchain_core.documents import Document as LCDocument
 
 
-@dataclass
-class IngestResult:
-    """Result of ingestion operation.
 
-    Attributes:
-        documents_processed: Number of documents ingested
-        concepts_created: Number of concepts created
-        fragments_created: Number of fragments created
-        embeddings_generated: Number of embeddings generated
-    """
-
-    documents_processed: int
-    concepts_created: int
-    fragments_created: int
-    embeddings_generated: int
 
 
 class IngestUseCase:
@@ -78,9 +66,10 @@ class IngestUseCase:
         >>> result = use_case.execute(["file1.txt", "file2.md"])
     """
 
-    def __init__(self, config: EmbeddingConfig, disable_cache: bool = False) -> None:
+    def __init__(self, config: EmbeddingConfig, disable_cache: bool = False, dry_run: bool = False) -> None:
         self.config = config
         self.disable_cache = disable_cache
+        self.dry_run = dry_run
         self.preprocessor = TextNormalizerUtil()
         self.validator = EmbeddingValidator()
         self.unitizer = SemanticUnitGrouper(text_unit_threshold=config.text_unit_threshold)
@@ -150,15 +139,20 @@ class IngestUseCase:
 
             # 2a. Delete existing document data before re-ingest (CASCADE-001)
             # This prevents stale embeddings from accumulating
-            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
-            self.cascade_deleter.delete_document(doc_id)
+            if not self.dry_run:
+                logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
+                self.cascade_deleter.delete_document(doc_id)
 
             document = Document(
                 id=doc_id,
                 source_path=file_path,
                 metadata={"filename": os.path.basename(file_path)},
             )
-            self.doc_repo.save(document)
+            
+            if not self.dry_run:
+                self.doc_repo.save(document)
+            else:
+                logger.info(f"[Dry Run] Would save document: {doc_id}")
 
             # 3. Unitize segments (group related content)
             unitized = self.unitizer.unitize(segments)
@@ -170,11 +164,13 @@ class IngestUseCase:
 
             # 5. Save Concepts, Fragments, and Embeddings
             for concept in concepts:
-                self.concept_repo.save(concept)
+                if not self.dry_run:
+                    self.concept_repo.save(concept)
                 total_concepts += 1
 
                 # Save parent document for context expansion (SEARCH-SEP-003)
-                self._save_parent(concept)
+                if not self.dry_run:
+                    self._save_parent(concept)
 
                 # Collect fragments to embed in batch
                 docs_to_embed = []
@@ -186,7 +182,8 @@ class IngestUseCase:
                         logger.info(f"Fragment filtered: {fragment.content[:50]}...")
                         continue
 
-                    self.fragment_repo.save(fragment)
+                    if not self.dry_run:
+                        self.fragment_repo.save(fragment)
                     total_fragments += 1
 
                     # Convert to LangChain Document with deterministic doc_id
@@ -206,8 +203,13 @@ class IngestUseCase:
 
                 # Batch embed and store to PGVector
                 if docs_to_embed:
-                    embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
-                    total_embeddings += embedded
+                    if not self.dry_run:
+                        embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
+                        total_embeddings += embedded
+                    else:
+                        # Estimate embeddings count
+                        total_embeddings += len(docs_to_embed)
+                        logger.info(f"[Dry Run] Would embed {len(docs_to_embed)} fragments")
 
         # Ensure indexes after all data is inserted
         self.schema_manager.ensure_indexes()
@@ -219,7 +221,7 @@ class IngestUseCase:
             embeddings_generated=total_embeddings,
         )
 
-    def _create_pdf_parser(self):
+    def _create_pdf_parser(self) -> PyMuPdfParser:
         """Create PDF parser (PyMuPDF with optional Gemini Vision OCR).
 
         Returns:
@@ -243,7 +245,7 @@ class IngestUseCase:
             use_cache=use_cache,
         )
 
-    def _parse_file(self, file_path: str):
+    def _parse_file(self, file_path: str) -> List[Any]:
         """Parse file based on extension.
 
         Args:

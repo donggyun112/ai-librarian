@@ -46,7 +46,7 @@ class SearchUseCase:
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
         llm_client=None,  # Deprecated, kept for backwards compatibility
-    ):
+    ) -> None:
         # SelfQueryRetriever is enabled by default (creates its own LLM)
         self.pipeline = RetrievalPipeline(
             embeddings_client, 

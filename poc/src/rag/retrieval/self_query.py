@@ -98,8 +98,7 @@ class SelfQueryRetrieverWrapper:
             # Use the query_constructor to get structured query
             structured_query = self.retriever.query_constructor.invoke({"query": query})
             
-            if self.verbose:
-                logger.debug(f"Structured query: {structured_query}")
+            # Extract filter from structured query
             
             # Extract filter from structured query
             if structured_query and hasattr(structured_query, 'filter') and structured_query.filter:
@@ -163,8 +162,7 @@ class SelfQueryRetrieverWrapper:
             # Step 1: Extract filters using SelfQueryRetriever's query constructor
             filters = self._extract_filters(query)
             
-            if self.verbose and filters:
-                logger.debug(f"Extracted filters: {filters}")
+            # Step 2: Search with filters and get actual similarity scores
             
             # Step 2: Search with filters and get actual similarity scores
             if filters:
@@ -181,8 +179,7 @@ class SelfQueryRetrieverWrapper:
                     k=k,
                 )
             
-            if self.verbose:
-                logger.debug(f"Retrieved {len(docs_with_scores)} documents with scores")
+            # Convert to SelfQueryResult with actual scores
             
             # Convert to SelfQueryResult with actual scores
             return [
