@@ -13,6 +13,8 @@ import re
 import warnings
 from typing import Optional
 
+from loguru import logger
+
 from .client import LLMClientProtocol
 from .dto import OptimizedQuery
 from .prompts import PromptTemplate
@@ -53,7 +55,7 @@ class QueryOptimizer:
         *,
         temperature: float = 0.1,  # Low temperature for consistent extraction
         fallback_on_error: bool = True,
-    ):
+    ) -> None:
         """Initialize QueryOptimizer.
 
         Args:
@@ -105,7 +107,7 @@ class QueryOptimizer:
                 )
 
         except Exception as e:
-            print(f"[optimizer] LLM extraction failed: {e}")
+            logger.warning(f"LLM extraction failed: {e}")
 
         # Fallback to simple keyword extraction
         if self.fallback_on_error:
