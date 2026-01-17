@@ -11,8 +11,12 @@ Rules:
 
 from typing import Dict, List, Optional
 
+from loguru import logger
+import psycopg_pool
+
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 from .dto import ExpandedResult, SearchResult
 
 
@@ -30,7 +34,16 @@ class ParentContextEnricher:
 
     def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
-        self._pool = get_pool(config)
+        self._pool: Optional[psycopg_pool.ConnectionPool] = None
+
+    def _get_pool(self) -> Optional[psycopg_pool.ConnectionPool]:
+        """Get pool lazily, return None if DB not configured."""
+        if self._pool is None and self.config.pg_conn:
+            try:
+                self._pool = get_pool(self.config)
+            except ValueError as e:
+                logger.warning(f"Failed to initialize DB pool: {e}")
+        return self._pool
 
     def expand(self, results: List[SearchResult]) -> List[ExpandedResult]:
         """Expand search results with parent context.
@@ -43,14 +56,19 @@ class ParentContextEnricher:
         Returns:
             List of results with parent context attached
         """
-        if not results or not self.config.pg_conn:
-            return [ExpandedResult(result=r) for r in results]
+        if not results:
+            return []
+
+        pool = self._get_pool()
+        if pool is None:
+            # Unreachable in practice: VectorSearchEngine fails first
+            raise DatabaseNotConfiguredError("Database not configured")
 
         # Extract unique parent IDs
         parent_ids = list({r.parent_id for r in results})
 
         # Fetch parent documents
-        parent_map = self._fetch_parents(parent_ids)
+        parent_map = self._fetch_parents(parent_ids, pool)
 
         # Attach parent context to results
         expanded = []
@@ -70,11 +88,14 @@ class ParentContextEnricher:
 
         return expanded
 
-    def _fetch_parents(self, parent_ids: List[str]) -> Dict[str, dict]:
+    def _fetch_parents(
+        self, parent_ids: List[str], pool: psycopg_pool.ConnectionPool
+    ) -> Dict[str, dict]:
         """Fetch parent documents from docstore_parent table.
 
         Args:
             parent_ids: List of parent IDs to fetch
+            pool: Connection pool to use
 
         Returns:
             Dictionary mapping parent_id to {content, metadata}
@@ -88,7 +109,7 @@ class ParentContextEnricher:
         WHERE id = ANY(%s)
         """
 
-        with self._pool.connection() as conn:
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, (parent_ids,))
                 rows = cur.fetchall()

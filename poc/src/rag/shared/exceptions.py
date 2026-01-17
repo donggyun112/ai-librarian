@@ -13,4 +13,13 @@ class ConfigurationError(SharedError):
     pass
 
 
-__all__ = ["SharedError", "ConfigurationError"]
+class DatabaseNotConfiguredError(SharedError):
+    """Raised when database connection is not configured.
+    
+    API layer should map this to 503 Service Unavailable.
+    """
+
+    pass
+
+
+__all__ = ["SharedError", "ConfigurationError", "DatabaseNotConfiguredError"]

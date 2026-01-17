@@ -12,9 +12,13 @@ Rules:
 from dataclasses import dataclass
 from typing import List, Optional
 
+from loguru import logger
+import psycopg_pool
+
 from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 from src.rag.shared.db_pool import get_pool
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 from .dto import QueryPlan, SearchResult
 
 
@@ -31,8 +35,16 @@ class VectorSearchEngine:
 
     def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
-        # DB tuning is now applied once via shared.db_pool when pool is first created
-        self._pool = get_pool(config)
+        self._pool: Optional[psycopg_pool.ConnectionPool] = None
+
+    def _get_pool(self) -> Optional[psycopg_pool.ConnectionPool]:
+        """Get pool lazily, return None if DB not configured."""
+        if self._pool is None and self.config.pg_conn:
+            try:
+                self._pool = get_pool(self.config)
+            except ValueError as e:
+                logger.warning(f"Failed to initialize DB pool: {e}")
+        return self._pool
 
     def search(
         self,
@@ -51,8 +63,11 @@ class VectorSearchEngine:
         Returns:
             List of search results ordered by similarity (highest first)
         """
-        if not self.config.pg_conn:
-            return []
+        pool = self._get_pool()
+        if pool is None:
+            raise DatabaseNotConfiguredError(
+                "Database not configured. Set PG_CONN environment variable."
+            )
 
         # Use provided collection_name or fall back to config
         target_collection = collection_name or self.config.collection_name
@@ -94,7 +109,7 @@ class VectorSearchEngine:
         params.append(vector)
         params.append(query_plan.top_k)
 
-        with self._pool.connection() as conn:
+        with pool.connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, params)
                 rows = cur.fetchall()
