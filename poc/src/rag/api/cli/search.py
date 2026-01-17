@@ -16,6 +16,7 @@ import sys
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 from loguru import logger
 
 from ..formatters import ResponseFormatter
@@ -74,9 +75,12 @@ def main(args: argparse.Namespace) -> int:
     except ValidationError as e:
         logger.error(ResponseFormatter.format_error(e))
         return 1
+    except DatabaseNotConfiguredError as e:
+        logger.error(f"데이터베이스 설정 오류: {e}")
+        return 2
     except Exception as e:
         logger.error(ResponseFormatter.format_error(e))
-        return 2
+        return 3
 
 
 def create_parser() -> argparse.ArgumentParser:

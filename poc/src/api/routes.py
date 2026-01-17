@@ -14,6 +14,7 @@ from src.memory import InMemoryChatMemory, SupabaseChatMemory
 from src.rag.api.use_cases import SearchUseCase
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config as load_rag_config
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 from config import config
 from .schemas import (
     ChatRequest,
@@ -401,6 +402,13 @@ async def rag_search(request: SearchRequest) -> SearchResultResponse:
         ]
 
         return SearchResultResponse(query=request.query, results=items)
+    except DatabaseNotConfiguredError as e:
+        # DB not configured - service unavailable
+        logger.error(f"Search service unavailable: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="검색 서비스가 현재 사용 불가합니다. 데이터베이스 설정을 확인해주세요."
+        )
     except Exception as e:
         logger.exception("Search failed")
         # 내부 예외 메시지 숨김 (보안)
