@@ -393,7 +393,7 @@ class TestSupabaseChatMemory:
         """비동기 save_conversation이 메타데이터를 보존"""
         # _ensure_session 설정
         session_check = MagicMock()
-        session_check.data = [{"id": "session-1"}]
+        session_check.data = [{"id": "session-1", "user_id": "user-1"}]
         mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = session_check
 
         # insert 설정
