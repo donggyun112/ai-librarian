@@ -102,7 +102,10 @@ class RetrievalPipeline:
             List of search results with optional parent context
         """
         # Stage 0: SelfQueryRetriever path (auto-extracts filters from query)
-        if use_self_query and self.self_query_retriever:
+        # Explicit filters take precedence over SelfQuery auto-extraction
+        has_explicit_filters = view is not None or language is not None
+
+        if use_self_query and self.self_query_retriever and not has_explicit_filters:
             try:
                 self_query_results = self.self_query_retriever.retrieve(query, k=top_k)
                 
