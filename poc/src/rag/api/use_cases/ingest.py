@@ -91,7 +91,7 @@ class IngestUseCase:
             embedding_repo=self.embedding_repo,
         )
 
-        # Embedding generation and storage (skip in dry-run mode)
+
         # Embedding generation and storage
         self.embeddings_client = EmbeddingProviderFactory.create(config)
         self.vector_writer = VectorStoreWriter(config)

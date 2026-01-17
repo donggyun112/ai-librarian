@@ -23,7 +23,7 @@ def main() -> None:
         # Ingest
         ingest_parser = subparsers.add_parser("ingest", help="Ingest documents")
         ingest_parser.add_argument("files", nargs="+", help="Files to ingest")
-        ingest_parser.add_argument("--dry-run", action="store_true", help="Dry run")
+
         ingest_parser.add_argument("--force-ocr", action="store_true", help="Force OCR")
 
         # Search
