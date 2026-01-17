@@ -128,7 +128,14 @@ class SelfQueryRetrieverWrapper:
                 return filter_dict
             
             # Operation with multiple comparisons (AND, OR)
-            if hasattr(filter_obj, 'arguments'):
+            if hasattr(filter_obj, 'arguments') and hasattr(filter_obj, 'operator'):
+                # Fallback for OR operator (not supported flattened)
+                op = str(filter_obj.operator).lower()
+                if "or" in op:
+                     if self.verbose:
+                         logger.warning(f"Ignored OR filter: {filter_obj}")
+                     return {}
+
                 for arg in filter_obj.arguments:
                     if hasattr(arg, 'attribute') and hasattr(arg, 'value'):
                         filter_dict[arg.attribute] = arg.value
@@ -185,7 +192,7 @@ class SelfQueryRetrieverWrapper:
                 SelfQueryResult(
                     content=doc.page_content,
                     metadata=doc.metadata,
-                    score=1.0 - float(score),  # Convert distance to similarity
+                    score=max(0.0, min(1.0, 1.0 - float(score))),  # Convert distance to similarity (clamped)
                 )
                 for doc, score in docs_with_scores
             ]
@@ -216,7 +223,7 @@ class SelfQueryRetrieverWrapper:
                 SelfQueryResult(
                     content=doc.page_content,
                     metadata=doc.metadata,
-                    score=1.0 - float(score),  # Convert distance to similarity
+                    score=max(0.0, min(1.0, 1.0 - float(score))),  # Convert distance to similarity (clamped)
                 )
                 for doc, score in docs_with_scores
             ]
