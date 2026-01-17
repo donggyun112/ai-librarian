@@ -92,20 +92,14 @@ class IngestUseCase:
         )
 
         # Embedding generation and storage (skip in dry-run mode)
-        if not self.dry_run:
-            self.embeddings_client = EmbeddingProviderFactory.create(config)
-            self.vector_writer = VectorStoreWriter(config)
-            self.parent_store = ParentDocumentStore(config)
-            self.vector_store = self.vector_writer.create_store(self.embeddings_client)
+        # Embedding generation and storage
+        self.embeddings_client = EmbeddingProviderFactory.create(config)
+        self.vector_writer = VectorStoreWriter(config)
+        self.parent_store = ParentDocumentStore(config)
+        self.vector_store = self.vector_writer.create_store(self.embeddings_client)
 
-            # Ensure database tables exist
-            self._ensure_tables()
-        else:
-            self.embeddings_client = None
-            self.vector_writer = None
-            self.parent_store = None
-            self.vector_store = None
-            logger.info("[Dry Run] Skipping database/embedding initialization")
+        # Ensure database tables exist
+        self._ensure_tables()
 
     def _ensure_tables(self) -> None:
         """Ensure all required database tables exist."""
