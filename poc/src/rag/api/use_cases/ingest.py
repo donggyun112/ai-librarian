@@ -67,10 +67,9 @@ class IngestUseCase:
         >>> result = use_case.execute(["file1.txt", "file2.md"])
     """
 
-    def __init__(self, config: EmbeddingConfig, disable_cache: bool = False, dry_run: bool = False) -> None:
+    def __init__(self, config: EmbeddingConfig, disable_cache: bool = False) -> None:
         self.config = config
         self.disable_cache = disable_cache
-        self.dry_run = dry_run
         self.preprocessor = TextNormalizerUtil()
         self.validator = EmbeddingValidator()
         self.unitizer = SemanticUnitGrouper(text_unit_threshold=config.text_unit_threshold)
@@ -92,14 +91,21 @@ class IngestUseCase:
             embedding_repo=self.embedding_repo,
         )
 
-        # Embedding generation and storage
-        self.embeddings_client = EmbeddingProviderFactory.create(config)
-        self.vector_writer = VectorStoreWriter(config)
-        self.parent_store = ParentDocumentStore(config)
-        self.vector_store = self.vector_writer.create_store(self.embeddings_client)
+        # Embedding generation and storage (skip in dry-run mode)
+        if not self.dry_run:
+            self.embeddings_client = EmbeddingProviderFactory.create(config)
+            self.vector_writer = VectorStoreWriter(config)
+            self.parent_store = ParentDocumentStore(config)
+            self.vector_store = self.vector_writer.create_store(self.embeddings_client)
 
-        # Ensure database tables exist
-        self._ensure_tables()
+            # Ensure database tables exist
+            self._ensure_tables()
+        else:
+            self.embeddings_client = None
+            self.vector_writer = None
+            self.parent_store = None
+            self.vector_store = None
+            logger.info("[Dry Run] Skipping database/embedding initialization")
 
     def _ensure_tables(self) -> None:
         """Ensure all required database tables exist."""
@@ -140,20 +146,15 @@ class IngestUseCase:
 
             # 2a. Delete existing document data before re-ingest (CASCADE-001)
             # This prevents stale embeddings from accumulating
-            if not self.dry_run:
-                logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
-                self.cascade_deleter.delete_document(doc_id)
+            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
+            self.cascade_deleter.delete_document(doc_id)
 
             document = Document(
                 id=doc_id,
                 source_path=file_path,
                 metadata={"filename": os.path.basename(file_path)},
             )
-            
-            if not self.dry_run:
-                self.doc_repo.save(document)
-            else:
-                logger.info(f"[Dry Run] Would save document: {doc_id}")
+            self.doc_repo.save(document)
 
             # 3. Unitize segments (group related content)
             unitized = self.unitizer.unitize(segments)
@@ -165,13 +166,11 @@ class IngestUseCase:
 
             # 5. Save Concepts, Fragments, and Embeddings
             for concept in concepts:
-                if not self.dry_run:
-                    self.concept_repo.save(concept)
+                self.concept_repo.save(concept)
                 total_concepts += 1
 
                 # Save parent document for context expansion (SEARCH-SEP-003)
-                if not self.dry_run:
-                    self._save_parent(concept)
+                self._save_parent(concept)
 
                 # Collect fragments to embed in batch
                 docs_to_embed = []
@@ -183,8 +182,7 @@ class IngestUseCase:
                         logger.info(f"Fragment filtered: {fragment.content[:50]}...")
                         continue
 
-                    if not self.dry_run:
-                        self.fragment_repo.save(fragment)
+                    self.fragment_repo.save(fragment)
                     total_fragments += 1
 
                     # Convert to LangChain Document with deterministic doc_id
@@ -204,13 +202,8 @@ class IngestUseCase:
 
                 # Batch embed and store to PGVector
                 if docs_to_embed:
-                    if not self.dry_run:
-                        embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
-                        total_embeddings += embedded
-                    else:
-                        # Estimate embeddings count
-                        total_embeddings += len(docs_to_embed)
-                        logger.info(f"[Dry Run] Would embed {len(docs_to_embed)} fragments")
+                    embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
+                    total_embeddings += embedded
 
         # Ensure indexes after all data is inserted
         self.schema_manager.ensure_indexes()

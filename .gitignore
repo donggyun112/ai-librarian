@@ -5,4 +5,7 @@ __pycache__
 .coverage
 .serena
 
+# Claude temp files
+tmpclaude-*
+
 /docs

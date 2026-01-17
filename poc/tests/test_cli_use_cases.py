@@ -19,7 +19,6 @@ class TestCliUseCases:
         """Test ingest command success path."""
         args = MagicMock(spec=argparse.Namespace)
         args.files = ["pyproject.toml"]
-        args.dry_run = False
         args.force_ocr = False
 
         # Mock IngestUseCase
@@ -40,26 +39,6 @@ class TestCliUseCases:
             MockUseCase.assert_called_once()
             instance.execute.assert_called_once_with(["pyproject.toml"])
 
-    def test_ingest_cli_dry_run(self):
-        """Test ingest command with --dry-run."""
-        args = MagicMock(spec=argparse.Namespace)
-        args.files = ["pyproject.toml"]
-        args.dry_run = True
-        args.force_ocr = False
-
-        # Mock IngestUseCase
-        with patch("src.rag.api.cli.ingest.IngestUseCase") as MockUseCase:
-            instance = MockUseCase.return_value
-            instance.execute.return_value = IngestResult(0, 0, 0, 0)
-
-            # Execution
-            exit_code = ingest_main(args)
-
-            # Assertions
-            assert exit_code == 0
-            # Check if dry_run was passed to constructor
-            call_args = MockUseCase.call_args
-            assert call_args.kwargs.get("dry_run") is True
 
     def test_search_cli_success(self):
         """Test search command success path."""
@@ -72,8 +51,10 @@ class TestCliUseCases:
         args.json = False
         args.optimize = False
 
-        # Mock SearchUseCase
-        with patch("src.rag.api.cli.search.SearchUseCase") as MockUseCase:
+        # Mock SearchUseCase and EmbeddingProviderFactory
+        with patch("src.rag.api.cli.search.SearchUseCase") as MockUseCase, \
+             patch("src.rag.api.cli.search.EmbeddingProviderFactory") as MockFactory:
+            MockFactory.create.return_value = MagicMock()
             instance = MockUseCase.return_value
             # Return empty list for simplicity
             instance.execute.return_value = []
