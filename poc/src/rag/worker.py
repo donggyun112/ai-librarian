@@ -12,6 +12,7 @@ from src.rag.api.use_cases import SearchUseCase
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.retrieval import ExpandedResult
 from src.rag.shared.config import load_config as load_rag_config
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 
 
 class RagWorker(BaseWorker):
@@ -74,11 +75,19 @@ class RagWorker(BaseWorker):
                 sources=sources
             )
             
+        except DatabaseNotConfiguredError as e:
+            logger.error(f"RAG search unavailable: {e}")
+            return self._create_result(
+                query=query,
+                content="RAG 검색 서비스가 사용 불가합니다. 데이터베이스 설정을 확인해주세요.",
+                confidence=0.0,
+                sources=[]
+            )
         except Exception as e:
             logger.exception(f"RAG search failed: {e}")
             return self._create_result(
                 query=query,
-                content=f"Error during RAG search: {str(e)}",
+                content="RAG 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 confidence=0.0,
                 sources=[]
             )

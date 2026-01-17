@@ -144,7 +144,7 @@ class GeminiLLMClient:
 
         logger.error(f"LLM generation failed: {last_error}")
         return LLMResponse(
-            content=f"Generation error: {str(last_error)}",
+            content="응답을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
             model=self._model_name,
         )
 
