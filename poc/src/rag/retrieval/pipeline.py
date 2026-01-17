@@ -7,6 +7,7 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
+import os
 from typing import List, Optional
 
 from loguru import logger
@@ -58,17 +59,22 @@ class RetrievalPipeline:
         # SelfQueryRetriever (auto-extracts metadata filters from natural language)
         self.self_query_retriever = None
         
+        # SelfQuery auto-enables when DB and GOOGLE_API_KEY are available
         if use_self_query:
-            try:
-                self.self_query_retriever = create_self_query_retriever(
-                    config=config,
-                    embeddings_client=embeddings_client,
-                    # Uses GeminiAdapter by default (adapter pattern)
-                    verbose=False,
-                )
-                logger.info("SelfQueryRetriever enabled for automatic filter extraction")
-            except Exception as e:
-                logger.warning(f"SelfQueryRetriever unavailable: {e}")
+            if not config.pg_conn:
+                logger.info("SelfQueryRetriever skipped: DB not configured")
+            elif not os.getenv("GOOGLE_API_KEY"):
+                logger.info("SelfQueryRetriever skipped: GOOGLE_API_KEY not set")
+            else:
+                try:
+                    self.self_query_retriever = create_self_query_retriever(
+                        config=config,
+                        embeddings_client=embeddings_client,
+                        verbose=False,
+                    )
+                    logger.info("SelfQueryRetriever enabled")
+                except Exception as e:
+                    logger.warning(f"SelfQueryRetriever initialization failed: {e}")
 
 
     def retrieve(
