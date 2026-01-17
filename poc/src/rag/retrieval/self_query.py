@@ -7,16 +7,15 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
-import os
 from typing import Any, Dict, List, Optional
 
 from langchain_classic.chains.query_constructor.base import AttributeInfo
 from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
-from langchain_core.documents import Document
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.language_models import BaseChatModel
 from langchain_postgres import PGVector
 from loguru import logger
 
+from src.adapters import BaseLLMAdapter, get_adapter
 from src.rag.shared.config import EmbeddingConfig
 
 from .dto import SelfQueryResult
@@ -229,19 +228,25 @@ class SelfQueryRetrieverWrapper:
 def create_self_query_retriever(
     config: EmbeddingConfig,
     embeddings_client,
-    llm=None,
+    adapter: Optional[BaseLLMAdapter] = None,
+    llm: Optional[BaseChatModel] = None,
     verbose: bool = False,
 ) -> SelfQueryRetrieverWrapper:
     """Factory function to create SelfQueryRetrieverWrapper.
-    
+
     Args:
         config: Embedding configuration with PG connection
         embeddings_client: Embedding provider (Gemini or Voyage AI)
-        llm: Optional LangChain-compatible LLM (creates default if None)
+        adapter: LLM adapter for creating LLM instance (preferred over llm)
+        llm: Optional pre-created LangChain-compatible LLM (deprecated, use adapter)
         verbose: Enable verbose logging
-        
+
     Returns:
         Configured SelfQueryRetrieverWrapper
+
+    Note:
+        Adapter pattern is preferred. If both adapter and llm are None,
+        a default GeminiAdapter will be used.
     """
     # Create PGVector store
     vectorstore = PGVector(
@@ -253,19 +258,18 @@ def create_self_query_retriever(
         embedding_length=config.embedding_dim,
     )
 
-    
-    # Create LLM if not provided
+    # Create LLM using adapter pattern
     if llm is None:
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError("GOOGLE_API_KEY required for SelfQueryRetriever LLM")
-        
-        llm = ChatGoogleGenerativeAI(
+        if adapter is None:
+            # Default to Gemini adapter
+            adapter = get_adapter("gemini")
+
+        llm = adapter.create_llm(
             model="gemini-2.0-flash",
-            google_api_key=api_key,
             temperature=0.0,  # Deterministic for query parsing
+            max_tokens=2048,
         )
-    
+
     return SelfQueryRetrieverWrapper(
         vectorstore=vectorstore,
         llm=llm,

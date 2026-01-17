@@ -1,7 +1,7 @@
 """API 라우트 정의"""
 import json
 import uuid
-from typing import AsyncGenerator, List, Optional, Dict
+from typing import AsyncGenerator, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -311,7 +311,9 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
 class SearchRequest(BaseModel):
     """검색 요청"""
     query: str = Field(..., min_length=1, description="검색어")
-    view: Optional[str] = Field(None, description="뷰 필터 (text, code, image 등)")
+    view: Optional[Literal["text", "code", "image", "table", "figure", "caption"]] = Field(
+        None, description="뷰 필터 (text, code, image, table, figure, caption)"
+    )
     language: Optional[str] = Field(None, description="언어 필터 (python, javascript 등)")
     top_k: int = Field(10, ge=1, le=100, description="결과 개수 (1-100)")
     expand_context: bool = Field(True, description="Parent context 포함 여부")

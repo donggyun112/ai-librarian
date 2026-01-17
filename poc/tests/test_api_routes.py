@@ -419,6 +419,21 @@ class TestRagSearchEndpoint:
         })
         assert response.status_code == 422
 
+    def test_rag_search_invalid_view_returns_422(self, client):
+        """POST /rag/search 잘못된 view 값은 422 반환"""
+        response = client.post("/rag/search", json={
+            "query": "test",
+            "view": "invalid_view"  # 유효하지 않은 view
+        })
+        assert response.status_code == 422
+
+        # 다른 잘못된 view 값
+        response = client.post("/rag/search", json={
+            "query": "test",
+            "view": "xyz"
+        })
+        assert response.status_code == 422
+
     def test_rag_search_error_hides_internal_details(self, client, mock_search_use_case):
         """POST /rag/search 에러 시 내부 예외 메시지 숨김"""
         # 내부 예외 발생
