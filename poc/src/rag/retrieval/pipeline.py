@@ -63,7 +63,7 @@ class RetrievalPipeline:
                 self.self_query_retriever = create_self_query_retriever(
                     config=config,
                     embeddings_client=embeddings_client,
-                    llm=None,  # Will create LangChain LLM internally
+                    # Uses GeminiAdapter by default (adapter pattern)
                     verbose=False,
                 )
                 logger.info("SelfQueryRetriever enabled for automatic filter extraction")
