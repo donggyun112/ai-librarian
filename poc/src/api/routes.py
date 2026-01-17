@@ -311,7 +311,7 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
 # Request/Response schemas for RAG endpoints
 class SearchRequest(BaseModel):
     """검색 요청"""
-    query: str = Field(..., min_length=1, description="검색어")
+    query: str = Field(..., min_length=1, max_length=1000, description="검색어")
     view: Optional[Literal["text", "code", "image", "table", "figure", "caption"]] = Field(
         None, description="뷰 필터 (text, code, image, table, figure, caption)"
     )

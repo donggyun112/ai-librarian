@@ -41,7 +41,7 @@ def main(args: argparse.Namespace) -> int:
         RequestValidator.validate_query(args.query)
         if args.view:
             RequestValidator.validate_view(args.view)
-        if args.top_k:
+        if args.top_k is not None:
             RequestValidator.validate_top_k(args.top_k)
 
         # Create embedding client
@@ -53,7 +53,7 @@ def main(args: argparse.Namespace) -> int:
             query=args.query,
             view=args.view,
             language=args.language,
-            top_k=args.top_k or 10,
+            top_k=args.top_k,
             expand_context=not args.no_context,
         )
 
