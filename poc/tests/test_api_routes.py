@@ -451,3 +451,20 @@ class TestRagSearchEndpoint:
         assert "DB connection" not in data["detail"]
         # 일반적인 에러 메시지만 반환
         assert "오류가 발생했습니다" in data["detail"]
+
+    def test_rag_search_db_not_configured_returns_503(self, client, mock_search_use_case):
+        """POST /rag/search DB 미설정 시 503 반환"""
+        from src.rag.shared.exceptions import DatabaseNotConfiguredError
+        
+        # DatabaseNotConfiguredError로 DB 미설정 시뮬레이션
+        mock_search_use_case.execute.side_effect = DatabaseNotConfiguredError(
+            "Database not configured. Set PG_CONN environment variable."
+        )
+
+        response = client.post("/rag/search", json={
+            "query": "test query"
+        })
+
+        assert response.status_code == 503
+        data = response.json()
+        assert "사용 불가" in data["detail"]
