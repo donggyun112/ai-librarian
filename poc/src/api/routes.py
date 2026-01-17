@@ -1,16 +1,19 @@
 """API 라우트 정의"""
 import json
 import uuid
-from typing import AsyncGenerator, Optional, Dict
+from typing import AsyncGenerator, List, Optional, Dict
 
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
-
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
 from src.memory import InMemoryChatMemory, SupabaseChatMemory
+from src.rag.api.use_cases import SearchUseCase
+from src.rag.embedding import EmbeddingProviderFactory
+from src.rag.shared.config import load_config as load_rag_config
 from config import config
 from .schemas import (
     ChatRequest,
@@ -301,16 +304,8 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
 
 
 # ─────────────────────────────────────────────────────────────
-# RAG Ingestion & Search Endpoints
+# RAG Search Endpoints
 # ─────────────────────────────────────────────────────────────
-
-from typing import List
-from pydantic import BaseModel, Field
-
-from src.rag.api.use_cases import SearchUseCase
-from src.rag.embedding import EmbeddingProviderFactory
-from src.rag.shared.config import load_config as load_rag_config
-
 
 # Request/Response schemas for RAG endpoints
 class SearchRequest(BaseModel):
@@ -318,7 +313,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1, description="검색어")
     view: Optional[str] = Field(None, description="뷰 필터 (text, code, image 등)")
     language: Optional[str] = Field(None, description="언어 필터 (python, javascript 등)")
-    top_k: int = Field(10, description="결과 개수")
+    top_k: int = Field(10, ge=1, le=100, description="결과 개수 (1-100)")
     expand_context: bool = Field(True, description="Parent context 포함 여부")
 
 
@@ -355,17 +350,8 @@ async def rag_ingest() -> None:
     """문서 임베딩 (보안상 비활성화됨)
 
     ⚠️ SECURITY: 이 엔드포인트는 Remote File Read 취약점으로 인해 비활성화되었습니다.
-    사용자가 제공한 파일 경로를 직접 open()하면 서버의 임의 파일을 읽을 수 있습니다.
-
-    TODO: 안전한 구현을 위해 다음 중 하나 필요:
-    - 파일 업로드 API + 안전한 스테이징 디렉토리 기반 처리
-    - 사전에 등록된 문서 ID만 처리
-    - 허용된 디렉토리 화이트리스트 검증
-
     현재는 CLI (python -m src.rag.api.cli ingest)를 통해서만 사용 가능합니다.
     """
-    # SECURITY: 사용자 제공 파일 경로 직접 접근 금지
-    # 이 엔드포인트는 파일 업로드 + 안전한 저장 시스템 구현 전까지 비활성화
     raise HTTPException(
         status_code=501,
         detail="Ingestion via REST API is disabled for security reasons. "
@@ -386,9 +372,9 @@ async def rag_search(request: SearchRequest) -> SearchResultResponse:
         검색 결과 목록
     """
     try:
-        config = load_rag_config()
-        embeddings_client = EmbeddingProviderFactory.create(config)
-        use_case = SearchUseCase(embeddings_client, config)
+        rag_config = load_rag_config()
+        embeddings_client = EmbeddingProviderFactory.create(rag_config)
+        use_case = SearchUseCase(embeddings_client, rag_config)
 
         results = await run_in_threadpool(
             use_case.execute,
@@ -415,6 +401,10 @@ async def rag_search(request: SearchRequest) -> SearchResultResponse:
         return SearchResultResponse(query=request.query, results=items)
     except Exception as e:
         logger.exception("Search failed")
-        raise HTTPException(status_code=500, detail=f"Search failed: {e}")
+        # 내부 예외 메시지 숨김 (보안)
+        raise HTTPException(
+            status_code=500,
+            detail="검색 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+        )
 
 
