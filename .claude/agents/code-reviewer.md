@@ -32,7 +32,7 @@ Provide feedback organized by priority:
 - Suggestions (consider improving)
 
 Include specific examples of how to fix issues.
-
+c
 ## Serena MCP Tools (If Available)
 
 Serena MCP가 연결되어 있으면 우선 사용, 없으면 기본 도구(Read, Grep)를 사용하세요.

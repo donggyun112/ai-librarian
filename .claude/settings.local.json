@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_serena_serena__list_dir",
+      "mcp__plugin_serena_serena__list_memories",
+      "mcp__plugin_serena_serena__activate_project",
+      "mcp__plugin_serena_serena__read_file",
+      "mcp__plugin_serena_serena__get_symbols_overview",
+      "mcp__plugin_serena_serena__find_file",
+      "mcp__plugin_serena_serena__think_about_collected_information",
+      "Bash(python:*)",
+      "mcp__plugin_serena_serena__find_symbol",
+      "mcp__plugin_serena_serena__search_for_pattern",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfix: query_optimizer.py print\\(\\) → logger.warning\\(\\)\n\n- Exception handling 로깅 규칙 준수\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+    ]
+  }
+}
