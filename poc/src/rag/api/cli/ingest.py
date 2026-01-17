@@ -80,7 +80,7 @@ def main(args: argparse.Namespace) -> int:
             logger.info("[cache] Cache disabled (--force-ocr)")
             config.force_ocr = True  # Enable force OCR mode in config
         
-        use_case = IngestUseCase(config, disable_cache=disable_cache, dry_run=args.dry_run)
+        use_case = IngestUseCase(config, disable_cache=disable_cache)
         
         result = use_case.execute(file_paths)
 
@@ -122,9 +122,6 @@ Examples:
 
   # Ingest with glob pattern
   python -m api.cli.ingest docs/*.md
-
-  # Dry run (parse only, no DB writes)
-  python -m api.cli.ingest *.txt --dry-run
         """,
     )
 
@@ -134,11 +131,6 @@ Examples:
         help="File paths or glob patterns to ingest",
     )
 
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Parse files without writing to database",
-    )
 
     parser.add_argument(
         "--force-ocr",
