@@ -12,7 +12,7 @@ Rules:
 
 from typing import List, Optional, Protocol
 
-
+from src.rag.api.validators import RequestValidator
 from src.rag.retrieval import ExpandedResult, RetrievalPipeline
 from src.rag.shared.config import EmbeddingConfig
 
@@ -73,6 +73,11 @@ class SearchUseCase:
         Returns:
             List of search results with optional context
         """
+        # Validate inputs (PKG-API-002)
+        RequestValidator.validate_query(query)
+        RequestValidator.validate_view(view)
+        RequestValidator.validate_top_k(top_k)
+
         # Delegate to retrieval pipeline (SelfQueryRetriever handles query optimization)
         return self.pipeline.retrieve(
             query=query,
