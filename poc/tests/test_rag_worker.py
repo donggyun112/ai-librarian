@@ -214,3 +214,129 @@ class TestRagWorkerExecute:
             result = await self.worker.execute("query")
         
         assert result.confidence == 0.95
+
+    @pytest.mark.asyncio
+    async def test_execute_db_not_configured_returns_clear_message(self):
+        """Worker should return clear message when DB is not configured."""
+        from src.rag.shared.exceptions import DatabaseNotConfiguredError
+        
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(
+            side_effect=DatabaseNotConfiguredError("Database not configured")
+        )
+        
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
+            result = await self.worker.execute("test query")
+        
+        # Should return clear error message, not crash
+        assert "사용 불가" in result.content
+        assert "데이터베이스" in result.content
+        assert result.confidence == 0.0
+
+
+class TestVectorSearchEngineDbNotConfigured:
+    """Tests for VectorSearchEngine when DB is not configured."""
+
+    def test_search_raises_error_when_db_not_configured(self):
+        """search() should raise DatabaseNotConfiguredError when pg_conn is empty."""
+        from src.rag.retrieval.search import VectorSearchEngine
+        from src.rag.retrieval.dto import QueryPlan
+        from src.rag.shared.config import EmbeddingConfig
+        from src.rag.shared.exceptions import DatabaseNotConfiguredError
+
+        # Create config with empty pg_conn
+        config = EmbeddingConfig(
+            pg_conn="",  # Empty - DB not configured
+            collection_name="test",
+            embedding_model="test",
+            embedding_dim=768,
+            embedding_provider="gemini",
+            gemini_model="test",
+            custom_schema_write=False,
+            rate_limit_rpm=0,
+            max_chars_per_request=0,
+            max_items_per_request=0,
+            max_docs_to_embed=0,
+            parent_mode="unit",
+            page_regex="",
+            section_regex="",
+            enable_auto_ocr=False,
+            force_ocr=False,
+            ocr_languages="eng",
+            pdf_parser="pymupdf",
+            enable_image_ocr=False,
+            gemini_ocr_model="test",
+            parent_context_limit=2000,
+            text_unit_threshold=500,
+        )
+
+        engine = VectorSearchEngine(config)
+        
+        # Create a dummy query plan
+        query_plan = QueryPlan(
+            query_text="test",
+            query_embedding=[0.1] * 768,
+            top_k=5,
+        )
+
+        with pytest.raises(DatabaseNotConfiguredError) as exc_info:
+            engine.search(query_plan)
+        
+        assert "PG_CONN" in str(exc_info.value)
+
+
+class TestParentContextEnricherDbNotConfigured:
+    """Tests for ParentContextEnricher when DB is not configured."""
+
+    def test_expand_raises_error_when_db_not_configured(self):
+        """expand() should raise DatabaseNotConfiguredError when pg_conn is empty."""
+        from src.rag.retrieval.context import ParentContextEnricher
+        from src.rag.shared.config import EmbeddingConfig
+        from src.rag.shared.exceptions import DatabaseNotConfiguredError
+
+        # Create config with empty pg_conn
+        config = EmbeddingConfig(
+            pg_conn="",  # Empty - DB not configured
+            collection_name="test",
+            embedding_model="test",
+            embedding_dim=768,
+            embedding_provider="gemini",
+            gemini_model="test",
+            custom_schema_write=False,
+            rate_limit_rpm=0,
+            max_chars_per_request=0,
+            max_items_per_request=0,
+            max_docs_to_embed=0,
+            parent_mode="unit",
+            page_regex="",
+            section_regex="",
+            enable_auto_ocr=False,
+            force_ocr=False,
+            ocr_languages="eng",
+            pdf_parser="pymupdf",
+            enable_image_ocr=False,
+            gemini_ocr_model="test",
+            parent_context_limit=2000,
+            text_unit_threshold=500,
+        )
+
+        enricher = ParentContextEnricher(config)
+        
+        # Create dummy search results
+        results = [
+            SearchResult(
+                fragment_id="f1",
+                parent_id="p1",
+                view=View.TEXT,
+                content="test",
+                similarity=0.9,
+                metadata={},
+                language=None,
+            )
+        ]
+
+        with pytest.raises(DatabaseNotConfiguredError) as exc_info:
+            enricher.expand(results)
+        
+        assert "not configured" in str(exc_info.value).lower()
+
