@@ -2,7 +2,9 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional, Dict
+from typing import AsyncGenerator, Optional, Dict, List, Union
+
+from langchain_core.messages import BaseMessage
 
 from fastapi import APIRouter, HTTPException, Depends, Header
 
@@ -62,7 +64,7 @@ async def get_current_user(authorization: Optional[str] = Header(None)) -> Optio
     return token
 
 
-def require_user_id(user_id: Optional[str], mem=None) -> Optional[str]:
+def require_user_id(user_id: Optional[str], mem: Union[InMemoryChatMemory, SupabaseChatMemory, None] = None) -> Optional[str]:
     """Supabase 모드에서 user_id 필수 검증
 
     Args:
@@ -84,7 +86,7 @@ def require_user_id(user_id: Optional[str], mem=None) -> Optional[str]:
     return user_id
 
 
-def _extract_timestamps(messages) -> tuple[Optional[str], Optional[str]]:
+def _extract_timestamps(messages: List[BaseMessage]) -> tuple[Optional[str], Optional[str]]:
     """메시지 목록에서 생성 시간과 마지막 활동 시간 추출
 
     Args:
