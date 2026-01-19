@@ -219,7 +219,7 @@ async def send_message(
     session_id: str,
     body: MessageRequest,
     user_id: Optional[str] = Depends(get_current_user)
-):
+) -> Union[EventSourceResponse, ChatResponse]:
     """메시지 전송 (body.stream으로 스트리밍/JSON 구분)
 
     Args:

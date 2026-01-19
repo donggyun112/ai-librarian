@@ -1,4 +1,6 @@
 """RESTful API 테스트 (세션 중심 설계)"""
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import MagicMock, patch, AsyncMock
@@ -7,6 +9,7 @@ from datetime import datetime, timezone
 from src.api.routes import router
 from src.memory.supabase_memory import SupabaseChatMemory
 from src.memory import InMemoryChatMemory
+from src.schemas.models import SupervisorResponse
 from fastapi import FastAPI
 from langchain_core.messages import HumanMessage, AIMessage
 
@@ -38,7 +41,6 @@ class TestSessionCreation:
         assert "created_at" in data
 
         # UUID 형식 검증
-        import uuid
         try:
             uuid.UUID(data["session_id"])
         except ValueError:
@@ -242,7 +244,6 @@ class TestSendMessage:
         session_id = "test-session"
 
         # Mock supervisor response
-        from src.schemas.models import SupervisorResponse
         mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
             answer="This is a JSON response",
             sources=["web_search"],
@@ -306,7 +307,6 @@ class TestSendMessage:
         """stream 미지정 시 JSON 응답 (기본값)"""
         session_id = "test-session"
 
-        from src.schemas.models import SupervisorResponse
         mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
             answer="Default JSON response",
             sources=[],
@@ -346,7 +346,6 @@ class TestSendMessage:
 
             session_id = "test-session"
 
-            from src.schemas.models import SupervisorResponse
             mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
                 answer="Response without auth",
                 sources=[],
