@@ -5,6 +5,7 @@
 """
 import threading
 from collections import defaultdict
+from datetime import datetime, timezone
 from typing import List
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
@@ -45,8 +46,10 @@ class InMemoryChatMemory(ChatMemory):
             msg = HumanMessage(content=content)
             # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
             metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
-            if metadata:
-                msg.additional_kwargs.update(metadata)
+            # 타임스탬프 자동 추가
+            if 'timestamp' not in metadata:
+                metadata['timestamp'] = datetime.now(timezone.utc).isoformat()
+            msg.additional_kwargs.update(metadata)
             self._store[session_id].append(msg)
 
     def add_ai_message(self, session_id: str, content: str, **kwargs) -> None:
@@ -55,8 +58,10 @@ class InMemoryChatMemory(ChatMemory):
             msg = AIMessage(content=content)
             # user_id는 메모리 계층 메타데이터이므로 LangChain 메시지에서 제외
             metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
-            if metadata:
-                msg.additional_kwargs.update(metadata)
+            # 타임스탬프 자동 추가
+            if 'timestamp' not in metadata:
+                metadata['timestamp'] = datetime.now(timezone.utc).isoformat()
+            msg.additional_kwargs.update(metadata)
             self._store[session_id].append(msg)
 
     def clear(self, session_id: str) -> None:
@@ -80,3 +85,13 @@ class InMemoryChatMemory(ChatMemory):
         """세션의 메시지 개수"""
         with self._lock:
             return len(self._store[session_id])
+
+    def init_session(self, session_id: str) -> None:
+        """빈 세션 초기화 (세션 생성 시 호출)
+
+        Args:
+            session_id: 세션 식별자
+        """
+        with self._lock:
+            if session_id not in self._store:
+                self._store[session_id] = []
