@@ -65,6 +65,20 @@ class ChatMemory(ABC):
         """
         pass
 
+    @abstractmethod
+    def init_session(self, session_id: str, **kwargs) -> None:
+        """빈 세션 초기화 (세션 생성 시 호출)
+
+        Args:
+            session_id: 세션 식별자
+            **kwargs: 추가 메타데이터 (예: user_id)
+
+        Note:
+            - InMemory: 빈 리스트 생성
+            - Supabase: chat_sessions 테이블에 레코드 생성
+        """
+        pass
+
     def save_conversation(self, session_id: str, user_message: str, ai_message: str, **kwargs) -> None:
         """대화 쌍(사용자 + AI) 저장 - 편의 메서드
 

@@ -80,6 +80,18 @@ class SupabaseChatMemory(ChatMemory):
             logger.error(f"Error ensuring session {session_id}: {e}")
             return False
 
+    async def init_session_async(self, session_id: str, user_id: str) -> bool:
+        """빈 세션 초기화 (세션 생성 시 호출)
+
+        Args:
+            session_id: 세션 식별자
+            user_id: 사용자 ID (필수)
+
+        Returns:
+            True if session was created or already exists, False otherwise
+        """
+        return await self._ensure_session(session_id, user_id)
+
     async def get_messages_async(self, session_id: str, user_id: Optional[str] = None) -> List[BaseMessage]:
         """세션의 전체 대화 히스토리 조회 (비동기)
 

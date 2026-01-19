@@ -80,3 +80,13 @@ class InMemoryChatMemory(ChatMemory):
         """세션의 메시지 개수"""
         with self._lock:
             return len(self._store[session_id])
+
+    def init_session(self, session_id: str) -> None:
+        """빈 세션 초기화 (세션 생성 시 호출)
+
+        Args:
+            session_id: 세션 식별자
+        """
+        with self._lock:
+            if session_id not in self._store:
+                self._store[session_id] = []
