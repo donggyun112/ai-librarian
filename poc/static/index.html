@@ -616,6 +616,28 @@
         let sessionId = null;
         let isStreaming = false;
 
+        // Authorization 헤더 생성 (Supabase 모드 지원)
+        // localStorage에 'userToken'이 설정되어 있으면 사용
+        function getAuthHeaders() {
+            const token = localStorage.getItem('userToken');
+            if (token) {
+                return { 'Authorization': 'Bearer ' + token };
+            }
+            return {};
+        }
+
+        // Supabase 모드용 토큰 설정 (콘솔에서 사용)
+        // 사용법: setUserToken('your-user-id')
+        window.setUserToken = function(token) {
+            if (token) {
+                localStorage.setItem('userToken', token);
+                console.log('User token set. Refresh to apply.');
+            } else {
+                localStorage.removeItem('userToken');
+                console.log('User token cleared.');
+            }
+        };
+
         const SUGGESTIONS = [
             '🚀 최신 AI 트렌드 요약해줘',
             '🐍 Python 리스트 컴프리헨션 예제',
@@ -700,7 +722,10 @@
             if (!confirm('현재 대화 내역을 삭제하시겠습니까?')) return;
 
             try {
-                await fetch('/v1/sessions/' + sessionId, { method: 'DELETE' });
+                await fetch('/v1/sessions/' + sessionId, {
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
+                });
                 newSession();
             } catch (e) {
                 console.error('Failed to clear session:', e);
@@ -875,7 +900,10 @@
             try {
                 // 세션이 없으면 먼저 생성
                 if (!sessionId) {
-                    const sessionRes = await fetch('/v1/sessions', { method: 'POST' });
+                    const sessionRes = await fetch('/v1/sessions', {
+                        method: 'POST',
+                        headers: getAuthHeaders()
+                    });
                     if (!sessionRes.ok) {
                         throw new Error('Failed to create session');
                     }
@@ -886,7 +914,7 @@
 
                 const response = await fetch('/v1/sessions/' + sessionId + '/messages', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
                     body: JSON.stringify({
                         message: message,
                         stream: true
