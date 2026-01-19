@@ -1,13 +1,13 @@
 """API 스키마 정의"""
 from typing import Optional, List
+from datetime import datetime
 from pydantic import BaseModel, Field
 
 
-class ChatRequest(BaseModel):
-    """채팅 요청"""
+class MessageRequest(BaseModel):
+    """메시지 전송 요청 (session_id는 path parameter, user_id는 Authorization header)"""
     message: str = Field(..., min_length=1, description="사용자 메시지")
-    session_id: Optional[str] = Field(None, description="세션 ID (없으면 히스토리 없이 처리)")
-    user_id: Optional[str] = Field(None, description="사용자 ID (선택 사항)")
+    stream: bool = Field(default=False, description="스트리밍 응답 여부")
 
 
 class ChatResponse(BaseModel):
@@ -17,10 +17,24 @@ class ChatResponse(BaseModel):
     session_id: Optional[str] = Field(None, description="세션 ID")
 
 
+class SessionCreateResponse(BaseModel):
+    """세션 생성 응답"""
+    session_id: str = Field(..., description="생성된 세션 ID")
+    created_at: str = Field(..., description="세션 생성 시간 (ISO 8601)")
+
+
 class SessionInfo(BaseModel):
     """세션 정보"""
     session_id: str
     message_count: int
+
+
+class SessionDetailResponse(BaseModel):
+    """세션 상세 정보"""
+    session_id: str = Field(..., description="세션 ID")
+    message_count: int = Field(..., description="메시지 개수")
+    created_at: Optional[str] = Field(None, description="세션 생성 시간")
+    last_activity: Optional[str] = Field(None, description="마지막 활동 시간")
 
 
 class SessionListResponse(BaseModel):
