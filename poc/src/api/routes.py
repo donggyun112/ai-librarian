@@ -159,7 +159,8 @@ async def create_session(
         # InMemoryChatMemory
         memory.init_session(session_id)
 
-    logger.info(f"Created new session: {session_id} for user: {user_id or 'anonymous'}")
+    # user_id는 토큰이므로 로그에 출력하지 않음 (credential leak 방지)
+    logger.info(f"Created new session: {session_id}")
 
     return SessionCreateResponse(
         session_id=session_id,

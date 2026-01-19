@@ -873,6 +873,17 @@
             let thinkingBadge = null;  // thinking badge 요소
 
             try {
+                // 세션이 없으면 먼저 생성
+                if (!sessionId) {
+                    const sessionRes = await fetch('/v1/sessions', { method: 'POST' });
+                    if (!sessionRes.ok) {
+                        throw new Error('Failed to create session');
+                    }
+                    const sessionData = await sessionRes.json();
+                    sessionId = sessionData.session_id;
+                    document.getElementById('session-id').textContent = 'ID: ' + sessionId.substring(0, 8);
+                }
+
                 const response = await fetch('/v1/sessions/' + sessionId + '/messages', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -920,9 +931,8 @@
                                     addEventBadge('act', data.tool + '(' + JSON.stringify(data.args) + ')', assistantDiv);
                                 } else if (currentEventType === 'observe' && data.content) {
                                     addEventBadge('observe', data.content, assistantDiv);
-                                } else if (currentEventType === 'done' && data.session_id) {
-                                    sessionId = data.session_id;
-                                    document.getElementById('session-id').textContent = 'ID: ' + sessionId.substring(0, 8);
+                                } else if (currentEventType === 'done') {
+                                    // 세션 ID는 메시지 전송 전에 이미 설정됨
                                 } else if (currentEventType === 'error' && data.error) {
                                     addMessage('⚠️ 오류: ' + data.error, 'system');
                                 }
