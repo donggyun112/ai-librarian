@@ -150,7 +150,7 @@ class SupabaseChatMemory(ChatMemory):
 
             def _fetch_messages():
                 return self.supabase.table(self.messages_table) \
-                    .select("message") \
+                    .select("message, created_at") \
                     .eq("session_id", session_id) \
                     .order("created_at", desc=False) \
                     .execute()
@@ -160,10 +160,15 @@ class SupabaseChatMemory(ChatMemory):
             messages = []
             for row in response.data:
                 msg_data = row.get("message")
+                created_at = row.get("created_at")
                 if msg_data:
                     restored = messages_from_dict([msg_data])
                     if restored:
-                        messages.append(restored[0])
+                        msg = restored[0]
+                        # DB의 created_at을 메시지 메타데이터에 추가
+                        if created_at:
+                            msg.additional_kwargs["timestamp"] = created_at
+                        messages.append(msg)
             return messages
         except Exception as e:
             logger.error(f"Error fetching messages from Supabase: {e}")

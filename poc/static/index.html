@@ -639,7 +639,7 @@
         async function init() {
             initSuggestions();
             try {
-                const res = await fetch('/api/health');
+                const res = await fetch('/v1/health');
                 const data = await res.json();
                 document.getElementById('provider-badge').textContent = data.provider || 'Online';
                 document.getElementById('provider-badge').style.borderColor = 'rgba(74, 222, 128, 0.3)';
@@ -700,7 +700,7 @@
             if (!confirm('현재 대화 내역을 삭제하시겠습니까?')) return;
 
             try {
-                await fetch('/api/sessions/' + sessionId + '/messages', { method: 'DELETE' });
+                await fetch('/v1/sessions/' + sessionId, { method: 'DELETE' });
                 newSession();
             } catch (e) {
                 console.error('Failed to clear session:', e);
@@ -873,12 +873,12 @@
             let thinkingBadge = null;  // thinking badge 요소
 
             try {
-                const response = await fetch('/api/chat/stream', {
+                const response = await fetch('/v1/sessions/' + sessionId + '/messages', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: message,
-                        session_id: sessionId
+                        stream: true
                     })
                 });
 
