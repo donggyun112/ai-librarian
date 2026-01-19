@@ -80,6 +80,51 @@ class SupabaseChatMemory(ChatMemory):
             logger.error(f"Error ensuring session {session_id}: {e}")
             return False
 
+    def init_session(self, session_id: str, **kwargs) -> None:
+        """빈 세션 초기화 (동기 래퍼)
+
+        Args:
+            session_id: 세션 식별자
+            **kwargs: user_id 등 추가 메타데이터
+
+        Raises:
+            RuntimeError: 세션 생성 실패 시
+        """
+        user_id = kwargs.get("user_id")
+        if not user_id:
+            raise ValueError("user_id is required for Supabase session initialization")
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # 이미 이벤트 루프가 실행 중이면 thread pool 사용
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.init_session_async(session_id, user_id)
+                )
+                success = future.result()
+        else:
+            success = asyncio.run(self.init_session_async(session_id, user_id))
+
+        if not success:
+            raise RuntimeError(f"Failed to initialize session {session_id}")
+
+    async def init_session_async(self, session_id: str, user_id: str) -> bool:
+        """빈 세션 초기화 (세션 생성 시 호출)
+
+        Args:
+            session_id: 세션 식별자
+            user_id: 사용자 ID (필수)
+
+        Returns:
+            True if session was created or already exists, False otherwise
+        """
+        return await self._ensure_session(session_id, user_id)
+
     async def get_messages_async(self, session_id: str, user_id: Optional[str] = None) -> List[BaseMessage]:
         """세션의 전체 대화 히스토리 조회 (비동기)
 
@@ -105,7 +150,7 @@ class SupabaseChatMemory(ChatMemory):
 
             def _fetch_messages():
                 return self.supabase.table(self.messages_table) \
-                    .select("message") \
+                    .select("message, created_at") \
                     .eq("session_id", session_id) \
                     .order("created_at", desc=False) \
                     .execute()
@@ -115,10 +160,15 @@ class SupabaseChatMemory(ChatMemory):
             messages = []
             for row in response.data:
                 msg_data = row.get("message")
+                created_at = row.get("created_at")
                 if msg_data:
                     restored = messages_from_dict([msg_data])
                     if restored:
-                        messages.append(restored[0])
+                        msg = restored[0]
+                        # DB의 created_at을 메시지 메타데이터에 추가
+                        if created_at:
+                            msg.additional_kwargs["timestamp"] = created_at
+                        messages.append(msg)
             return messages
         except Exception as e:
             logger.error(f"Error fetching messages from Supabase: {e}")

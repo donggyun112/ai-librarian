@@ -30,7 +30,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 # API 라우트 등록
-app.include_router(router, prefix="/api")
+app.include_router(router, prefix="/v1")
 
 # Static 파일 서빙 (UI)
 static_dir = Path(__file__).parent.parent.parent / "static"
