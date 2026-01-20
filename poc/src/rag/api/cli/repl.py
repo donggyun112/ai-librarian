@@ -205,14 +205,6 @@ def run_repl(args: argparse.Namespace) -> int:
                     view_type = expanded.result.view.value
                     sim = f"{expanded.result.similarity:.3f}"
                     sources_output.append(f"  [{i}] {source} ({view_type}, sim: {sim})")
-                if last_rag_response.optimized_query:
-                    opt = last_rag_response.optimized_query
-                    sources_output.append(f"\nQuery optimization:")
-                    sources_output.append(f"  Keywords: {', '.join(opt.keywords)}")
-                    if opt.view_hint:
-                        sources_output.append(f"  View hint: {opt.view_hint}")
-                    if opt.language_hint:
-                        sources_output.append(f"  Language hint: {opt.language_hint}")
                 logger.info("\n".join(sources_output))
             else:
                 logger.info("No previous RAG response")

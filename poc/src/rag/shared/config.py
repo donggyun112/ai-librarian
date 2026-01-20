@@ -52,8 +52,6 @@ class GenerationConfig:
     temperature: float  # Generation temperature (0-1)
     max_tokens: int  # Maximum output tokens
     enable_conversation: bool  # Enable multi-turn conversation
-    # NOTE: enable_query_optimization 제거됨 - QueryOptimizer는 SelfQueryRetriever로 대체됨
-
 
 def _parse_int(value: Optional[str], default: int = 0) -> int:
     if value is None or value == "":
