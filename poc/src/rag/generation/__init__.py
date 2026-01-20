@@ -4,9 +4,10 @@ Handles LLM-based response generation with source attribution.
 
 Components:
 - GeminiLLMClient: LLM client using Google Gemini API
-- QueryOptimizer: Keyword extraction and query optimization
 - GenerationPipeline: Orchestrates context assembly and generation
 - PromptTemplate: Manages RAG prompts and context formatting
+
+NOTE: QueryOptimizer는 제거됨. retrieval.SelfQueryRetrieverWrapper로 대체됨.
 
 Rules:
 - DEP-GEN-001: MAY import shared (config, exceptions)
@@ -26,7 +27,6 @@ from .dto import (
 )
 from .pipeline import GenerationPipeline
 from .prompts import PromptContext, PromptTemplate
-from .query_optimizer import QueryOptimizer
 
 __all__ = [
     # DTOs
@@ -41,8 +41,6 @@ __all__ = [
     "LLMClientProtocol",
     # Prompts
     "PromptTemplate",
-    # Query Optimization
-    "QueryOptimizer",
     # Pipeline
     "GenerationPipeline",
 ]

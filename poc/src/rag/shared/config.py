@@ -51,8 +51,8 @@ class GenerationConfig:
     llm_model: str  # Gemini model for generation
     temperature: float  # Generation temperature (0-1)
     max_tokens: int  # Maximum output tokens
-    enable_query_optimization: bool  # Use LLM for query optimization
     enable_conversation: bool  # Enable multi-turn conversation
+    # NOTE: enable_query_optimization 제거됨 - QueryOptimizer는 SelfQueryRetriever로 대체됨
 
 
 def _parse_int(value: Optional[str], default: int = 0) -> int:
@@ -149,9 +149,6 @@ def load_generation_config() -> GenerationConfig:
         llm_model=os.getenv("GEMINI_LLM_MODEL", "gemini-2.0-flash"),
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
         max_tokens=_parse_int(os.getenv("LLM_MAX_TOKENS"), 2048),
-        enable_query_optimization=_parse_bool(
-            os.getenv("ENABLE_QUERY_OPTIMIZATION", "true"), True
-        ),
         enable_conversation=_parse_bool(
             os.getenv("ENABLE_CONVERSATION", "false"), False
         ),

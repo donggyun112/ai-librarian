@@ -105,8 +105,7 @@ def main() -> None:
     parser.add_argument("--in-reply-to", type=int, help="Comment ID to reply to")
     parser.add_argument("--thread-node-id", help="Thread node ID for resolving")
     parser.add_argument("--input", "-i", help="Input JSON file (default: stdin)")
-    parser.add_argument("--dry-run", action="store_true", help="Print actions without executing")
-
+    
     args = parser.parse_args()
 
     # JSON 읽기

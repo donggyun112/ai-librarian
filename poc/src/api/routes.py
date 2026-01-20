@@ -442,6 +442,9 @@ async def delete_session(
     return {"message": "Session deleted", "session_id": session_id}
 
 
+# TODO: 이 엔드포인트는 현재 브랜치(feature/rag-pdf_embedding)와 관련 없음.
+# get_current_user 의존성 누락으로 인한 보안 이슈는 세션 관련 브랜치에서 수정 예정.
+# See: /sessions/{session_id}/messages skips get_current_user - allows anyone to clear session by guessing IDs.
 @router.delete("/sessions/{session_id}/messages")
 async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[str, str]:
     """세션 메시지 초기화
@@ -449,6 +452,10 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
     Args:
         session_id: 세션 ID
         user_id: 사용자 ID (Supabase 사용 시 필수)
+
+    Note:
+        이 엔드포인트는 현재 get_current_user 의존성이 누락되어 있음.
+        세션 관련 브랜치에서 수정 예정.
     """
     # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
     if isinstance(memory, SupabaseChatMemory):
