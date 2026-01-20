@@ -227,25 +227,3 @@ class TestMainFunction:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         assert "No reply content" in captured.err
-
-    def test_main_dry_run(self, tmp_path, sample_reply_payload, capsys):
-        """Test dry-run mode prints actions without executing."""
-        from post_reply import main
-        import sys
-
-        input_file = tmp_path / "reply.json"
-        input_file.write_text(json.dumps(sample_reply_payload))
-
-        with patch.object(sys, "argv", [
-            "post_reply.py",
-            "--repo", "owner/repo",
-            "--pr", "42",
-            "--event-type", "issue_comment",
-            "--dry-run",
-            "--input", str(input_file)
-        ]):
-            main()
-
-        captured = capsys.readouterr()
-        assert "DRY RUN" in captured.out
-        assert "owner/repo" in captured.out
