@@ -77,19 +77,20 @@ jobs:
           gcloud auth configure-docker gcr.io
 
       - name: Build and Push Container
+        id: build
         run: |
           # Matches deploy.sh: gcr.io/$PROJECT/$SERVICE
           IMAGE="gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.IMAGE_NAME }}"
           docker build -t $IMAGE .
           docker push $IMAGE
-          echo "IMAGE_URI=$IMAGE" >> $GITHUB_ENV
+          echo "image_uri=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to Cloud Run
         uses: google-github-actions/deploy-cloudrun@v2
         with:
           service: ${{ env.IMAGE_NAME }}
           region: ${{ env.REGION }}
-          image: ${{ env.IMAGE_URI }}
+          image: ${{ steps.build.outputs.image_uri }}
           env_vars: |
             ENVIRONMENT=production
           secrets: |
