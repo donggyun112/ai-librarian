@@ -48,17 +48,19 @@ class RetrievalPipeline:
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
         use_self_query: bool = True,
+        verbose: bool = False,
     ) -> None:
         self.config = config
         self.embeddings_client = embeddings_client
+        self.verbose = verbose
         self.query_interpreter = QueryInterpreter(embeddings_client, config)
         self.search_engine = VectorSearchEngine(config)
         self.context_expander = ParentContextEnricher(config)
         self.grouper = ResultGrouper()
-        
+
         # SelfQueryRetriever (auto-extracts metadata filters from natural language)
         self.self_query_retriever = None
-        
+
         # SelfQuery auto-enables when DB and GOOGLE_API_KEY are available
         if use_self_query:
             if not config.pg_conn:
@@ -70,7 +72,7 @@ class RetrievalPipeline:
                     self.self_query_retriever = create_self_query_retriever(
                         config=config,
                         embeddings_client=embeddings_client,
-                        verbose=False,
+                        verbose=verbose,
                     )
                     logger.info("SelfQueryRetriever enabled")
                 except Exception as e:
@@ -110,6 +112,9 @@ class RetrievalPipeline:
                 self_query_results = self.self_query_retriever.retrieve(query, k=top_k)
                 
                 if self_query_results:
+                    rewritten = self_query_results[0].rewritten_query if self_query_results else None
+                    if rewritten and rewritten != query:
+                        logger.info(f"[self_query] Query rewritten: '{query}' -> '{rewritten}'")
                     # Convert SelfQueryResult to SearchResult format
                     search_results = self._convert_self_query_results(self_query_results)
                     
@@ -124,17 +129,13 @@ class RetrievalPipeline:
                         return [ExpandedResult(result=r) for r in search_results]
             except Exception as e:
                 logger.warning(f"SelfQuery failed, falling back to standard search: {e}")
-        
-        # Legacy path: QueryOptimizer or direct search
-        search_query = query
-        optimized_view = view
-        optimized_language = language
+
         
         # Stage 1: Query interpretation
         query_plan = self.query_interpreter.interpret(
-            query=search_query,
-            view=optimized_view,
-            language=optimized_language,
+            query=query,
+            view=view,
+            language=language,
             top_k=top_k,
         )
 

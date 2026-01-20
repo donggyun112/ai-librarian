@@ -54,6 +54,7 @@ class RAGUseCase:
         embeddings_client: EmbeddingClientProtocol,
         embed_config: EmbeddingConfig,
         gen_config: GenerationConfig,
+        verbose:bool = False,
     ) -> None:
         """Initialize RAGUseCase.
 
@@ -61,6 +62,7 @@ class RAGUseCase:
             embeddings_client: Client for generating query embeddings
             embed_config: Embedding/retrieval configuration
             gen_config: Generation configuration
+            verbose: Enable verbose logging for SelfQueryRetriever
         """
         # Retrieval pipeline with SelfQueryRetriever (auto-extracts view/language filters)
         # use_self_query=True by default, creates its own LLM internally
@@ -68,6 +70,7 @@ class RAGUseCase:
             embeddings_client,
             embed_config,
             use_self_query=True,  # Enable SelfQueryRetriever
+            verbose=verbose,
         )
 
         # LLM client for generation

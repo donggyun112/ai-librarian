@@ -45,12 +45,15 @@ class SearchUseCase:
         self,
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
+        verbose: bool = True,
     ) -> None:
         # SelfQueryRetriever is enabled by default (creates its own LLM)
+        # verbose=True by default for API debugging
         self.pipeline = RetrievalPipeline(
             embeddings_client,
             config,
             use_self_query=True,
+            verbose=verbose,
         )
 
     def execute(

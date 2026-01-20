@@ -12,7 +12,7 @@ from loguru import logger
 
 from .dto import LLMResponse
 from src.adapters import get_adapter
-
+from langchain_core.messages import HumanMessage, SystemMessage
 
 class LLMClientProtocol(Protocol):
     """Protocol for LLM clients (dependency inversion)."""
@@ -21,7 +21,7 @@ class LLMClientProtocol(Protocol):
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        temperature: float = 0.7,
+        temperature: float = 0.2,
         max_tokens: int = 2048,
     ) -> LLMResponse:
         """Generate response from prompt."""
@@ -81,7 +81,7 @@ class GeminiLLMClient:
             )
 
             # Build messages
-            from langchain_core.messages import HumanMessage, SystemMessage
+
             messages = []
             if system_prompt:
                 messages.append(SystemMessage(content=system_prompt))

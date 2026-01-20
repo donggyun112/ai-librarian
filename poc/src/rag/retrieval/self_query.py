@@ -7,7 +7,7 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_classic.chains.query_constructor.base import AttributeInfo
 from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
@@ -18,7 +18,7 @@ from loguru import logger
 from src.adapters import BaseLLMAdapter, get_adapter
 from src.rag.shared.config import EmbeddingConfig
 
-from .dto import SelfQueryResult
+from .dto import SelfQueryResult, ExtractedQuery
 
 
 # Metadata schema definition for LangChain SelfQueryRetriever
@@ -58,7 +58,7 @@ class SelfQueryRetrieverWrapper:
     def __init__(
         self,
         vectorstore: PGVector,
-        llm,
+        llm: BaseChatModel,
         *,
         enable_limit: bool = True,
         verbose: bool = False,
@@ -84,30 +84,44 @@ class SelfQueryRetrieverWrapper:
             verbose=verbose,
         )
     
-    def _extract_filters(self, query: str) -> Optional[Dict[str, Any]]:
-        """Extract metadata filters from query using SelfQueryRetriever's query_constructor.
-        
+    def _extract_query_and_filters(self, query: str) -> ExtractedQuery:
+        """Extract rewritten query and metadata filters using SelfQueryRetriever's query_constructor.
+
+        LangChain의 StructuredQuery에서 query(LLM이 재작성한 쿼리)와 filter를 모두 추출.
+
         Args:
             query: Natural language query
-            
+
         Returns:
-            Dictionary of filters or None if extraction fails
+            ExtractedQuery with rewritten_query and filters
         """
         try:
             # Use the query_constructor to get structured query
             structured_query = self.retriever.query_constructor.invoke({"query": query})
-            
+
+            # Extract rewritten query from structured query
+            rewritten_query = None
+            if structured_query and hasattr(structured_query, "query"):
+                rewritten_query = structured_query.query
+                if rewritten_query and rewritten_query.strip():
+                    rewritten_query = rewritten_query.strip()
+                else:
+                    rewritten_query = None
+
             # Extract filter from structured query
-            
-            # Extract filter from structured query
+            filters = None
             if structured_query and hasattr(structured_query, 'filter') and structured_query.filter:
-                return self._convert_filter_to_dict(structured_query.filter)
-            return None
-            
+                filters = self._convert_filter_to_dict(structured_query.filter)
+
+            if self.verbose and (rewritten_query or filters):
+                logger.info(f"SelfQuery extracted - rewritten: {rewritten_query}, filters: {filters}")
+
+            return ExtractedQuery(rewritten_query=rewritten_query, filters=filters)
+
         except Exception as e:
             if self.verbose:
                 logger.warning(f"Filter extraction failed: {e}")
-            return None
+            return ExtractedQuery(rewritten_query=None, filters=None)
     
     def _convert_filter_to_dict(self, filter_obj) -> Dict[str, Any]:
         """Convert LangChain filter object to dictionary for PGVector.
@@ -153,46 +167,52 @@ class SelfQueryRetrieverWrapper:
         k: int = 10,
     ) -> List[SelfQueryResult]:
         """Retrieve documents using hybrid approach.
-        
-        1. Extract filters from query using LLM (SelfQueryRetriever)
-        2. Search with actual similarity scores (similarity_search_with_score)
-        
+
+        1. Extract rewritten query and filters from query using LLM (SelfQueryRetriever)
+        2. Search with actual similarity scores using rewritten query (or original if unavailable)
+
         Args:
             query: Natural language query (may contain filter hints)
             k: Maximum number of results to return
-            
+
         Returns:
-            List of SelfQueryResult with content, metadata, and ACTUAL scores
+            List of SelfQueryResult with content, metadata, ACTUAL scores, and rewritten_query
         """
         try:
-            # Step 1: Extract filters using SelfQueryRetriever's query constructor
-            filters = self._extract_filters(query)
+            # Step 1: Extract rewritten query and filters using query constructor
+            extracted = self._extract_query_and_filters(query)
             
-            # Step 2: Search with filters and get actual similarity scores
+            # Step 2: Determine search query (rewritten or original)
+            if self.verbose:
+                if extracted.rewritten_query:
+                    pass
+                if extracted.filters:
+                    pass
+            search_query = extracted.rewritten_query if extracted.rewritten_query else query
             
-            # Step 2: Search with filters and get actual similarity scores
-            if filters:
+            # Step 3: Search with filters and get actual similarity scores
+            if extracted.filters:
                 # Use filtered search with scores
                 docs_with_scores = self.vectorstore.similarity_search_with_score(
-                    query, 
+                    search_query, 
                     k=k,
-                    filter=filters,
+                    filter=extracted.filters,
                 )
             else:
                 # No filters extracted, just similarity search
                 docs_with_scores = self.vectorstore.similarity_search_with_score(
-                    query, 
+                    search_query, 
                     k=k,
                 )
-            
-            # Convert to SelfQueryResult with actual scores
-            
+            if self.verbose:
+                pass
             # Convert to SelfQueryResult with actual scores
             return [
                 SelfQueryResult(
                     content=doc.page_content,
                     metadata=doc.metadata,
                     score=max(0.0, min(1.0, 1.0 - float(score))),  # Convert distance to similarity (clamped)
+                    rewritten_query=extracted.rewritten_query
                 )
                 for doc, score in docs_with_scores
             ]
@@ -287,6 +307,7 @@ def create_self_query_retriever(
 __all__ = [
     "SelfQueryRetrieverWrapper",
     "SelfQueryResult",
+    "ExtractedQuery",
     "create_self_query_retriever",
     "METADATA_FIELD_INFO",
 ]
