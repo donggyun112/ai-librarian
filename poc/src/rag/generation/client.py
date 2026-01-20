@@ -11,6 +11,7 @@ from typing import Optional, Protocol
 from loguru import logger
 
 from .dto import LLMResponse
+from src.adapters import get_adapter
 
 
 class LLMClientProtocol(Protocol):
@@ -50,7 +51,6 @@ class GeminiLLMClient:
             api_key: Obsolete (handled by adapter/config). Kept for compatibility.
         """
         # Get Gemini adapter from centralized registry
-        from src.adapters import get_adapter
         self.adapter = get_adapter("gemini")
         self._model_name = model
 

@@ -22,6 +22,7 @@ from loguru import logger
 from src.rag.domain import Concept, Document, Fragment
 from src.rag.embedding import EmbeddingProviderFactory, EmbeddingValidator
 from src.rag.ingestion import (
+    BaseSegmentParser,
     GeminiVisionOcr,
     MarkdownParser,
     OcrParser,
@@ -210,7 +211,7 @@ class IngestUseCase:
             embeddings_generated=total_embeddings,
         )
 
-    def _create_pdf_parser(self):
+    def _create_pdf_parser(self) -> BaseSegmentParser:
         """Create PDF parser based on config.pdf_parser setting.
 
         Supports:
