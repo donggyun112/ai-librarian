@@ -19,6 +19,7 @@ from src.rag.api.use_cases import SearchUseCase
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config as load_rag_config
 from src.rag.shared.exceptions import DatabaseNotConfiguredError
+from src.rag.api.validators import ValidationError
 from config import config
 from .schemas import (
     MessageRequest,
@@ -574,6 +575,13 @@ async def rag_search(request: SearchRequest) -> SearchResultResponse:
         ]
 
         return SearchResultResponse(query=request.query, results=items)
+    except ValidationError as exc:
+        # User input validation error - 422
+        logger.warning(f"Invalid search request: {exc}")
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        )
     except DatabaseNotConfiguredError as e:
         # DB not configured - service unavailable
         logger.error(f"Search service unavailable: {e}")
