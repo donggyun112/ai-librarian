@@ -62,6 +62,7 @@ requires-dist = [
     { name = "langchain-community", specifier = ">=0.4.1" },
     { name = "langchain-core", specifier = ">=0.3.0" },
     { name = "langchain-google-genai", specifier = ">=2.0.0" },
+    { name = "langchain-openai", specifier = ">=0.2.0" },
     { name = "langchain-openai", specifier = ">=0.3.0" },
     { name = "langchain-postgres", specifier = ">=0.0.12" },
     { name = "langchain-text-splitters", specifier = ">=0.3.0" },
