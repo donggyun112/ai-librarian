@@ -80,9 +80,10 @@ def run_repl(args: argparse.Namespace) -> int:
     config = load_config()
     gen_config = load_generation_config()
     embeddings_client = EmbeddingProviderFactory.create(config)
+    verbose = args.verbose
 
     # Initialize use cases
-    search_use_case = SearchUseCase(embeddings_client, config)
+    search_use_case = SearchUseCase(embeddings_client, config, verbose=verbose)
     rag_use_case: Optional[RAGUseCase] = None
 
     # Settings
@@ -100,7 +101,7 @@ def run_repl(args: argparse.Namespace) -> int:
     # Initialize RAG use case if starting in RAG mode
     if rag_mode:
         try:
-            rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
+            rag_use_case = RAGUseCase(embeddings_client, config, gen_config,verbose=verbose)
             logger.info("OCR Vector DB RAG REPL (LLM-powered)")
         except Exception as e:
             logger.warning(f"Failed to initialize RAG: {e}")
@@ -189,7 +190,7 @@ def run_repl(args: argparse.Namespace) -> int:
             new_rag_mode = parse_toggle(cmd[1])
             if new_rag_mode and not rag_use_case:
                 try:
-                    rag_use_case = RAGUseCase(embeddings_client, config, gen_config)
+                    rag_use_case = RAGUseCase(embeddings_client, config, gen_config,verbose=verbose)
                 except Exception as e:
                     logger.error(f"Failed to initialize RAG: {e}")
                     continue
@@ -304,6 +305,11 @@ def create_parser() -> argparse.ArgumentParser:
         "--json",
         action="store_true",
         help="Output JSON by default",
+    )
+    parser.add_argument(
+        "-v",
+        action="store_true",
+        help="Enable verbose logging (shows rewritten queries, filters)",
     )
     return parser
 

@@ -9,7 +9,7 @@ Rules:
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.rag.domain import View
 
@@ -94,6 +94,7 @@ class SelfQueryResult:
     content: str
     metadata: dict
     score: Optional[float] = None
+    rewritten_query: Optional[str] = None
 
 
 __all__ = [
@@ -103,3 +104,9 @@ __all__ = [
     "SelfQueryResult",
     "MAX_TOP_K",
 ]
+
+@dataclass
+class ExtractedQuery:
+    rewritten_query: Optional[str]
+    filters: Optional[Dict[str, Any]]
+    
