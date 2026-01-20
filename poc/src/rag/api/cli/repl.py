@@ -13,6 +13,7 @@ from loguru import logger
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config, load_generation_config
+from src.rag.shared.exceptions import DatabaseNotConfiguredError
 
 from ..formatters import ResponseFormatter
 from ..use_cases import RAGUseCase, SearchUseCase
@@ -252,13 +253,21 @@ def run_repl(args: argparse.Namespace) -> int:
                 logger.error(f"RAG failed: {e}")
         else:
             # Search mode: show results
-            results = search_use_case.execute(
-                query=query,
-                view=view,
-                language=language,
-                top_k=top_k,
-                expand_context=show_context,
-            )
+            try:
+                results = search_use_case.execute(
+                    query=query,
+                    view=view,
+                    language=language,
+                    top_k=top_k,
+                    expand_context=show_context,
+                )
+            except DatabaseNotConfiguredError as exc:
+                logger.error(f"Search unavailable: {exc}")
+                continue
+            except Exception as exc:
+                logger.error(f"Search failed: {exc}")
+                continue
+
             if as_json:
                 output = ResponseFormatter.format_search_results_json(
                     results,
@@ -307,8 +316,9 @@ def create_parser() -> argparse.ArgumentParser:
         help="Output JSON by default",
     )
     parser.add_argument(
-        "-v",
+        "-v", "--verbose",
         action="store_true",
+        dest="verbose",
         help="Enable verbose logging (shows rewritten queries, filters)",
     )
     return parser
