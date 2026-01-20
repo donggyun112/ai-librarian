@@ -25,6 +25,7 @@ from src.rag.ingestion import (
     GeminiVisionOcr,
     MarkdownParser,
     OcrParser,
+    PdfParser,
     PyMuPdfParser,
     RawSegment,
     SemanticUnitGrouper,
@@ -77,6 +78,7 @@ class IngestUseCase:
         self.md_parser = MarkdownParser(self.preprocessor)
         self.ocr_parser = OcrParser(self.preprocessor)
         self.pdf_parser = self._create_pdf_parser()
+
         self.doc_repo = DocumentRepository(config)
         self.concept_repo = ConceptRepository(config)
         self.fragment_repo = FragmentRepository(config)
@@ -90,7 +92,6 @@ class IngestUseCase:
             fragment_repo=self.fragment_repo,
             embedding_repo=self.embedding_repo,
         )
-
 
         # Embedding generation and storage
         self.embeddings_client = EmbeddingProviderFactory.create(config)
@@ -209,12 +210,27 @@ class IngestUseCase:
             embeddings_generated=total_embeddings,
         )
 
-    def _create_pdf_parser(self) -> PyMuPdfParser:
-        """Create PDF parser (PyMuPDF with optional Gemini Vision OCR).
+    def _create_pdf_parser(self):
+        """Create PDF parser based on config.pdf_parser setting.
+
+        Supports:
+        - "pymupdf": PyMuPDF with optional Gemini Vision OCR (default)
+        - "pdfminer": Legacy pdfminer.six parser (no OCR support)
 
         Returns:
-            PyMuPdfParser instance
+            BaseSegmentParser instance (PyMuPdfParser or PdfParser)
         """
+        # Use legacy pdfminer parser if configured
+        if self.config.pdf_parser == "pdfminer":
+            logger.info("PDF parser: pdfminer (legacy, no OCR support)")
+            return PdfParser(
+                self.preprocessor,
+                enable_auto_ocr=self.config.enable_auto_ocr,
+                force_ocr=self.config.force_ocr,
+                ocr_languages=self.config.ocr_languages,
+            )
+
+        # Default: PyMuPDF with Gemini Vision OCR
         ocr = None
         if self.config.enable_image_ocr:
             try:
@@ -225,6 +241,7 @@ class IngestUseCase:
 
         # use_cache is enabled by default, disabled when force_ocr is set via CLI
         use_cache = not getattr(self, 'disable_cache', False)
+        logger.info("PDF parser: pymupdf")
         return PyMuPdfParser(
             self.preprocessor,
             ocr=ocr,

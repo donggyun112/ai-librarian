@@ -79,7 +79,7 @@ def main(args: argparse.Namespace) -> int:
         if disable_cache:
             logger.info("[cache] Cache disabled (--force-ocr)")
             config.force_ocr = True  # Enable force OCR mode in config
-        
+
         use_case = IngestUseCase(config, disable_cache=disable_cache)
         
         result = use_case.execute(file_paths)
