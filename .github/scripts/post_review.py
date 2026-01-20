@@ -28,6 +28,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -333,9 +334,89 @@ def generate_inline_summary(comments: list[InlineComment]) -> str:
     return f"**Inline Review:** {', '.join(parts)}"
 
 
+def get_pr_diff_lines(repo: str, pr_number: int) -> dict[str, set[int]]:
+    """PR diff에서 변경된 라인 번호 추출
+
+    Returns:
+        dict mapping file path to set of valid line numbers for comments
+    """
+    try:
+        diff_output = run_gh([
+            "api", f"repos/{repo}/pulls/{pr_number}",
+            "-H", "Accept: application/vnd.github.v3.diff"
+        ])
+    except RuntimeError:
+        return {}
+
+    valid_lines: dict[str, set[int]] = {}
+    current_file = None
+    current_line = 0
+
+    for line in diff_output.split('\n'):
+        # Parse file header: +++ b/path/to/file
+        if line.startswith('+++ b/'):
+            current_file = line[6:]
+            valid_lines[current_file] = set()
+        # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+        elif line.startswith('@@') and current_file:
+            # Extract new_start from @@ -x,y +new_start,count @@
+            match = re.search(r'\+(\d+)', line)
+            if match:
+                current_line = int(match.group(1))
+        # Count lines in the new file (+ or space, not -)
+        elif current_file and not line.startswith('-'):
+            if line.startswith('+') or (line and not line.startswith('\\')):
+                valid_lines[current_file].add(current_line)
+                current_line += 1
+            elif line == '':
+                # Empty line in diff
+                pass
+
+    return valid_lines
+
+
+def filter_comments_by_diff(
+    comments: list[InlineComment],
+    valid_lines: dict[str, set[int]]
+) -> tuple[list[InlineComment], list[InlineComment]]:
+    """diff 범위 내의 코멘트만 필터링
+
+    Returns:
+        (valid_comments, invalid_comments)
+    """
+    valid = []
+    invalid = []
+
+    for c in comments:
+        file_lines = valid_lines.get(c.path, set())
+        if c.line in file_lines:
+            valid.append(c)
+        else:
+            invalid.append(c)
+
+    return valid, invalid
+
+
 def post_inline_comments(repo: str, pr_number: int, commit_sha: str, comments: list[InlineComment]) -> None:
     """인라인 코멘트 게시"""
     if not comments:
+        return
+
+    # PR diff 범위 확인
+    valid_lines = get_pr_diff_lines(repo, pr_number)
+
+    if valid_lines:
+        valid_comments, invalid_comments = filter_comments_by_diff(comments, valid_lines)
+
+        if invalid_comments:
+            print(f"Skipping {len(invalid_comments)} comments outside diff range:", file=sys.stderr)
+            for c in invalid_comments:
+                print(f"  - {c.path}:{c.line} (not in diff)", file=sys.stderr)
+
+        comments = valid_comments
+
+    if not comments:
+        print("No valid inline comments to post (all outside diff range)")
         return
 
     comments_payload = []
@@ -373,6 +454,9 @@ def post_inline_comments(repo: str, pr_number: int, commit_sha: str, comments: l
 
     if result.returncode != 0:
         print(f"Error posting inline comments: {result.stderr}", file=sys.stderr)
+        print(f"Failed comments:", file=sys.stderr)
+        for c in comments:
+            print(f"  - {c.path}:{c.line}", file=sys.stderr)
         raise RuntimeError(f"Failed to post inline comments: {result.stderr}")
 
     print(f"Posted {len(comments)} inline comments")
