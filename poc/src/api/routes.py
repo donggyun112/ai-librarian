@@ -436,29 +436,23 @@ async def delete_session(
     return {"message": "Session deleted", "session_id": session_id}
 
 
-# TODO: 이 엔드포인트는 현재 브랜치(feature/rag-pdf_embedding)와 관련 없음.
-# get_current_user 의존성 누락으로 인한 보안 이슈는 세션 관련 브랜치에서 수정 예정.
-# See: /sessions/{session_id}/messages skips get_current_user - allows anyone to clear session by guessing IDs.
 @router.delete("/sessions/{session_id}/messages")
-async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[str, str]:
+async def clear_session(
+    session_id: str,
+    user_id: Optional[str] = Depends(get_current_user)
+) -> Dict[str, str]:
     """세션 메시지 초기화
 
     Args:
         session_id: 세션 ID
-        user_id: 사용자 ID (Supabase 사용 시 필수)
 
-    Note:
-        이 엔드포인트는 현재 get_current_user 의존성이 누락되어 있음.
-        세션 관련 브랜치에서 수정 예정.
+    Headers:
+        Authorization: Bearer <token> (Supabase 사용 시 필수)
     """
-    # SupabaseChatMemory인 경우 user_id 필수 및 소유권 검증
+    require_user_id(user_id)
+
+    # SupabaseChatMemory인 경우 소유권 검증
     if isinstance(memory, SupabaseChatMemory):
-        if not user_id:
-            raise HTTPException(
-                status_code=400,
-                detail="user_id is required when using Supabase backend"
-            )
-        # 소유권 검증
         user_sessions = await memory.list_sessions_async(user_id=user_id)
         if session_id not in user_sessions:
             raise HTTPException(status_code=404, detail="Session not found or access denied")
