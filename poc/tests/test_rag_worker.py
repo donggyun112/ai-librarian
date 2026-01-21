@@ -219,19 +219,79 @@ class TestRagWorkerExecute:
     async def test_execute_db_not_configured_returns_clear_message(self):
         """Worker should return clear message when DB is not configured."""
         from src.rag.shared.exceptions import DatabaseNotConfiguredError
-        
+
         mock_use_case = MagicMock()
         mock_use_case.execute = MagicMock(
             side_effect=DatabaseNotConfiguredError("Database not configured")
         )
-        
+
         with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
             result = await self.worker.execute("test query")
-        
+
         # Should return clear error message, not crash
         assert "사용 불가" in result.content
         assert "데이터베이스" in result.content
         assert result.confidence == 0.0
+        # Verify success/error flags
+        assert result.success is False
+        assert result.error is not None
+        assert "DatabaseNotConfiguredError" in result.error
+
+    @pytest.mark.asyncio
+    async def test_execute_general_exception_returns_failure(self):
+        """Worker should return success=False on general exception."""
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(
+            side_effect=Exception("Unexpected error")
+        )
+
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
+            result = await self.worker.execute("test query")
+
+        assert "오류가 발생했습니다" in result.content
+        assert result.confidence == 0.0
+        assert result.success is False
+        assert result.error is not None
+        assert "Unexpected error" in result.error
+
+    @pytest.mark.asyncio
+    async def test_execute_success_returns_true(self):
+        """Worker should return success=True on successful execution."""
+        expanded_result = ExpandedResult(
+            result=SearchResult(
+                fragment_id="f1",
+                parent_id="p1",
+                view=View.TEXT,
+                content="test content",
+                similarity=0.88,
+                metadata={"source": "test.pdf"},
+                language=None
+            ),
+            parent_content=None
+        )
+
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(return_value=[expanded_result])
+
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
+            result = await self.worker.execute("test query")
+
+        assert result.success is True
+        assert result.error is None
+        assert result.confidence == 0.88
+
+    @pytest.mark.asyncio
+    async def test_execute_no_results_returns_success_true(self):
+        """No results should still be success=True (not an error)."""
+        mock_use_case = MagicMock()
+        mock_use_case.execute = MagicMock(return_value=[])
+
+        with patch.object(self.worker, "_get_use_case", return_value=mock_use_case):
+            result = await self.worker.execute("no match query")
+
+        assert result.content == "No results found."
+        assert result.success is True
+        assert result.error is None
 
 
 class TestVectorSearchEngineDbNotConfigured:

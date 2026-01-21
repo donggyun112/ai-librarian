@@ -81,7 +81,9 @@ class RagWorker(BaseWorker):
                 query=query,
                 content="RAG 검색 서비스가 사용 불가합니다. 데이터베이스 설정을 확인해주세요.",
                 confidence=0.0,
-                sources=[]
+                sources=[],
+                success=False,
+                error=f"DatabaseNotConfiguredError: {e}"
             )
         except Exception as e:
             logger.exception(f"RAG search failed: {e}")
@@ -89,7 +91,9 @@ class RagWorker(BaseWorker):
                 query=query,
                 content="RAG 검색 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
                 confidence=0.0,
-                sources=[]
+                sources=[],
+                success=False,
+                error=f"RAG search failed: {e}"
             )
 
     def _format_context(self, results: List[ExpandedResult]) -> str:
@@ -133,13 +137,23 @@ class RagWorker(BaseWorker):
         separator = "\n" + "=" * 40 + "\n"
         return separator + separator.join(context_parts)
 
-    def _create_result(self, query: str, content: str, confidence: float, sources: List[str]) -> WorkerResult:
+    def _create_result(
+        self,
+        query: str,
+        content: str,
+        confidence: float,
+        sources: List[str],
+        success: bool = True,
+        error: Optional[str] = None
+    ) -> WorkerResult:
         return WorkerResult(
             worker=self.worker_type,
             query=query,
             content=content,
             confidence=confidence,
-            sources=sources
+            sources=sources,
+            success=success,
+            error=error
         )
 
 
