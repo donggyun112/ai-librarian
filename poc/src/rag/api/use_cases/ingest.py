@@ -140,11 +140,6 @@ class IngestUseCase:
             # This ensures idempotent updates: same file -> same Document ID
             doc_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()
 
-            # 2a. Delete existing document data before re-ingest (CASCADE-001)
-            # This prevents stale embeddings from accumulating
-            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
-            self.cascade_deleter.delete_document(doc_id)
-
             document = Document(
                 id=doc_id,
                 source_path=file_path,
@@ -160,7 +155,12 @@ class IngestUseCase:
             concepts = self.concept_builder.build(unitized, document, os.path.basename(file_path))
             logger.info(f"Built {len(concepts)} concepts")
 
-            # 5. Save Concepts, Fragments, and Embeddings
+            # 5. Delete existing document data before re-ingest (CASCADE-001)
+            # This prevents stale embeddings from accumulating
+            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
+            self.cascade_deleter.delete_document(doc_id)
+
+            # 6. Save Concepts, Fragments, and Embeddings
             for concept in concepts:
                 self.concept_repo.save(concept)
                 total_concepts += 1
