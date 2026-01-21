@@ -91,8 +91,8 @@ class RequestValidator:
         """
         if top_k < 1:
             raise ValidationError(f"top_k must be at least 1, got {top_k}")
-        if top_k > 1000:
-            raise ValidationError(f"top_k must be at most 1000, got {top_k}")
+        if top_k > 100:
+            raise ValidationError(f"top_k must be at most 100, got {top_k}")
 
     @staticmethod
     def validate_query(query: str) -> None:
