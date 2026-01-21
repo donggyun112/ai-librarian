@@ -114,7 +114,12 @@ class SelfQueryRetrieverWrapper:
                 filters = self._convert_filter_to_dict(structured_query.filter)
 
             if self.verbose and (rewritten_query or filters):
-                logger.info(f"SelfQuery extracted - rewritten: {rewritten_query}, filters: {filters}")
+                rewrite_len = len(rewritten_query) if rewritten_query else 0
+                logger.debug(
+                    "[self_query] extracted filters=%s rewrite_len=%s",
+                    filters,
+                    rewrite_len,
+                )
 
             return ExtractedQuery(rewritten_query=rewritten_query, filters=filters)
 
