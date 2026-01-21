@@ -557,7 +557,7 @@ def main() -> None:
     parser.add_argument("--repo", required=True, help="Repository (owner/repo)")
     parser.add_argument("--pr", type=int, required=True, help="PR number")
     parser.add_argument("--input", "-i", help="Input JSON file (default: stdin)")
-    # parser.add_argument("--dry-run", action="store_true", help="Print actions without executing")
+    parser.add_argument("--dry-run", action="store_true", help="Print actions without executing")
 
     args = parser.parse_args()
 
@@ -570,16 +570,16 @@ def main() -> None:
 
     payload = parse_review_payload(data)
 
-    # if args.dry_run:
-    #     print("=== DRY RUN ===")
-    #     print(f"Repo: {args.repo}")
-    #     print(f"PR: {args.pr}")
-    #     print(f"Decision: {payload.decision}")
-    #     print(f"Summary length: {len(payload.summary)} chars")
-    #     print(f"Inline comments: {len(payload.inline_comments)}")
-    #     for c in payload.inline_comments:
-    #         print(f"  - {c.path}:{c.line}")
-    #     return
+    if args.dry_run:
+        print("=== DRY RUN ===")
+        print(f"Repo: {args.repo}")
+        print(f"PR: {args.pr}")
+        print(f"Decision: {payload.decision}")
+        print(f"Summary length: {len(payload.summary)} chars")
+        print(f"Inline comments: {len(payload.inline_comments)}")
+        for c in payload.inline_comments:
+            print(f"  - {c.path}:{c.line}")
+        return
 
     # 실행
     commit_sha = get_commit_sha(args.pr)

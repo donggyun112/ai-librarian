@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from dotenv import load_dotenv
+from src.rag.shared.exceptions import ConfigurationError
 
 
 PAGE_REGEX_DEFAULT = "(?mi)^\\s*(?:page|\\uD398\\uC774\\uC9C0)\\s*([0-9]{1,5})\\b"
@@ -99,6 +100,15 @@ def load_config() -> EmbeddingConfig:
     load_dotenv()
 
     embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai").lower()
+    
+    pg_conn = os.getenv("PG_CONN","").strip()
+    if not pg_conn:
+            raise ConfigurationError("PG_CONN env var is required for PGVector search/ingest.")
+    
+    collection_name = os.getenv("COLLECTION_NAME","").strip()
+    if not collection_name:
+        raise ConfigurationError("COLLECTION_NAME env var is required for PGVector search/ingest.")
+    
     embedding_dim = _parse_int(os.getenv("EMBEDDING_DIM"), 1536)
     if os.getenv("EMBEDDING_DIM") in (None, "") and embedding_provider == "gemini":
         embedding_dim = 768
@@ -108,8 +118,8 @@ def load_config() -> EmbeddingConfig:
         pg_pool_max_size = pg_pool_min_size
 
     config = EmbeddingConfig(
-        pg_conn=os.getenv("PG_CONN", ""),
-        collection_name=os.getenv("COLLECTION_NAME", ""),
+        pg_conn=pg_conn,
+        collection_name=collection_name,
         embedding_model=_get_embedding_model_for_provider(embedding_provider),
         embedding_dim=embedding_dim,
         embedding_provider=embedding_provider,
