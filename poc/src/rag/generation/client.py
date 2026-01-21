@@ -4,8 +4,6 @@ Provides unified interface for LLM providers, starting with Gemini.
 Uses the same google-generativeai library as embedding/provider.py.
 """
 
-import os
-import time
 from typing import Optional, Protocol
 
 from loguru import logger

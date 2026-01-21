@@ -458,7 +458,9 @@ async def clear_session(
             raise HTTPException(status_code=404, detail="Session not found or access denied")
         await memory.clear_async(session_id, user_id=user_id)
     else:
-        # InMemoryChatMemory는 user_id 무시
+        # InMemoryChatMemory는 user_id 무시하지만 존재 여부는 검증
+        if session_id not in memory.list_sessions():
+            raise HTTPException(status_code=404, detail="Session not found")
         memory.clear(session_id)
 
     return {"message": "Session cleared", "session_id": session_id}
