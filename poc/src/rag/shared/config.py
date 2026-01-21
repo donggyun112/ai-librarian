@@ -49,7 +49,8 @@ class EmbeddingConfig:
 class GenerationConfig:
     """Configuration for generation pipeline (RAG)."""
 
-    llm_model: str  # Gemini model for generation
+    llm_provider: str  # LLM provider: "openai" | "gemini"
+    llm_model: str  # LLM model name (e.g., "gpt-4o", "gemini-2.0-flash")
     temperature: float  # Generation temperature (0-1)
     max_tokens: int  # Maximum output tokens
     enable_conversation: bool  # Enable multi-turn conversation
@@ -153,8 +154,19 @@ def load_generation_config() -> GenerationConfig:
     """Load generation configuration from environment variables."""
     load_dotenv()
 
+    llm_provider = os.getenv("LLM_PROVIDER", "gemini").lower()
+    
+    # Get model based on provider
+    if llm_provider == "openai":
+        default_model = "gpt-4o"
+    else:
+        default_model = "gemini-2.0-flash"
+    
+    llm_model = os.getenv("LLM_MODEL", default_model)
+
     return GenerationConfig(
-        llm_model=os.getenv("GEMINI_LLM_MODEL", "gemini-2.0-flash"),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.7")),
         max_tokens=_parse_int(os.getenv("LLM_MAX_TOKENS"), 2048),
         enable_conversation=_parse_bool(

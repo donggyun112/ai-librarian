@@ -17,7 +17,7 @@ from src.rag.generation import (
     Conversation,
     GeneratedResponse,
     GenerationPipeline,
-    GeminiLLMClient,
+    AdapterLLMClient,
 )
 from src.rag.retrieval import RetrievalPipeline
 from src.rag.shared.config import EmbeddingConfig, GenerationConfig
@@ -73,8 +73,11 @@ class RAGUseCase:
             verbose=verbose,
         )
 
-        # LLM client for generation
-        self.llm_client = GeminiLLMClient(model=gen_config.llm_model)
+        # LLM client for generation (uses configured provider)
+        self.llm_client = AdapterLLMClient(
+            provider=gen_config.llm_provider,
+            model=gen_config.llm_model,
+        )
 
         # Generation pipeline
         self.generation = GenerationPipeline(

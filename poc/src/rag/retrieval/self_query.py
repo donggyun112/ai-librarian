@@ -7,6 +7,7 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_classic.chains.query_constructor.base import AttributeInfo
@@ -293,11 +294,20 @@ def create_self_query_retriever(
     # Create LLM using adapter pattern
     if llm is None:
         if adapter is None:
-            # Default to Gemini adapter
-            adapter = get_adapter("gemini")
+            # Use explicit LLM_PROVIDER config (default: gemini)
+            llm_provider = os.environ.get("LLM_PROVIDER", "gemini").lower()
+            adapter = get_adapter(llm_provider)
+            
+            if llm_provider == "openai":
+                model = os.environ.get("LLM_MODEL", "gpt-4o")
+            else:
+                model = os.environ.get("LLM_MODEL", "gemini-2.0-flash")
+        else:
+            # Adapter provided, use Gemini model as default
+            model = "gemini-2.0-flash"
 
         llm = adapter.create_llm(
-            model="gemini-2.0-flash",
+            model=model,
             temperature=0.0,  # Deterministic for query parsing
             max_tokens=2048,
         )

@@ -26,30 +26,37 @@ class LLMClientProtocol(Protocol):
         ...
 
 
-class GeminiLLMClient:
-    """Gemini LLM client using google-generativeai.
+class AdapterLLMClient:
+    """LLM client that uses configured provider (OpenAI or Gemini).
 
-    Uses the same library pattern as GeminiEmbeddings (embedding/provider.py).
+    Uses the centralized adapter registry based on explicit provider configuration.
 
     Example:
-        >>> client = GeminiLLMClient()
+        >>> client = AdapterLLMClient(provider="gemini", model="gemini-2.0-flash")
         >>> response = client.generate("Explain Python decorators")
         >>> print(response.content)
     """
 
     def __init__(
         self,
-        model: str = "gemini-2.0-flash",
-        api_key: Optional[str] = None,
+        provider: str = "gemini",
+        model: Optional[str] = None,
     ) -> None:
-        """Initialize Gemini LLM client.
+        """Initialize LLM client with specified provider.
 
         Args:
-            model: Gemini model to use (default: gemini-2.0-flash)
-            api_key: Obsolete (handled by adapter/config). Kept for compatibility.
+            provider: LLM provider ("openai" | "gemini")
+            model: Model name (if None, uses default for provider)
         """
-        # Get Gemini adapter from centralized registry
-        self.adapter = get_adapter("gemini")
+        self.adapter = get_adapter(provider)
+        
+        # Set default model based on provider
+        if model is None:
+            if provider == "openai":
+                model = "gpt-4o"
+            else:
+                model = "gemini-2.0-flash"
+        
         self._model_name = model
 
     def generate(
@@ -59,7 +66,7 @@ class GeminiLLMClient:
         temperature: float = 0.7,
         max_tokens: int = 2048,
     ) -> LLMResponse:
-        """Generate response using Gemini Adapter.
+        """Generate response using auto-detected provider.
 
         Args:
             prompt: User prompt
@@ -71,29 +78,24 @@ class GeminiLLMClient:
             LLMResponse with generated content
         """
         try:
-            # Create LLM instance via adapter
             llm = self.adapter.create_llm(
                 model=self._model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
 
-            # Build messages
-
             messages = []
             if system_prompt:
                 messages.append(SystemMessage(content=system_prompt))
             messages.append(HumanMessage(content=prompt))
 
-            # Invoke LLM
             response = llm.invoke(messages)
 
-            # Parse usage if available (LangChain standard metadata)
             usage = None
             if hasattr(response, "response_metadata"):
                 token_usage = response.response_metadata.get("token_usage", {})
                 if token_usage:
-                     usage = {
+                    usage = {
                         "prompt_tokens": token_usage.get("prompt_tokens", 0),
                         "completion_tokens": token_usage.get("candidates_tokens", 0) or token_usage.get("completion_tokens", 0),
                         "total_tokens": token_usage.get("total_tokens", 0),
@@ -106,17 +108,11 @@ class GeminiLLMClient:
             )
 
         except Exception as e:
-            logger.exception(f"LLM generation failed via adapter: {e}")
+            logger.exception(f"LLM generation failed: {e}")
             return LLMResponse(
                 content="응답을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
                 model=self._model_name,
             )
-
-    def _should_retry(self, error: Exception) -> bool:
-        # Retry logic is now handled by Adapter/LangChain built-ins if configured,
-        # but for this client wrapper we rely on simple exception handling.
-        # LangChain's ChatGoogleGenerativeAI has internal retries by default.
-        return False
 
     @property
     def model_name(self) -> str:
@@ -124,4 +120,4 @@ class GeminiLLMClient:
         return self._model_name
 
 
-__all__ = ["LLMClientProtocol", "GeminiLLMClient", "LLMResponse"]
+__all__ = ["LLMClientProtocol", "AdapterLLMClient", "LLMResponse"]

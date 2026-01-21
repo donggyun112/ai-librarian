@@ -253,20 +253,22 @@ class TestChatEndpoints:
             yield mock_sup
 
     def test_chat_requires_user_id_with_supabase(self, client, mock_supervisor):
-        """POST /chat without user_id returns 400 with Supabase backend"""
+        """POST /sessions/{id}/messages without auth returns 401 with Supabase backend"""
         with patch('src.api.routes.memory') as mock_memory:
             mock_memory.__class__ = SupabaseChatMemory
 
-            response = client.post("/chat", json={"message": "hello"})
+            response = client.post("/sessions/session-1/messages", json={"message": "hello"})
 
-            assert response.status_code == 400
+            assert response.status_code == 401
             data = response.json()
-            assert "user_id" in data["detail"].lower()
+            assert "Authorization header required" in data["detail"]
 
     def test_chat_works_with_user_id_and_supabase(self, client, mock_supervisor):
-        """POST /chat with user_id succeeds with Supabase backend"""
+        """POST /sessions/{id}/messages with auth succeeds with Supabase backend"""
         with patch('src.api.routes.memory') as mock_memory:
             mock_memory.__class__ = SupabaseChatMemory
+            # Session existence check mock
+            mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
 
             # Mock supervisor response
             from src.schemas.models import SupervisorResponse
@@ -277,15 +279,16 @@ class TestChatEndpoints:
                 total_confidence=1.0
             ))
 
-            response = client.post("/chat", json={
-                "message": "hello",
-                "user_id": "user-1"
-            })
+            response = client.post(
+                "/sessions/session-1/messages",
+                headers={"Authorization": "Bearer user-1"},
+                json={"message": "hello"}
+            )
 
             assert response.status_code == 200
             data = response.json()
             assert data["answer"] == "Test response"
-            assert "session_id" in data
+            assert data["session_id"] == "session-1"
 
             # Verify supervisor was called with user_id
             mock_supervisor.process.assert_called_once()
@@ -293,9 +296,11 @@ class TestChatEndpoints:
             assert call_kwargs["user_id"] == "user-1"
 
     def test_chat_works_without_user_id_for_inmemory(self, client, mock_supervisor):
-        """POST /chat without user_id succeeds with InMemory backend"""
+        """POST /sessions/{id}/messages without auth succeeds with InMemory backend"""
         with patch('src.api.routes.memory') as mock_memory:
             mock_memory.__class__ = InMemoryChatMemory
+            # Session existence check mock (InMemory uses synchronous list_sessions)
+            mock_memory.list_sessions = MagicMock(return_value=["session-1"])
 
             # Mock supervisor response
             from src.schemas.models import SupervisorResponse
@@ -306,28 +311,30 @@ class TestChatEndpoints:
                 total_confidence=1.0
             ))
 
-            response = client.post("/chat", json={"message": "hello"})
+            response = client.post("/sessions/session-1/messages", json={"message": "hello"})
 
             assert response.status_code == 200
             data = response.json()
             assert data["answer"] == "Test response"
 
     def test_chat_handles_supervisor_value_error(self, client, mock_supervisor):
-        """POST /chat returns 400 when Supervisor raises ValueError"""
+        """POST /sessions/{id}/messages returns 400 when Supervisor raises ValueError"""
         with patch('src.api.routes.memory') as mock_memory:
             mock_memory.__class__ = SupabaseChatMemory
+            mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
 
             # Mock supervisor to raise ValueError
-            mock_supervisor.process = AsyncMock(side_effect=ValueError("user_id is required"))
+            mock_supervisor.process = AsyncMock(side_effect=ValueError("Invalid input"))
 
-            response = client.post("/chat", json={
-                "message": "hello",
-                "user_id": "user-1"
-            })
+            response = client.post(
+                "/sessions/session-1/messages",
+                headers={"Authorization": "Bearer user-1"},
+                json={"message": "hello"}
+            )
 
             assert response.status_code == 400
             data = response.json()
-            assert "user_id is required" in data["detail"]
+            assert "Invalid input" in data["detail"]
 
 
 class TestRagIngestSecurity:
