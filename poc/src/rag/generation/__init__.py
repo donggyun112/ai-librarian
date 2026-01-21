@@ -17,7 +17,7 @@ Rules:
 - DEP-GEN-BAN-003: MUST NOT import ingestion
 """
 
-from .client import GeminiLLMClient, LLMClientProtocol
+from .client import AdapterLLMClient, LLMClientProtocol
 from .dto import (
     Conversation,
     ConversationTurn,
@@ -37,7 +37,7 @@ __all__ = [
     "Conversation",
     "PromptContext",
     # Client
-    "GeminiLLMClient",
+    "AdapterLLMClient",
     "LLMClientProtocol",
     # Prompts
     "PromptTemplate",
