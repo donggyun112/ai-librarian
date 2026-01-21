@@ -113,8 +113,7 @@ class RetrievalPipeline:
                 
                 if self_query_results:
                     rewritten = self_query_results[0].rewritten_query if self_query_results else None
-                    if rewritten and rewritten != query:
-                        logger.debug(f"[self_query] Query rewritten: '{query}' -> '{rewritten}'")
+                    
                     # Convert SelfQueryResult to SearchResult format
                     search_results = self._convert_self_query_results(self_query_results)
                     

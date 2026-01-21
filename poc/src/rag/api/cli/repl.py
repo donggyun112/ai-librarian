@@ -13,7 +13,7 @@ from loguru import logger
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config, load_generation_config
-from src.rag.shared.exceptions import DatabaseNotConfiguredError
+from src.rag.shared.exceptions import ConfigurationError, DatabaseNotConfiguredError
 
 from ..formatters import ResponseFormatter
 from ..use_cases import RAGUseCase, SearchUseCase
@@ -78,9 +78,15 @@ def show_settings(
 
 
 def run_repl(args: argparse.Namespace) -> int:
-    config = load_config()
-    gen_config = load_generation_config()
-    embeddings_client = EmbeddingProviderFactory.create(config)
+    try:
+        config = load_config()
+        gen_config = load_generation_config()
+        embeddings_client = EmbeddingProviderFactory.create(config)
+    except ConfigurationError as e:
+        logger.error(f"Configuration error: {e}")
+        logger.error("Please set PG_CONN and COLLECTION_NAME environment variables.")
+        return 1
+
     verbose = args.verbose
 
     # Initialize use cases
