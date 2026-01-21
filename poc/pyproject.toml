@@ -16,6 +16,7 @@ dependencies = [
     "ddgs>=5.0.0",
     # Data
     "pydantic>=2.0",
+    "pydantic[email]>=2.0",
     # UI
     "streamlit>=1.40.0",
     # Utils
@@ -24,6 +25,9 @@ dependencies = [
     "uvicorn>=0.40.0",
     "sse-starlette>=3.1.1",
     "loguru>=0.7.3",
+    # Auth
+    "PyJWT>=2.8.0",
+    "bcrypt>=4.0.0",
 ]
 
 [project.optional-dependencies]
