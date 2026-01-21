@@ -124,6 +124,10 @@ class IngestUseCase:
 
         Returns:
             IngestResult with statistics
+
+        Note:
+            Uses "prepare-then-commit" pattern to prevent data loss on mid-operation failures.
+            All parsing/embedding is done first, then old data is deleted and new data saved.
         """
         total_concepts = 0
         total_fragments = 0
@@ -132,56 +136,44 @@ class IngestUseCase:
         for file_path in file_paths:
             logger.info(f"Processing: {file_path}")
 
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 1: PREPARE (all operations that can fail)
+            # ═══════════════════════════════════════════════════════════════
+
             # 1. Parse file based on extension
             segments = self._parse_file(file_path)
             logger.info(f"Parsed {len(segments)} segments")
 
             # 2. Create Document entity with deterministic ID (based on file path)
-            # This ensures idempotent updates: same file -> same Document ID
             doc_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()
-
             document = Document(
                 id=doc_id,
                 source_path=file_path,
                 metadata={"filename": os.path.basename(file_path)},
             )
-            self.doc_repo.save(document)
 
             # 3. Unitize segments (group related content)
             unitized = self.unitizer.unitize(segments)
             logger.info(f"Created {len(unitized)} semantic units")
 
-            # 4. Build Concepts and Fragments
+            # 4. Build Concepts and Fragments (in memory)
             concepts = self.concept_builder.build(unitized, document, os.path.basename(file_path))
             logger.info(f"Built {len(concepts)} concepts")
 
-            # 5. Delete existing document data before re-ingest (CASCADE-001)
-            # This prevents stale embeddings from accumulating
-            logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
-            self.cascade_deleter.delete_document(doc_id)
-
-            # 6. Save Concepts, Fragments, and Embeddings
+            # 5. Prepare all embeddings in memory (most likely to fail: API calls)
+            prepared_data = []  # List of (concept, valid_fragments, lc_docs, embeddings)
             for concept in concepts:
-                self.concept_repo.save(concept)
-                total_concepts += 1
+                valid_fragments = []
+                lc_docs = []
 
-                # Save parent document for context expansion (SEARCH-SEP-003)
-                self._save_parent(concept)
-
-                # Collect fragments to embed in batch
-                docs_to_embed = []
-
-                # Save fragments for this concept
                 for fragment in concept.fragments:
-                    # Validate fragment (FRAG-LEN-001, etc.)
                     if not self.validator.is_eligible(fragment):
                         logger.info(f"Fragment filtered: {fragment.content[:50]}...")
                         continue
 
-                    self.fragment_repo.save(fragment)
-                    total_fragments += 1
+                    valid_fragments.append(fragment)
 
-                    # Convert to LangChain Document with deterministic doc_id
+                    # Prepare LangChain Document
                     frag_doc_id = fragment.compute_doc_id()
                     lc_doc = LCDocument(
                         page_content=fragment.content,
@@ -194,11 +186,38 @@ class IngestUseCase:
                             **(fragment.metadata or {}),
                         }
                     )
-                    docs_to_embed.append(lc_doc)
+                    lc_docs.append(lc_doc)
+
+                prepared_data.append((concept, valid_fragments, lc_docs))
+
+            # ═══════════════════════════════════════════════════════════════
+            # PHASE 2: COMMIT (delete old, save new - fast DB operations only)
+            # ═══════════════════════════════════════════════════════════════
+            # If we reach here, all preparation succeeded. Now safe to delete old data.
+
+            if self.doc_repo.exists(doc_id):
+                logger.info(f"Cleaning up existing data for doc_id: {doc_id[:8]}...")
+                self.cascade_deleter.delete_document(doc_id)
+
+            # Save Document
+            self.doc_repo.save(document)
+
+            # Save Concepts, Fragments, and Embeddings
+            for concept, valid_fragments, lc_docs in prepared_data:
+                self.concept_repo.save(concept)
+                total_concepts += 1
+
+                # Save parent document for context expansion
+                self._save_parent(concept)
+
+                # Save fragments
+                for fragment in valid_fragments:
+                    self.fragment_repo.save(fragment)
+                    total_fragments += 1
 
                 # Batch embed and store to PGVector
-                if docs_to_embed:
-                    embedded = self.vector_writer.upsert_batch(self.vector_store, docs_to_embed)
+                if lc_docs:
+                    embedded = self.vector_writer.upsert_batch(self.vector_store, lc_docs)
                     total_embeddings += embedded
 
         # Ensure indexes after all data is inserted
