@@ -14,6 +14,7 @@ from loguru import logger
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
+from src.rag.shared.exceptions import ConfigurationError
 from src.rag.storage import EmbeddingMetricsService
 from src.rag.storage.metrics import EmbeddingMetrics
 
@@ -172,7 +173,12 @@ Golden query file format (JSONL):
 
 
 def main(args: argparse.Namespace) -> int:
-    config = load_config()
+    try:
+        config = load_config()
+    except ConfigurationError as e:
+        logger.error(f"Configuration error: {e}")
+        logger.error("Please set PG_CONN and COLLECTION_NAME environment variables.")
+        return 1
 
     ran_any = False
     failed = False
