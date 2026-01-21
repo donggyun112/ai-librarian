@@ -14,7 +14,7 @@ from loguru import logger
 
 from src.rag.embedding import EmbeddingProviderFactory
 from src.rag.shared.config import load_config
-from src.rag.shared.exceptions import ConfigurationError
+from src.rag.shared.exceptions import ConfigurationError, DatabaseNotConfiguredError
 from src.rag.storage import EmbeddingMetricsService
 from src.rag.storage.metrics import EmbeddingMetrics
 
@@ -185,17 +185,22 @@ def main(args: argparse.Namespace) -> int:
 
     if args.metrics or not args.golden:
         ran_any = True
-        service = EmbeddingMetricsService(config)
-        metrics = service.summarize(limit=args.limit, min_content_len=args.min_content_len)
-        print_metrics_summary(metrics)
-        if metrics.errors:
-            failed = True
-        if args.sample_short and not metrics.errors:
-            samples = service.sample_short_content(
-                min_content_len=args.min_content_len,
-                limit=args.sample_short,
-            )
-            print_short_samples(samples)
+        try:
+            service = EmbeddingMetricsService(config)
+            metrics = service.summarize(limit=args.limit, min_content_len=args.min_content_len)
+            print_metrics_summary(metrics)
+            if metrics.errors:
+                failed = True
+            if args.sample_short and not metrics.errors:
+                samples = service.sample_short_content(
+                    min_content_len=args.min_content_len,
+                    limit=args.sample_short,
+                )
+                print_short_samples(samples)
+        except DatabaseNotConfiguredError as e:
+            logger.error(f"Database not configured: {e}")
+            logger.error("Please set PG_CONN and COLLECTION_NAME environment variables.")
+            return 1
 
     if args.golden:
         ran_any = True
@@ -205,15 +210,20 @@ def main(args: argparse.Namespace) -> int:
             logger.error(f"failed to load golden file: {exc}")
             return 2
 
-        embeddings_client = EmbeddingProviderFactory.create(config)
-        use_case = SearchUseCase(embeddings_client, config)
-        passed, total, failures = evaluate_queries(queries, use_case)
-        golden_output = ["\nGolden Query Results", "=" * 80, f"Passed: {passed}/{total}"]
-        if failures:
-            failed = True
-            for msg in failures:
-                golden_output.append(f"[fail] {msg}")
-        logger.info("\n".join(golden_output))
+        try:
+            embeddings_client = EmbeddingProviderFactory.create(config)
+            use_case = SearchUseCase(embeddings_client, config)
+            passed, total, failures = evaluate_queries(queries, use_case)
+            golden_output = ["\nGolden Query Results", "=" * 80, f"Passed: {passed}/{total}"]
+            if failures:
+                failed = True
+                for msg in failures:
+                    golden_output.append(f"[fail] {msg}")
+            logger.info("\n".join(golden_output))
+        except DatabaseNotConfiguredError as e:
+            logger.error(f"Database not configured: {e}")
+            logger.error("Please set PG_CONN and COLLECTION_NAME environment variables.")
+            return 1
 
     if not ran_any:
         logger.error("no checks were run")
