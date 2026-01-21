@@ -3,23 +3,16 @@ import json
 import uuid
 
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional, Literal, Dict, List, Union
+from typing import AsyncGenerator, Optional, Dict, List, Union
 
 from langchain_core.messages import BaseMessage
-from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Depends, Header
-from fastapi.concurrency import run_in_threadpool
 
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
 from src.memory import InMemoryChatMemory, SupabaseChatMemory
-from src.rag.api.use_cases import SearchUseCase
-from src.rag.embedding import EmbeddingProviderFactory
-from src.rag.shared.config import load_config as load_rag_config
-from src.rag.shared.exceptions import DatabaseNotConfiguredError
-from src.rag.api.validators import ValidationError
 from config import config
 from .schemas import (
     MessageRequest,
@@ -478,37 +471,8 @@ async def clear_session(session_id: str, user_id: Optional[str] = None) -> Dict[
 
 
 # ─────────────────────────────────────────────────────────────
-# RAG Search Endpoints
+# RAG Endpoints (ingest only - search disabled for chat-only service)
 # ─────────────────────────────────────────────────────────────
-
-# Request/Response schemas for RAG endpoints
-class SearchRequest(BaseModel):
-    """검색 요청"""
-    query: str = Field(..., min_length=1, max_length=1000, description="검색어")
-    view: Optional[Literal["text", "code", "image", "table", "figure", "caption"]] = Field(
-        None, description="뷰 필터 (text, code, image, table, figure, caption)"
-    )
-    language: Optional[str] = Field(None, description="언어 필터 (python, javascript 등)")
-    top_k: int = Field(10, ge=1, le=100, description="결과 개수 (1-100)")
-    expand_context: bool = Field(True, description="Parent context 포함 여부")
-
-
-class SearchResultItem(BaseModel):
-    """검색 결과 항목"""
-    fragment_id: str
-    parent_id: str
-    view: str
-    language: Optional[str]
-    content: str
-    similarity: float
-    parent_content: Optional[str] = None
-
-
-class SearchResultResponse(BaseModel):
-    """검색 결과 응답"""
-    query: str
-    results: List[SearchResultItem]
-
 
 @router.post(
     "/rag/ingest",
@@ -533,68 +497,5 @@ async def rag_ingest() -> None:
         detail="Ingestion via REST API is disabled for security reasons. "
                "Use CLI instead: python -m src.rag.api.cli ingest <files>"
     )
-
-
-@router.post("/rag/search", response_model=SearchResultResponse)
-async def rag_search(request: SearchRequest) -> SearchResultResponse:
-    """벡터 검색
-
-    쿼리와 유사한 문서 Fragment를 검색합니다.
-
-    Args:
-        request: 검색어, 필터, 결과 개수
-
-    Returns:
-        검색 결과 목록
-    """
-    try:
-        rag_config = load_rag_config()
-        embeddings_client = EmbeddingProviderFactory.create(rag_config)
-        use_case = SearchUseCase(embeddings_client, rag_config)
-
-        results = await run_in_threadpool(
-            use_case.execute,
-            query=request.query,
-            view=request.view,
-            language=request.language,
-            top_k=request.top_k,
-            expand_context=request.expand_context,
-        )
-
-        items = [
-            SearchResultItem(
-                fragment_id=r.result.fragment_id,
-                parent_id=r.result.parent_id,
-                view=r.result.view.value,
-                language=r.result.language,
-                content=r.result.content,
-                similarity=r.result.similarity,
-                parent_content=r.parent_content if request.expand_context else None,
-            )
-            for r in results
-        ]
-
-        return SearchResultResponse(query=request.query, results=items)
-    except ValidationError as exc:
-        # User input validation error - 422
-        logger.warning(f"Invalid search request: {exc}")
-        raise HTTPException(
-            status_code=422,
-            detail=str(exc),
-        )
-    except DatabaseNotConfiguredError as e:
-        # DB not configured - service unavailable
-        logger.error(f"Search service unavailable: {e}")
-        raise HTTPException(
-            status_code=503,
-            detail="검색 서비스가 현재 사용 불가합니다. 데이터베이스 설정을 확인해주세요."
-        )
-    except Exception as e:
-        logger.exception("Search failed")
-        # 내부 예외 메시지 숨김 (보안)
-        raise HTTPException(
-            status_code=500,
-            detail="검색 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-        )
 
 
