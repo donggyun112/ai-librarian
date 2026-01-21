@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from config import config
+from src.auth import auth_router
 from .routes import router
 
 # 앱 생성
@@ -26,6 +27,7 @@ app.add_middleware(
 
 # API 라우트 등록
 app.include_router(router, prefix="/v1")
+app.include_router(auth_router)  # /v1/auth/* routes
 
 # Static 파일 서빙 (UI)
 static_dir = Path(__file__).parent.parent.parent / "static"
