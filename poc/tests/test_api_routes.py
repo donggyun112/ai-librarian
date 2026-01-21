@@ -52,6 +52,10 @@ class TestSessionEndpointsWithUserID:
             mock_memory.get_messages_async.__code__ = MagicMock()
             mock_memory.get_messages_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
 
+            mock_memory.clear_async = AsyncMock()
+            mock_memory.clear_async.__code__ = MagicMock()
+            mock_memory.clear_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
+
             yield mock_memory
 
     def test_list_sessions_with_user_id(self, client, mock_supabase_memory):
@@ -141,6 +145,39 @@ class TestSessionEndpointsWithUserID:
         assert response.status_code == 401
         data = response.json()
         assert "Authorization header required" in data["detail"]
+
+    def test_clear_session_without_auth_fails(self, client, mock_supabase_memory):
+        """Authorization 헤더 없이 세션 메시지 초기화 시도 (Supabase 백엔드는 거부해야 함)"""
+        response = client.delete("/sessions/session-1/messages")
+
+        # Supabase 백엔드는 Authorization 헤더 필수
+        assert response.status_code == 401
+        data = response.json()
+        assert "Authorization header required" in data["detail"]
+
+    def test_clear_session_with_auth(self, client, mock_supabase_memory):
+        """Authorization 헤더로 세션 메시지 초기화"""
+        mock_supabase_memory.list_sessions_async.return_value = ["session-1"]
+
+        response = client.delete("/sessions/session-1/messages", headers={"Authorization": "Bearer user-1"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Session cleared"
+        assert data["session_id"] == "session-1"
+
+        # user_id로 clear가 호출되었는지 확인
+        mock_supabase_memory.clear_async.assert_called_once_with("session-1", user_id="user-1")
+
+    def test_clear_session_denies_access_for_wrong_user(self, client, mock_supabase_memory):
+        """잘못된 user_id로는 세션 메시지 초기화 불가"""
+        mock_supabase_memory.list_sessions_async.return_value = []
+
+        response = client.delete("/sessions/session-1/messages", headers={"Authorization": "Bearer wrong-user"})
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "not found" in data["detail"].lower() or "denied" in data["detail"].lower()
 
 
 class TestSessionEndpointsWithInMemory:
