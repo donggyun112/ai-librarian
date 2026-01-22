@@ -47,6 +47,9 @@ packages = ["src"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+markers = [
+    "integration: marks tests as integration tests (require real Supabase)",
+]
 
 [tool.pytest_asyncio]
 asyncio_mode = "auto"
