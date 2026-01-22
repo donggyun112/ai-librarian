@@ -52,7 +52,7 @@ class TestAuthService:
         }
         mock_repository.save_refresh_token.return_value = True
 
-        request = RegisterRequest(email="test@example.com", password="password123")
+        request = RegisterRequest(email="test@example.com", password="Password123!")
         result = await auth_service.register(request)
 
         assert result.access_token is not None
@@ -68,7 +68,7 @@ class TestAuthService:
         """register should raise 409 if email already exists."""
         mock_repository.get_user_by_email.return_value = {"id": "existing-user"}
 
-        request = RegisterRequest(email="test@example.com", password="password123")
+        request = RegisterRequest(email="test@example.com", password="Password123!")
 
         with pytest.raises(HTTPException) as exc_info:
             await auth_service.register(request)
@@ -81,7 +81,7 @@ class TestAuthService:
         mock_repository.get_user_by_email.return_value = None
         mock_repository.create_user.return_value = None
 
-        request = RegisterRequest(email="test@example.com", password="password123")
+        request = RegisterRequest(email="test@example.com", password="Password123!")
 
         with pytest.raises(HTTPException) as exc_info:
             await auth_service.register(request)
@@ -96,7 +96,7 @@ class TestAuthService:
         """login should authenticate user and return tokens."""
         from src.auth.password import hash_password
 
-        password_hash = hash_password("password123")
+        password_hash = hash_password("Password123!")
         mock_repository.get_user_by_email.return_value = {
             "id": "user-123",
             "email": "test@example.com",
@@ -104,7 +104,7 @@ class TestAuthService:
         }
         mock_repository.save_refresh_token.return_value = True
 
-        request = LoginRequest(email="test@example.com", password="password123")
+        request = LoginRequest(email="test@example.com", password="Password123!")
         result = await auth_service.login(request)
 
         assert result.access_token is not None
@@ -115,7 +115,7 @@ class TestAuthService:
         """login should raise 401 if user not found."""
         mock_repository.get_user_by_email.return_value = None
 
-        request = LoginRequest(email="test@example.com", password="password123")
+        request = LoginRequest(email="test@example.com", password="Password123!")
 
         with pytest.raises(HTTPException) as exc_info:
             await auth_service.login(request)
@@ -147,7 +147,7 @@ class TestAuthService:
             "password_hash": None,
         }
 
-        request = LoginRequest(email="test@example.com", password="password123")
+        request = LoginRequest(email="test@example.com", password="Password123!")
 
         with pytest.raises(HTTPException) as exc_info:
             await auth_service.login(request)
