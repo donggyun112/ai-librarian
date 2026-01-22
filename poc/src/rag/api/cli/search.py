@@ -134,7 +134,7 @@ Examples:
         "--top-k",
         type=int,
         default=10,
-        help="Number of results to return (default: 10, max: 1000)",
+        help="Number of results to return (default: 10, max: 100)",
     )
 
     parser.add_argument(

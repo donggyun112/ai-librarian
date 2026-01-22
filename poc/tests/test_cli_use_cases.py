@@ -55,7 +55,7 @@ class TestCliUseCases:
         args.top_k = 5
         args.no_context = False
         args.json = False
-        args.optimize = False
+        args.json = False
 
         # Mock SearchUseCase, EmbeddingProviderFactory, and load_config
         with patch("src.rag.api.cli.search.SearchUseCase") as MockUseCase, \
