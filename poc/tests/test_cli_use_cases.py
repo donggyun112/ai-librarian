@@ -21,8 +21,13 @@ class TestCliUseCases:
         args.files = ["pyproject.toml"]
         args.force_ocr = False
 
-        # Mock IngestUseCase
-        with patch("src.rag.api.cli.ingest.IngestUseCase") as MockUseCase:
+        # Mock IngestUseCase and load_config
+        with patch("src.rag.api.cli.ingest.IngestUseCase") as MockUseCase, \
+             patch("src.rag.api.cli.ingest.load_config") as mock_load_config:
+            
+            # Setup config mock
+            mock_load_config.return_value = MagicMock()
+            
             instance = MockUseCase.return_value
             instance.execute.return_value = IngestResult(
                 documents_processed=1,
@@ -36,6 +41,7 @@ class TestCliUseCases:
 
             # Assertions
             assert exit_code == 0
+            mock_load_config.assert_called_once()
             MockUseCase.assert_called_once()
             instance.execute.assert_called_once_with(["pyproject.toml"])
 
@@ -51,10 +57,15 @@ class TestCliUseCases:
         args.json = False
         args.optimize = False
 
-        # Mock SearchUseCase and EmbeddingProviderFactory
+        # Mock SearchUseCase, EmbeddingProviderFactory, and load_config
         with patch("src.rag.api.cli.search.SearchUseCase") as MockUseCase, \
-             patch("src.rag.api.cli.search.EmbeddingProviderFactory") as MockFactory:
+             patch("src.rag.api.cli.search.EmbeddingProviderFactory") as MockFactory, \
+             patch("src.rag.api.cli.search.load_config") as mock_load_config:
+            
+            # Setup defaults
+            mock_load_config.return_value = MagicMock()
             MockFactory.create.return_value = MagicMock()
+            
             instance = MockUseCase.return_value
             # Return empty list for simplicity
             instance.execute.return_value = []

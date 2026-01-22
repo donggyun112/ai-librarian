@@ -145,11 +145,14 @@ class IngestUseCase:
             logger.info(f"Parsed {len(segments)} segments")
 
             # 2. Create Document entity with deterministic ID (based on file path)
-            doc_id = hashlib.md5(file_path.encode("utf-8")).hexdigest()
+            # Fix: Normalize path to ensure "same file -> same ID" regardless of CWD or relative path
+            norm_path = os.path.abspath(file_path)
+            doc_id = hashlib.md5(norm_path.encode("utf-8")).hexdigest()
+            
             document = Document(
                 id=doc_id,
-                source_path=file_path,
-                metadata={"filename": os.path.basename(file_path)},
+                source_path=norm_path,  # Store normalized path
+                metadata={"filename": os.path.basename(norm_path)},
             )
 
             # 3. Unitize segments (group related content)
