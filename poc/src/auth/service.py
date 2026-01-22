@@ -61,8 +61,14 @@ class AuthService:
             )
 
         # Hash password and create user
+        # We store our own hash in public.users for password verification
+        # The raw password is also passed for Supabase Auth (which hashes separately)
         password_hashed = hash_password(request.password)
-        user = await self.repo.create_user(request.email, password_hashed)
+        user = await self.repo.create_user(
+            email=request.email,
+            password_hash=password_hashed,
+            raw_password=request.password,
+        )
 
         if not user:
             raise HTTPException(
