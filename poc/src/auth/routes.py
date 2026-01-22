@@ -3,6 +3,12 @@
 from fastapi import APIRouter, Depends, Request
 
 from .dependencies import get_auth_service, get_current_user_id
+from .rate_limit import (
+    check_login_rate_limit,
+    check_password_reset_rate_limit,
+    check_register_rate_limit,
+    reset_login_rate_limit,
+)
 from .schemas import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -26,7 +32,7 @@ def _get_client_info(request: Request) -> tuple[str | None, str | None]:
     return user_agent, ip_address
 
 
-@router.post("/register", response_model=TokenResponse)
+@router.post("/register", response_model=TokenResponse, dependencies=[Depends(check_register_rate_limit)])
 async def register(
     request_body: RegisterRequest,
     request: Request,
@@ -36,12 +42,13 @@ async def register(
     Register a new user with email and password.
 
     Returns access and refresh tokens on successful registration.
+    Rate limited: 3 requests per minute, 10 minute block on exceed.
     """
     user_agent, ip_address = _get_client_info(request)
     return await auth_service.register(request_body, user_agent, ip_address)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login", response_model=TokenResponse, dependencies=[Depends(check_login_rate_limit)])
 async def login(
     request_body: LoginRequest,
     request: Request,
@@ -51,9 +58,13 @@ async def login(
     Login with email and password.
 
     Returns access and refresh tokens on successful authentication.
+    Rate limited: 5 requests per minute, 5 minute block on exceed.
     """
     user_agent, ip_address = _get_client_info(request)
-    return await auth_service.login(request_body, user_agent, ip_address)
+    result = await auth_service.login(request_body, user_agent, ip_address)
+    # Reset rate limit on successful login
+    reset_login_rate_limit(request)
+    return result
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -126,7 +137,11 @@ async def verify_email(
     return MessageResponse(message="Email verified successfully")
 
 
-@router.post("/forgot-password", response_model=MessageResponse)
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+    dependencies=[Depends(check_password_reset_rate_limit)],
+)
 async def forgot_password(
     request_body: ForgotPasswordRequest,
     auth_service: AuthService = Depends(get_auth_service),
@@ -135,11 +150,11 @@ async def forgot_password(
     Request a password reset email.
 
     Always returns success to prevent email enumeration.
+    Rate limited: 3 requests per minute, 10 minute block on exceed.
     """
     # Note: In production, send email here with the token
-    token = await auth_service.request_password_reset(request_body.email)
-    # TODO: Send email with reset link: {FRONTEND_URL}/reset-password?token={token}
-    _ = token  # Suppress unused variable warning
+    _token = await auth_service.request_password_reset(request_body.email)
+    # TODO: Send email with reset link: {FRONTEND_URL}/reset-password?token={_token}
 
     # Always return success to prevent email enumeration
     return MessageResponse(message="If the email exists, a reset link has been sent")
