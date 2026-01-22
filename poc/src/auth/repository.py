@@ -38,32 +38,59 @@ class UserRepository:
     # User Operations
     # =========================================================================
 
-    async def create_user(self, email: str, password_hash: Optional[str] = None) -> Optional[dict]:
+    async def create_user(
+        self, email: str, password_hash: Optional[str] = None, raw_password: Optional[str] = None
+    ) -> Optional[dict]:
         """
-        Create a new user.
+        Create a new user using Supabase Auth Admin API.
+
+        This creates the user in auth.users first (required due to FK constraint),
+        then stores additional data in public.users.
 
         Args:
             email: User's email address
-            password_hash: Hashed password (None for OAuth/magic-link users)
+            password_hash: Hashed password for public.users (None for OAuth/magic-link users)
+            raw_password: Raw password for Supabase Auth (required for email/password auth)
 
         Returns:
             Created user data or None if failed
         """
-        def _create():
-            # First create in auth.users via Supabase Auth Admin API
-            # For now, we'll create directly in public.users
-            # In production, you'd use supabase.auth.admin.create_user()
+        def _create_auth_user():
+            # Create user in auth.users via Supabase Auth Admin API
+            user_data = {"email": email, "email_confirm": False}
+            if raw_password:
+                user_data["password"] = raw_password
+            return self.client.auth.admin.create_user(user_data)
+
+        def _create_public_user(user_id: str):
+            # Create corresponding record in public.users
             return self.client.table(self.users_table).insert({
+                "id": user_id,
                 "email": email,
                 "password_hash": password_hash,
                 "email_verified": False,
             }).execute()
 
         try:
-            result = await anyio.to_thread.run_sync(_create)
-            if result.data:
-                logger.info(f"User created: {result.data[0]['id']}")
-                return result.data[0]
+            # Step 1: Create in auth.users
+            auth_result = await anyio.to_thread.run_sync(_create_auth_user)
+            if not auth_result.user:
+                logger.error("Failed to create auth user: no user returned")
+                return None
+
+            user_id = str(auth_result.user.id)
+
+            # Step 2: Create in public.users with the same ID
+            public_result = await anyio.to_thread.run_sync(lambda: _create_public_user(user_id))
+            if public_result.data:
+                logger.info(f"User created: {user_id}")
+                return public_result.data[0]
+
+            # Rollback: delete auth user if public user creation failed
+            logger.error("Failed to create public user, rolling back auth user")
+            await anyio.to_thread.run_sync(
+                lambda: self.client.auth.admin.delete_user(user_id)
+            )
             return None
         except Exception as e:
             logger.error(f"Failed to create user: {e}")
@@ -84,8 +111,12 @@ class UserRepository:
 
         try:
             result = await anyio.to_thread.run_sync(_get)
-            return result.data
+            # maybe_single() returns None for result.data when no row found
+            return result.data if result else None
         except Exception as e:
+            # APIError with code PGRST116 means no rows found - this is expected
+            if "PGRST116" in str(e):
+                return None
             logger.error(f"Failed to get user by email: {e}")
             return None
 
@@ -104,8 +135,10 @@ class UserRepository:
 
         try:
             result = await anyio.to_thread.run_sync(_get)
-            return result.data
+            return result.data if result else None
         except Exception as e:
+            if "PGRST116" in str(e):
+                return None
             logger.error(f"Failed to get user by id: {e}")
             return None
 
@@ -225,12 +258,14 @@ class UserRepository:
 
         try:
             result = await anyio.to_thread.run_sync(_validate)
-            if result.data:
+            if result and result.data:
                 expires_at = datetime.fromisoformat(result.data["expires_at"].replace("Z", "+00:00"))
                 if expires_at > datetime.now(timezone.utc):
                     return result.data
             return None
         except Exception as e:
+            if "PGRST116" in str(e):
+                return None
             logger.error(f"Failed to validate refresh token: {e}")
             return None
 
@@ -345,12 +380,14 @@ class UserRepository:
 
         try:
             result = await anyio.to_thread.run_sync(_validate)
-            if result.data:
+            if result and result.data:
                 expires_at = datetime.fromisoformat(result.data["expires_at"].replace("Z", "+00:00"))
                 if expires_at > datetime.now(timezone.utc):
                     return result.data
             return None
         except Exception as e:
+            if "PGRST116" in str(e):
+                return None
             logger.error(f"Failed to validate email verification token: {e}")
             return None
 
@@ -438,12 +475,14 @@ class UserRepository:
 
         try:
             result = await anyio.to_thread.run_sync(_validate)
-            if result.data:
+            if result and result.data:
                 expires_at = datetime.fromisoformat(result.data["expires_at"].replace("Z", "+00:00"))
                 if expires_at > datetime.now(timezone.utc):
                     return result.data
             return None
         except Exception as e:
+            if "PGRST116" in str(e):
+                return None
             logger.error(f"Failed to validate password reset token: {e}")
             return None
 

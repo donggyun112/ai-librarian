@@ -1,5 +1,6 @@
 """JWT token creation and validation."""
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -24,8 +25,11 @@ class JWTHandler:
         self.access_token_expire_minutes = access_token_expire_minutes or config.JWT_ACCESS_TOKEN_EXPIRE_MINUTES
         self.refresh_token_expire_days = refresh_token_expire_days or config.JWT_REFRESH_TOKEN_EXPIRE_DAYS
 
+        # Security validation
         if not self.secret_key:
-            logger.warning("JWT_SECRET_KEY not configured - authentication will not work")
+            raise ValueError("JWT_SECRET_KEY is required for authentication")
+        if len(self.secret_key) < 32:
+            raise ValueError("JWT_SECRET_KEY must be at least 32 characters for security")
 
     def create_access_token(self, user_id: str, email: str) -> str:
         """
@@ -65,6 +69,7 @@ class JWTHandler:
             "type": "refresh",
             "exp": expires_at,
             "iat": now,
+            "jti": secrets.token_hex(16),  # Unique token ID to prevent duplicates
         }
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
         return token, expires_at
