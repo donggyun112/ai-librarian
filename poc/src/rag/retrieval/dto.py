@@ -27,6 +27,7 @@ class QueryPlan:
         view_filter: Optional view filter (text, code, image, etc.)
         language_filter: Optional language filter (python, javascript, etc.)
         top_k: Number of results to retrieve (capped at MAX_TOP_K)
+        metadata_filters: Additional metadata filters for dynamic WHERE clause
     """
 
     query_text: str
@@ -34,6 +35,7 @@ class QueryPlan:
     view_filter: Optional[View] = None
     language_filter: Optional[str] = None
     top_k: int = 10
+    metadata_filters: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         """Validate and cap top_k to prevent excessive resource usage."""

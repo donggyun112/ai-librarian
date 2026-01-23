@@ -8,7 +8,7 @@ Rules:
 - DEP-RET-ALLOW-004: MAY import shared
 """
 
-from typing import List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
@@ -45,6 +45,7 @@ class QueryInterpreter:
         view: Optional[str] = None,
         language: Optional[str] = None,
         top_k: int = 10,
+        metadata_filters: Optional[Dict[str, Any]] = None,
     ) -> QueryPlan:
         """Interpret a user query and generate a query plan.
 
@@ -53,6 +54,7 @@ class QueryInterpreter:
             view: Optional view filter (text, code, image, caption, table, figure)
             language: Optional language filter (python, javascript, etc.)
             top_k: Number of results to retrieve
+            metadata_filters: Additional metadata filters from query optimization
 
         Returns:
             QueryPlan with embedding and filters
@@ -80,6 +82,7 @@ class QueryInterpreter:
             view_filter=view_enum,
             language_filter=language_normalized,
             top_k=top_k,
+            metadata_filters=metadata_filters,
         )
 
 
