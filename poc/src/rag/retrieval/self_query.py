@@ -20,6 +20,7 @@ from src.adapters import BaseLLMAdapter, get_adapter
 from src.rag.shared.config import EmbeddingConfig
 
 from .dto import ExtractedQuery, OptimizedQueryResult
+from .query import EmbeddingClientProtocol
 
 
 # Metadata schema definition for LangChain SelfQueryRetriever
@@ -184,7 +185,7 @@ class SelfQueryRetrieverWrapper:
                 logger.warning(f"Filter extraction failed: {e}")
             return ExtractedQuery(rewritten_query=None, filters=None)
     
-    def _convert_filter_to_dict(self, filter_obj) -> Dict[str, Any]:
+    def _convert_filter_to_dict(self, filter_obj: Any) -> Dict[str, Any]:
         """Convert LangChain filter object to dictionary for PGVector.
         
         Args:
@@ -224,7 +225,7 @@ class SelfQueryRetrieverWrapper:
     
 def create_self_query_retriever(
     config: EmbeddingConfig,
-    embeddings_client,
+    embeddings_client: EmbeddingClientProtocol,
     adapter: Optional[BaseLLMAdapter] = None,
     llm: Optional[BaseChatModel] = None,
     verbose: bool = False,

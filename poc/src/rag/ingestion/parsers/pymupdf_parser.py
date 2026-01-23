@@ -224,7 +224,7 @@ class PyMuPdfParser(BaseSegmentParser):
         doc.close()
         return self._detect_code_blocks(deterministic_segments)
 
-    def _extract_all_blocks(self, doc) -> tuple[List[RawSegment], int, int]:
+    def _extract_all_blocks(self, doc: fitz.Document) -> tuple[List[RawSegment], int, int]:
         """Extract all blocks from all pages with counts.
 
         Args:
@@ -372,7 +372,7 @@ class PyMuPdfParser(BaseSegmentParser):
         )
 
     def _handle_image_only_document(
-        self, doc, path: str
+        self, doc: fitz.Document, path: str
     ) -> List[RawSegment]:
         """Handle image-only documents (Rule 3).
 
@@ -406,7 +406,7 @@ class PyMuPdfParser(BaseSegmentParser):
         return segments
 
     def _handle_empty_document(
-        self, doc, path: str, fallback: List[RawSegment]
+        self, doc: fitz.Document, path: str, fallback: List[RawSegment]
     ) -> List[RawSegment]:
         """Handle empty or corrupted documents.
 
@@ -436,7 +436,7 @@ class PyMuPdfParser(BaseSegmentParser):
         doc.close()
         return fallback
 
-    def _handle_force_ocr(self, doc, path: str) -> List[RawSegment]:
+    def _handle_force_ocr(self, doc: fitz.Document, path: str) -> List[RawSegment]:
         """Handle force_ocr mode.
 
         Args:
@@ -466,7 +466,7 @@ class PyMuPdfParser(BaseSegmentParser):
         return segments
 
     def _handle_auto_ocr(
-        self, doc, path: str, fallback: List[RawSegment]
+        self, doc: fitz.Document, path: str, fallback: List[RawSegment]
     ) -> List[RawSegment]:
         """Handle enable_auto_ocr mode for sparse text.
 
@@ -499,7 +499,7 @@ class PyMuPdfParser(BaseSegmentParser):
         return self._detect_code_blocks(fallback)
 
     def _process_page(
-        self, page, page_num: int, order: int
+        self, page: fitz.Page, page_num: int, order: int
     ) -> tuple[List[RawSegment], int, int, int]:
         """Process a single PDF page.
 
@@ -751,7 +751,7 @@ class PyMuPdfParser(BaseSegmentParser):
         """
         return self._should_fallback_to_vision(segments)
 
-    def _ocr_all_pages(self, doc) -> List[RawSegment]:
+    def _ocr_all_pages(self, doc: fitz.Document) -> List[RawSegment]:
         """OCR all pages using Gemini Vision.
 
         Renders each page as an image and sends to Gemini Vision for OCR.

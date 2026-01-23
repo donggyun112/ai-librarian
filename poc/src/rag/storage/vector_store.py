@@ -16,6 +16,7 @@ from loguru import logger
 
 from src.rag.shared.batching import iter_by_char_budget
 from src.rag.shared.config import EmbeddingConfig
+from src.rag.embedding.provider import EmbeddingsProtocol
 
 
 class VectorStoreWriter:
@@ -27,7 +28,7 @@ class VectorStoreWriter:
     def __init__(self, config: EmbeddingConfig) -> None:
         self.config = config
 
-    def create_store(self, embeddings_client) -> PGVector:
+    def create_store(self, embeddings_client: EmbeddingsProtocol) -> PGVector:
         """Create LangChain PGVector store instance.
 
         Args:

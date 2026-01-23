@@ -38,6 +38,8 @@ class EmbeddingConfig:
     # Semantic unit settings
     parent_context_limit: int  # Max chars for parent context synthesis
     text_unit_threshold: int  # Min chars for text-only semantic unit
+    # API keys (centralized)
+    google_api_key: Optional[str] = None
     ivfflat_probes: Optional[int] = None
     hnsw_ef_search: Optional[int] = None
     hnsw_ef_construction: Optional[int] = None
@@ -141,6 +143,7 @@ def load_config() -> EmbeddingConfig:
         gemini_ocr_model=os.getenv("GEMINI_OCR_MODEL", "gemini-2.0-flash"),
         parent_context_limit=_parse_int(os.getenv("PARENT_CONTEXT_LIMIT"), 2000),
         text_unit_threshold=_parse_int(os.getenv("TEXT_UNIT_THRESHOLD"), 500),
+        google_api_key=os.getenv("GOOGLE_API_KEY"),
         ivfflat_probes=_parse_optional_int(os.getenv("IVFFLAT_PROBES")),
         hnsw_ef_search=_parse_optional_int(os.getenv("HNSW_EF_SEARCH")),
         hnsw_ef_construction=_parse_optional_int(os.getenv("HNSW_EF_CONSTRUCTION")),

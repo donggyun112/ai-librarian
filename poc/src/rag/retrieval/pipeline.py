@@ -7,7 +7,6 @@ Rules:
 - DEP-RET-ALLOW-001~004: MAY import domain, storage, embedding, shared
 """
 
-import os
 from typing import List, Optional
 
 from loguru import logger
@@ -67,7 +66,7 @@ class RetrievalPipeline:
             if not config.pg_conn:
                 logger.info("QueryOptimizer: Using NoOp (DB not configured)")
                 self.query_optimizer = NoOpQueryOptimizer()
-            elif not os.getenv("GOOGLE_API_KEY"):
+            elif not config.google_api_key:
                 logger.info("QueryOptimizer: Using NoOp (GOOGLE_API_KEY not set)")
                 self.query_optimizer = NoOpQueryOptimizer()
             else:

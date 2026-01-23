@@ -42,11 +42,17 @@ class LLMResponse:
         content: Generated text content
         model: Model name used for generation
         usage: Optional token usage information
+        success: Whether generation succeeded
+        error: Error message if generation failed
+        error_type: Error category (auth/rate_limit/generation_failed)
     """
 
     content: str
     model: str
     usage: Optional[dict] = None
+    success: bool = True
+    error: Optional[str] = None
+    error_type: Optional[str] = None
 
 
 @dataclass
@@ -60,6 +66,7 @@ class GeneratedResponse:
         model: LLM model used
         optimized_query: Query optimization result (if used)
         timestamp: Generation timestamp
+        error: Error message if generation failed
     """
 
     query: str
@@ -68,6 +75,7 @@ class GeneratedResponse:
     model: str
     optimized_query: Optional[OptimizedQuery] = None
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    error: Optional[str] = None
 
     def format_with_sources(self) -> str:
         """Format response with source attribution.
