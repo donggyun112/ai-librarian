@@ -39,8 +39,6 @@ def main(args: argparse.Namespace) -> int:
 
         # Validate query
         RequestValidator.validate_query(args.query)
-        if args.view:
-            RequestValidator.validate_view(args.view)
         if args.top_k is not None:
             RequestValidator.validate_top_k(args.top_k)
 
@@ -48,11 +46,10 @@ def main(args: argparse.Namespace) -> int:
         embeddings_client = EmbeddingProviderFactory.create(config)
 
         # Execute search use case
+        # SelfQueryRetriever automatically extracts view/language filters from query
         use_case = SearchUseCase(embeddings_client, config)
         results = use_case.execute(
             query=args.query,
-            view=args.view,
-            language=args.language,
             top_k=args.top_k,
             expand_context=not args.no_context,
         )
@@ -94,14 +91,9 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic search
+  # Basic search (filters auto-extracted from query)
   python -m api.cli.search "python list comprehension"
-
-  # Search in code view only
-  python -m api.cli.search "async function" --view code
-
-  # Search with language filter
-  python -m api.cli.search "list comprehension" --view code --language python
+  python -m api.cli.search "show me JavaScript async function code"
 
   # Get more results
   python -m api.cli.search "machine learning" --top-k 20
@@ -116,18 +108,7 @@ Examples:
 
     parser.add_argument(
         "query",
-        help="Search query string",
-    )
-
-    parser.add_argument(
-        "--view",
-        choices=["text", "code", "image", "caption", "table", "figure"],
-        help="Filter by view type",
-    )
-
-    parser.add_argument(
-        "--language",
-        help="Filter by programming language (e.g., python, javascript)",
+        help="Search query string (view/language filters auto-extracted)",
     )
 
     parser.add_argument(

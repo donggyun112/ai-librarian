@@ -85,8 +85,6 @@ class RetrievalPipeline:
     def retrieve(
         self,
         query: str,
-        view: Optional[str] = None,
-        language: Optional[str] = None,
         top_k: int = 10,
         expand_context: bool = True,
         deduplicate: bool = True,
@@ -95,8 +93,6 @@ class RetrievalPipeline:
 
         Args:
             query: User query string
-            view: Optional view filter (text, code, image, etc.)
-            language: Optional language filter (python, javascript, etc.)
             top_k: Number of results to retrieve
             expand_context: Whether to fetch parent context
             deduplicate: Whether to remove duplicate results
@@ -105,33 +101,25 @@ class RetrievalPipeline:
             List of search results with optional parent context
         """
         # Stage 0: Query optimization (auto-extracts filters from query)
-        # Explicit filters take precedence over query optimizer auto-extraction
-        has_explicit_filters = view is not None or language is not None
+        # SelfQueryRetriever extracts view, language, and metadata_filters automatically
+        view = None
+        language = None
         metadata_filters = None
+        search_query = query
 
-        if not has_explicit_filters:
-            try:
-                # Use query optimizer to extract filters and rewrite query
-                optimized = self.query_optimizer.optimize(query)
+        try:
+            optimized = self.query_optimizer.optimize(query)
 
-                # Use optimized filters if no explicit filters provided
-                if not view and optimized.view_filter:
-                    view = optimized.view_filter
-                if not language and optimized.language_filter:
-                    language = optimized.language_filter
+            # Use LLM-extracted filters
+            view = optimized.view_filter
+            language = optimized.language_filter
+            metadata_filters = optimized.metadata_filters
 
-                # Extract additional metadata filters (unit_id, parent_id, etc.)
-                if optimized.metadata_filters:
-                    metadata_filters = optimized.metadata_filters
+            # Use rewritten query if available
+            search_query = optimized.effective_query
 
-                # Use rewritten query if available
-                search_query = optimized.effective_query
-
-            except Exception as e:
-                logger.warning(f"Query optimization failed, using original query: {e}")
-                search_query = query
-        else:
-            search_query = query
+        except Exception as e:
+            logger.warning(f"Query optimization failed, using original query: {e}")
 
         # Stage 1: Query interpretation
         query_plan = self.query_interpreter.interpret(
@@ -160,28 +148,41 @@ class RetrievalPipeline:
     def retrieve_raw(
         self,
         query: str,
-        view: Optional[str] = None,
-        language: Optional[str] = None,
         top_k: int = 10,
     ) -> List[SearchResult]:
         """Execute search without context expansion.
 
         Lighter version of retrieve() that returns only Fragment results.
+        Uses SelfQueryRetriever for automatic filter extraction.
 
         Args:
             query: User query string
-            view: Optional view filter
-            language: Optional language filter
             top_k: Number of results to retrieve
 
         Returns:
             List of Fragment search results
         """
+        # Use query optimization for filter extraction
+        view = None
+        language = None
+        metadata_filters = None
+        search_query = query
+
+        try:
+            optimized = self.query_optimizer.optimize(query)
+            view = optimized.view_filter
+            language = optimized.language_filter
+            metadata_filters = optimized.metadata_filters
+            search_query = optimized.effective_query
+        except Exception as e:
+            logger.warning(f"Query optimization failed: {e}")
+
         query_plan = self.query_interpreter.interpret(
-            query=query,
+            query=search_query,
             view=view,
             language=language,
             top_k=top_k,
+            metadata_filters=metadata_filters,
         )
         return self.search_engine.search(query_plan)
 

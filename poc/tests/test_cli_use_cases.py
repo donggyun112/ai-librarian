@@ -50,11 +50,8 @@ class TestCliUseCases:
         """Test search command success path."""
         args = MagicMock(spec=argparse.Namespace)
         args.query = "python"
-        args.view = None
-        args.language = None
         args.top_k = 5
         args.no_context = False
-        args.json = False
         args.json = False
 
         # Mock SearchUseCase, EmbeddingProviderFactory, and load_config
@@ -77,3 +74,4 @@ class TestCliUseCases:
             assert exit_code == 0
             MockUseCase.assert_called_once()
             instance.execute.assert_called_once()
+
