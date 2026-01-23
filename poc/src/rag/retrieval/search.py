@@ -85,6 +85,17 @@ class VectorSearchEngine:
             where_clauses.append("e.cmetadata->>'lang' = %s")
             where_params.append(query_plan.language_filter)
 
+        # Dynamic metadata filters from SelfQueryRetriever
+        # Whitelisted keys based on schema.py BTREE indexes for SQL injection prevention
+        if query_plan.metadata_filters:
+            allowed_keys = {"unit_id", "parent_id", "section", "source", "unit_role"}
+            for key, value in query_plan.metadata_filters.items():
+                if key in allowed_keys:
+                    where_clauses.append(f"e.cmetadata->>'{key}' = %s")
+                    where_params.append(str(value))
+                else:
+                    logger.warning(f"Ignoring disallowed metadata filter key: {key}")
+
         where_sql = " AND " + " AND ".join(where_clauses) if where_clauses else ""
 
         sql = f"""

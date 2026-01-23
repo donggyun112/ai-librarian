@@ -107,6 +107,7 @@ class RetrievalPipeline:
         # Stage 0: Query optimization (auto-extracts filters from query)
         # Explicit filters take precedence over query optimizer auto-extraction
         has_explicit_filters = view is not None or language is not None
+        metadata_filters = None
 
         if not has_explicit_filters:
             try:
@@ -118,6 +119,10 @@ class RetrievalPipeline:
                     view = optimized.view_filter
                 if not language and optimized.language_filter:
                     language = optimized.language_filter
+
+                # Extract additional metadata filters (unit_id, parent_id, etc.)
+                if optimized.metadata_filters:
+                    metadata_filters = optimized.metadata_filters
 
                 # Use rewritten query if available
                 search_query = optimized.effective_query
@@ -134,6 +139,7 @@ class RetrievalPipeline:
             view=view,
             language=language,
             top_k=top_k,
+            metadata_filters=metadata_filters,
         )
 
         # Stage 2: Vector similarity search
