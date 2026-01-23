@@ -12,22 +12,21 @@ from typing import List, Optional
 
 from loguru import logger
 
-from src.rag.domain import View
 from src.rag.shared.config import EmbeddingConfig
 
 from .context import ParentContextEnricher, ExpandedResult
-from .dto import SelfQueryResult
 from .grouping import ResultGrouper
+from .protocols import QueryOptimizerProtocol
 from .query import EmbeddingClientProtocol, QueryInterpreter
 from .search import SearchResult, VectorSearchEngine
-from .self_query import create_self_query_retriever
+from .self_query import create_self_query_retriever, NoOpQueryOptimizer
 
 
 class RetrievalPipeline:
     """Orchestrates the complete retrieval pipeline.
 
     Pipeline stages:
-    1. Query optimization (SelfQueryRetriever - auto-extracts metadata filters)
+    1. Query optimization (QueryOptimizer - auto-extracts metadata filters)
     2. Query interpretation (QueryInterpreter)
     3. Vector similarity search (VectorSearchEngine)
     4. Context expansion (ParentContextEnricher)
@@ -36,9 +35,10 @@ class RetrievalPipeline:
     Example:
         >>> pipeline = RetrievalPipeline(embeddings_client, config)
         >>> results = pipeline.retrieve("python list comprehension", view="code", top_k=5)
-        
-        # With SelfQueryRetriever (default, recommended):
-        >>> pipeline = RetrievalPipeline(embeddings_client, config, use_self_query=True)
+
+        # With custom QueryOptimizer:
+        >>> optimizer = SelfQueryRetrieverWrapper(...)
+        >>> pipeline = RetrievalPipeline(embeddings_client, config, query_optimizer=optimizer)
         >>> results = pipeline.retrieve("Python decorator code examples")
         # Automatically extracts: view="code", lang="python"
     """
@@ -47,7 +47,7 @@ class RetrievalPipeline:
         self,
         embeddings_client: EmbeddingClientProtocol,
         config: EmbeddingConfig,
-        use_self_query: bool = True,
+        query_optimizer: Optional[QueryOptimizerProtocol] = None,
         verbose: bool = False,
     ) -> None:
         self.config = config
@@ -58,25 +58,29 @@ class RetrievalPipeline:
         self.context_expander = ParentContextEnricher(config)
         self.grouper = ResultGrouper()
 
-        # SelfQueryRetriever (auto-extracts metadata filters from natural language)
-        self.self_query_retriever = None
-
-        # SelfQuery auto-enables when DB and GOOGLE_API_KEY are available
-        if use_self_query:
+        # Query optimizer (auto-extracts metadata filters from natural language)
+        if query_optimizer is not None:
+            self.query_optimizer = query_optimizer
+            logger.info("Using provided QueryOptimizer")
+        else:
+            # Auto-create SelfQueryRetriever when DB and GOOGLE_API_KEY are available
             if not config.pg_conn:
-                logger.info("SelfQueryRetriever skipped: DB not configured")
+                logger.info("QueryOptimizer: Using NoOp (DB not configured)")
+                self.query_optimizer = NoOpQueryOptimizer()
             elif not os.getenv("GOOGLE_API_KEY"):
-                logger.info("SelfQueryRetriever skipped: GOOGLE_API_KEY not set")
+                logger.info("QueryOptimizer: Using NoOp (GOOGLE_API_KEY not set)")
+                self.query_optimizer = NoOpQueryOptimizer()
             else:
                 try:
-                    self.self_query_retriever = create_self_query_retriever(
+                    self.query_optimizer = create_self_query_retriever(
                         config=config,
                         embeddings_client=embeddings_client,
                         verbose=verbose,
                     )
-                    logger.info("SelfQueryRetriever enabled")
+                    logger.info("QueryOptimizer: Using SelfQueryRetriever")
                 except Exception as e:
-                    logger.warning(f"SelfQueryRetriever initialization failed: {e}")
+                    logger.warning(f"SelfQueryRetriever initialization failed, using NoOp: {e}")
+                    self.query_optimizer = NoOpQueryOptimizer()
 
 
     def retrieve(
@@ -87,7 +91,6 @@ class RetrievalPipeline:
         top_k: int = 10,
         expand_context: bool = True,
         deduplicate: bool = True,
-        use_self_query: bool = True,  # Use SelfQueryRetriever for this request
     ) -> List[ExpandedResult]:
         """Execute complete retrieval pipeline.
 
@@ -98,41 +101,37 @@ class RetrievalPipeline:
             top_k: Number of results to retrieve
             expand_context: Whether to fetch parent context
             deduplicate: Whether to remove duplicate results
-            use_self_query: Whether to use SelfQueryRetriever (if available)
 
         Returns:
             List of search results with optional parent context
         """
-        # Stage 0: SelfQueryRetriever path (auto-extracts filters from query)
-        # Explicit filters take precedence over SelfQuery auto-extraction
+        # Stage 0: Query optimization (auto-extracts filters from query)
+        # Explicit filters take precedence over query optimizer auto-extraction
         has_explicit_filters = view is not None or language is not None
 
-        if use_self_query and self.self_query_retriever and not has_explicit_filters:
+        if not has_explicit_filters:
             try:
-                self_query_results = self.self_query_retriever.retrieve(query, k=top_k)
-                
-                if self_query_results:
-                    rewritten = self_query_results[0].rewritten_query if self_query_results else None
-                    
-                    # Convert SelfQueryResult to SearchResult format
-                    search_results = self._convert_self_query_results(self_query_results)
-                    
-                    # Optional: Deduplicate
-                    if deduplicate:
-                        search_results = self.grouper.deduplicate_by_content(search_results)
-                    
-                    # Stage 3: Context expansion
-                    if expand_context:
-                        return self.context_expander.expand(search_results)
-                    else:
-                        return [ExpandedResult(result=r) for r in search_results]
-            except Exception as e:
-                logger.warning(f"SelfQuery failed, falling back to standard search: {e}")
+                # Use query optimizer to extract filters and rewrite query
+                optimized = self.query_optimizer.optimize(query)
 
-        
+                # Use optimized filters if no explicit filters provided
+                if not view and optimized.view_filter:
+                    view = optimized.view_filter
+                if not language and optimized.language_filter:
+                    language = optimized.language_filter
+
+                # Use rewritten query if available
+                search_query = optimized.effective_query
+
+            except Exception as e:
+                logger.warning(f"Query optimization failed, using original query: {e}")
+                search_query = query
+        else:
+            search_query = query
+
         # Stage 1: Query interpretation
         query_plan = self.query_interpreter.interpret(
-            query=query,
+            query=search_query,
             view=view,
             language=language,
             top_k=top_k,
@@ -152,36 +151,6 @@ class RetrievalPipeline:
             expanded_results = [ExpandedResult(result=r) for r in search_results]
 
         return expanded_results
-
-    def _convert_self_query_results(self, self_query_results: List[SelfQueryResult]) -> List[SearchResult]:
-        """Convert SelfQueryResult to SearchResult format.
-
-        Args:
-            self_query_results: List of SelfQueryResult from SelfQueryRetriever
-
-        Returns:
-            List of SearchResult compatible with existing pipeline
-        """
-        results = []
-        for i, sqr in enumerate(self_query_results):
-            # Parse view from metadata
-            view_str = sqr.metadata.get("view", "text")
-            try:
-                view = View(view_str) if view_str else View.TEXT
-            except ValueError:
-                view = View.TEXT
-            
-            results.append(SearchResult(
-                fragment_id=sqr.metadata.get("fragment_id", f"sq_{i}"),
-                parent_id=sqr.metadata.get("parent_id", "unknown"),
-                view=view,
-                language=sqr.metadata.get("lang"),
-                content=sqr.content,
-                similarity=sqr.score if sqr.score is not None else 0.9,  # Default high score
-                metadata=sqr.metadata,
-            ))
-        
-        return results
 
     def retrieve_raw(
         self,

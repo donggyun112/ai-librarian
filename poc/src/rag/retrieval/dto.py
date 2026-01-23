@@ -102,6 +102,7 @@ __all__ = [
     "SearchResult",
     "ExpandedResult",
     "SelfQueryResult",
+    "OptimizedQueryResult",
     "MAX_TOP_K",
 ]
 
@@ -109,4 +110,27 @@ __all__ = [
 class ExtractedQuery:
     rewritten_query: Optional[str]
     filters: Optional[Dict[str, Any]]
+
+
+@dataclass
+class OptimizedQueryResult:
+    """Query optimization result.
+
+    Attributes:
+        original_query: Original user query
+        rewritten_query: LLM-rewritten query (e.g., from self-query)
+        view_filter: Optional view filter extracted
+        language_filter: Optional language filter extracted
+        metadata_filters: Additional metadata filters
+    """
+    original_query: str
+    rewritten_query: Optional[str] = None
+    view_filter: Optional[str] = None
+    language_filter: Optional[str] = None
+    metadata_filters: Optional[Dict[str, Any]] = None
+
+    @property
+    def effective_query(self) -> str:
+        """Return the query to use for search (rewritten or original)."""
+        return self.rewritten_query or self.original_query
     

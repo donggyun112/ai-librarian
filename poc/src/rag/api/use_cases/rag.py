@@ -62,14 +62,13 @@ class RAGUseCase:
             embeddings_client: Client for generating query embeddings
             embed_config: Embedding/retrieval configuration
             gen_config: Generation configuration
-            verbose: Enable verbose logging for SelfQueryRetriever
+            verbose: Enable verbose logging for QueryOptimizer
         """
-        # Retrieval pipeline with SelfQueryRetriever (auto-extracts view/language filters)
-        # use_self_query=True by default, creates its own LLM internally
+        # Retrieval pipeline with QueryOptimizer (auto-extracts view/language filters)
+        # QueryOptimizer is auto-enabled when DB and API key are available
         self.retrieval = RetrievalPipeline(
             embeddings_client,
             embed_config,
-            use_self_query=True,  # Enable SelfQueryRetriever
             verbose=verbose,
         )
 
@@ -111,8 +110,8 @@ class RAGUseCase:
         Returns:
             Generated response with sources
         """
-        # Stage 1: Retrieval with SelfQueryRetriever
-        # SelfQueryRetriever automatically extracts view/language filters from the query
+        # Stage 1: Retrieval with QueryOptimizer
+        # QueryOptimizer automatically extracts view/language filters from the query
         # Explicit view/language parameters override auto-detection
         results = self.retrieval.retrieve(
             query=query,
@@ -120,7 +119,6 @@ class RAGUseCase:
             language=language,
             top_k=top_k,
             expand_context=True,
-            use_self_query=True,  # Use SelfQueryRetriever
         )
 
         # Stage 2: Generation

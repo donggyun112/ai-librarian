@@ -74,7 +74,6 @@ class TestRAGUseCase:
             language=None,
             top_k=5,
             expand_context=True,
-            use_self_query=True
         )
         use_case.generation.generate.assert_called_once_with(
             query="test query",
@@ -116,5 +115,4 @@ class TestRAGUseCase:
             language="python",
             top_k=10,
             expand_context=True,
-            use_self_query=True
         )

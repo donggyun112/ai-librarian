@@ -47,12 +47,11 @@ class SearchUseCase:
         config: EmbeddingConfig,
         verbose: bool = True,
     ) -> None:
-        # SelfQueryRetriever is enabled by default (creates its own LLM)
+        # QueryOptimizer is auto-enabled when DB and API key are available
         # verbose=True by default for API debugging
         self.pipeline = RetrievalPipeline(
             embeddings_client,
             config,
-            use_self_query=True,
             verbose=verbose,
         )
 
@@ -81,7 +80,7 @@ class SearchUseCase:
         RequestValidator.validate_view(view)
         RequestValidator.validate_top_k(top_k)
 
-        # Delegate to retrieval pipeline (SelfQueryRetriever handles query optimization)
+        # Delegate to retrieval pipeline (QueryOptimizer handles query optimization)
         return self.pipeline.retrieve(
             query=query,
             view=view,
