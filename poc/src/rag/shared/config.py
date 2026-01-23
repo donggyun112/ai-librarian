@@ -112,7 +112,7 @@ def load_config() -> EmbeddingConfig:
     
     embedding_dim = _parse_int(os.getenv("EMBEDDING_DIM"), 1536)
     if os.getenv("EMBEDDING_DIM") in (None, "") and embedding_provider == "gemini":
-        embedding_dim = 768
+        embedding_dim = 768  # text-embedding-004 default dimension
     pg_pool_min_size = max(0, _parse_int(os.getenv("PG_POOL_MIN_SIZE"), 0))
     pg_pool_max_size = max(1, _parse_int(os.getenv("PG_POOL_MAX_SIZE"), 4))
     if pg_pool_max_size < pg_pool_min_size:

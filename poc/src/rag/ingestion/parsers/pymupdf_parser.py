@@ -73,9 +73,15 @@ class GeminiVisionOcr:
             Extracted text from image
         """
         try:
-            # Log image size for debugging
-            image_size_kb = len(image_bytes) / 1024
-            
+            # Use explicit Part object (SDK recommended approach)
+            # Avoids potential double base64 encoding issues with dict format
+            image_part = genai.protos.Part(
+                inline_data=genai.protos.Blob(
+                    mime_type=mime_type,
+                    data=image_bytes,
+                )
+            )
+
             response = self._model.generate_content(
                 [
                     "You are an expert OCR system for technical programming documents. "
@@ -87,7 +93,7 @@ class GeminiVisionOcr:
                     "4. Separate paragraphs with blank lines. "
                     "5. Do not add any commentary or formatting markers. "
                     "6. Return only the extracted text, nothing else.",
-                    {"mime_type": mime_type, "data": base64.standard_b64encode(image_bytes).decode()},
+                    image_part,
                 ]
             )
             
