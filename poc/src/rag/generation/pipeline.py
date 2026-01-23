@@ -97,6 +97,17 @@ class GenerationPipeline:
             max_tokens=self.max_tokens,
         )
 
+        # Check for generation errors
+        if not llm_response.success:
+            return GeneratedResponse(
+                query=query,
+                answer=llm_response.content,
+                sources=[],
+                model=llm_response.model,
+                optimized_query=optimized_query,
+                error=llm_response.error,
+            )
+
         # Stage 4: Response formatting
         return GeneratedResponse(
             query=query,

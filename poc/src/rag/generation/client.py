@@ -112,6 +112,9 @@ class AdapterLLMClient:
             return LLMResponse(
                 content="응답을 생성할 수 없습니다. 잠시 후 다시 시도해주세요.",
                 model=self._model_name,
+                success=False,
+                error=str(e),
+                error_type="generation_failed",
             )
 
     @property
