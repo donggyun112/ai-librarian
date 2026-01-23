@@ -8,7 +8,7 @@ Rules:
 """
 
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Optional
 
 from langchain_classic.chains.query_constructor.base import AttributeInfo
 from langchain_classic.retrievers.self_query.base import SelfQueryRetriever
@@ -19,7 +19,7 @@ from loguru import logger
 from src.adapters import BaseLLMAdapter, get_adapter
 from src.rag.shared.config import EmbeddingConfig
 
-from .dto import SelfQueryResult, ExtractedQuery
+from .dto import ExtractedQuery, OptimizedQueryResult
 
 
 # Metadata schema definition for LangChain SelfQueryRetriever
@@ -42,18 +42,36 @@ Contains explanatory text about programming concepts and code snippets in variou
 """
 
 
+class NoOpQueryOptimizer:
+    """No-op query optimizer (fallback when DB/API unavailable).
+
+    Returns the original query without any optimization.
+    Used when SelfQueryRetriever cannot be initialized.
+    """
+
+    def optimize(self, query: str) -> OptimizedQueryResult:
+        """Return original query without modification.
+
+        Args:
+            query: Original user query
+
+        Returns:
+            OptimizedQueryResult with only original_query set
+        """
+        return OptimizedQueryResult(original_query=query)
+
+
 class SelfQueryRetrieverWrapper:
     """LangChain SelfQueryRetriever integration for automatic metadata filtering.
-    
-    Hybrid approach:
-    1. Use SelfQueryRetriever to extract metadata filters from natural language
-    2. Use similarity_search_with_score for actual search with real scores
-    
+
+    Implements QueryOptimizerProtocol to extract metadata filters from natural language.
+    Used by RetrievalPipeline to optimize queries before vector search.
+
     Example:
         >>> wrapper = SelfQueryRetrieverWrapper(vectorstore, llm)
-        >>> results = wrapper.retrieve("Python ?곗퐫?덉씠??肄붾뱶 ?덉젣")
-        # Automatically applies: view="code", lang="python"
-        # Returns actual similarity scores
+        >>> optimized = wrapper.optimize("Python 데코레이터 코드 예제")
+        >>> print(optimized.view_filter)  # "code"
+        >>> print(optimized.language_filter)  # "python"
     """
     
     def __init__(
@@ -85,6 +103,43 @@ class SelfQueryRetrieverWrapper:
             verbose=verbose,
         )
     
+    def optimize(self, query: str) -> OptimizedQueryResult:
+        """Optimize query using SelfQueryRetriever.
+
+        Extracts rewritten query and metadata filters from natural language.
+
+        Args:
+            query: Natural language query
+
+        Returns:
+            OptimizedQueryResult with rewritten query and extracted filters
+        """
+        extracted = self._extract_query_and_filters(query)
+
+        # Convert extracted filters to OptimizedQueryResult format
+        view_filter = None
+        language_filter = None
+        metadata_filters = None
+
+        if extracted.filters:
+            view_filter = extracted.filters.get("view")
+            language_filter = extracted.filters.get("lang")
+            # Keep other filters in metadata_filters
+            metadata_filters = {
+                k: v for k, v in extracted.filters.items()
+                if k not in ("view", "lang")
+            }
+            if not metadata_filters:
+                metadata_filters = None
+
+        return OptimizedQueryResult(
+            original_query=query,
+            rewritten_query=extracted.rewritten_query,
+            view_filter=view_filter,
+            language_filter=language_filter,
+            metadata_filters=metadata_filters,
+        )
+
     def _extract_query_and_filters(self, query: str) -> ExtractedQuery:
         """Extract rewritten query and metadata filters using SelfQueryRetriever's query_constructor.
 
@@ -167,97 +222,6 @@ class SelfQueryRetrieverWrapper:
         
         return filter_dict
     
-    def retrieve(
-        self,
-        query: str,
-        k: int = 10,
-    ) -> List[SelfQueryResult]:
-        """Retrieve documents using hybrid approach.
-
-        1. Extract rewritten query and filters from query using LLM (SelfQueryRetriever)
-        2. Search with actual similarity scores using rewritten query (or original if unavailable)
-
-        Args:
-            query: Natural language query (may contain filter hints)
-            k: Maximum number of results to return
-
-        Returns:
-            List of SelfQueryResult with content, metadata, ACTUAL scores, and rewritten_query
-        """
-        try:
-            # Step 1: Extract rewritten query and filters using query constructor
-            extracted = self._extract_query_and_filters(query)
-            
-            # Step 2: Determine search query (rewritten or original)
-            if self.verbose:
-                if extracted.rewritten_query:
-                    pass
-                if extracted.filters:
-                    pass
-            search_query = extracted.rewritten_query if extracted.rewritten_query else query
-            
-            # Step 3: Search with filters and get actual similarity scores
-            if extracted.filters:
-                # Use filtered search with scores
-                docs_with_scores = self.vectorstore.similarity_search_with_score(
-                    search_query, 
-                    k=k,
-                    filter=extracted.filters,
-                )
-            else:
-                # No filters extracted, just similarity search
-                docs_with_scores = self.vectorstore.similarity_search_with_score(
-                    search_query, 
-                    k=k,
-                )
-            if self.verbose:
-                pass
-            # Convert to SelfQueryResult with actual scores
-            return [
-                SelfQueryResult(
-                    content=doc.page_content,
-                    metadata=doc.metadata,
-                    score=max(0.0, min(1.0, 1.0 - float(score))),  # Convert distance to similarity (clamped)
-                    rewritten_query=extracted.rewritten_query
-                )
-                for doc, score in docs_with_scores
-            ]
-            
-        except Exception as e:
-            logger.exception(f"Self-query failed, falling back: {e}")
-            # Fallback to simple similarity search without filters
-            return self._fallback_search(query, k)
-    
-    def _fallback_search(
-        self,
-        query: str,
-        k: int,
-    ) -> List[SelfQueryResult]:
-        """Fallback to simple similarity search on error.
-        
-        Args:
-            query: Search query
-            k: Number of results
-            
-        Returns:
-            List of SelfQueryResult from basic similarity search
-        """
-        try:
-            # Use similarity_search_with_score to get actual scores
-            docs_with_scores = self.vectorstore.similarity_search_with_score(query, k=k)
-            return [
-                SelfQueryResult(
-                    content=doc.page_content,
-                    metadata=doc.metadata,
-                    score=max(0.0, min(1.0, 1.0 - float(score))),  # Convert distance to similarity (clamped)
-                )
-                for doc, score in docs_with_scores
-            ]
-        except Exception as e:
-            logger.error(f"Fallback search also failed: {e}")
-            return []
-
-
 def create_self_query_retriever(
     config: EmbeddingConfig,
     embeddings_client,
@@ -321,7 +285,7 @@ def create_self_query_retriever(
 
 __all__ = [
     "SelfQueryRetrieverWrapper",
-    "SelfQueryResult",
+    "NoOpQueryOptimizer",
     "ExtractedQuery",
     "create_self_query_retriever",
     "METADATA_FIELD_INFO",

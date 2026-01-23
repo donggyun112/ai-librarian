@@ -10,12 +10,13 @@ Rules:
 """
 
 from .context import ParentContextEnricher
-from .dto import ExpandedResult, QueryPlan, SearchResult, SelfQueryResult
+from .dto import ExpandedResult, QueryPlan, SearchResult, SelfQueryResult, OptimizedQueryResult
 from .grouping import ResultGrouper
 from .pipeline import RetrievalPipeline
+from .protocols import QueryOptimizerProtocol
 from .query import QueryInterpreter
 from .search import VectorSearchEngine
-from .self_query import SelfQueryRetrieverWrapper, create_self_query_retriever
+from .self_query import SelfQueryRetrieverWrapper, NoOpQueryOptimizer, create_self_query_retriever
 
 __all__ = [
     # DTOs
@@ -23,6 +24,9 @@ __all__ = [
     "SearchResult",
     "ExpandedResult",
     "SelfQueryResult",
+    "OptimizedQueryResult",
+    # Protocols
+    "QueryOptimizerProtocol",
     # Query
     "QueryInterpreter",
     # Search
@@ -33,7 +37,8 @@ __all__ = [
     "ResultGrouper",
     # Pipeline
     "RetrievalPipeline",
-    # Self-Query
+    # Query Optimizers
     "SelfQueryRetrieverWrapper",
+    "NoOpQueryOptimizer",
     "create_self_query_retriever",
 ]

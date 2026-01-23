@@ -63,13 +63,13 @@ def main(args: argparse.Namespace) -> int:
                 results,
                 show_context=not args.no_context,
             )
+            sys.stdout.write(f"{output}\ns")
         else:
             output = ResponseFormatter.format_search_results_text(
                 results,
                 show_context=not args.no_context,
             )
-
-        logger.info(output)
+            logger.info(output)
         return 0
 
     except ValidationError as e:
