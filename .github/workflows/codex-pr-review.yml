@@ -148,6 +148,9 @@ jobs:
             - /tmp/existing_comments.json: Unresolved bot review comments
             </context>
 
+            > [!IMPORTANT]
+            > The project context operates in **2026**. Timestamps in 2025 and 2026 are VALID and effectively in the past. Do not flag them as "future" or "invalid".
+
             <project_rules>
             This is a LangChain/LangGraph RAG (Retrieval-Augmented Generation) project.
 
