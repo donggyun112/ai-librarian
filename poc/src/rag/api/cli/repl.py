@@ -3,6 +3,8 @@
 Usage:
     python -m src.rag.api.cli       # Search mode
     python -m src.rag.api.cli --rag # RAG mode (with LLM generation)
+
+Note: View/language filters are automatically extracted from queries by SelfQueryRetriever.
 """
 
 import argparse
@@ -26,8 +28,6 @@ def print_help(rag_mode: bool) -> None:
         "  :help                 Show this help\n"
         "  :quit / :q / exit     Quit\n"
         "  :show                 Show current settings\n"
-        "  :view <type|none>     Set view filter (text/code/image/caption/table/figure)\n"
-        "  :lang <name|none>     Set language filter (python/javascript/etc.)\n"
         "  :topk <int>           Set top-k results\n"
     )
 
@@ -54,8 +54,6 @@ def parse_toggle(value: str) -> bool:
 
 
 def show_settings(
-    view: Optional[str],
-    language: Optional[str],
     top_k: int,
     show_context: bool,
     as_json: bool,
@@ -65,8 +63,6 @@ def show_settings(
     settings = [
         "Current settings:",
         f"  rag_mode:    {'on' if rag_mode else 'off'}",
-        f"  view:        {view or '<none>'}",
-        f"  language:    {language or '<none>'}",
         f"  top_k:       {top_k}",
     ]
     if not rag_mode:
@@ -74,6 +70,7 @@ def show_settings(
         settings.append(f"  json:        {'on' if as_json else 'off'}")
     else:
         settings.append(f"  conversation: {'on' if use_conversation else 'off'}")
+    settings.append("\nNote: view/language filters are auto-extracted from queries")
     logger.info("\n".join(settings))
 
 
@@ -94,8 +91,6 @@ def run_repl(args: argparse.Namespace) -> int:
     rag_use_case: Optional[RAGUseCase] = None
 
     # Settings
-    view = args.view
-    language = args.language
     top_k = args.top_k
     show_context = not args.no_context
     as_json = args.json
@@ -108,7 +103,7 @@ def run_repl(args: argparse.Namespace) -> int:
     # Initialize RAG use case if starting in RAG mode
     if rag_mode:
         try:
-            rag_use_case = RAGUseCase(embeddings_client, config, gen_config,verbose=verbose)
+            rag_use_case = RAGUseCase(embeddings_client, config, gen_config, verbose=verbose)
             logger.info("OCR Vector DB RAG REPL (LLM-powered)")
         except Exception as e:
             logger.warning(f"Failed to initialize RAG: {e}")
@@ -118,7 +113,7 @@ def run_repl(args: argparse.Namespace) -> int:
     if not rag_mode:
         logger.info("OCR Vector DB Search REPL")
 
-    logger.info("Type :help for commands.")
+    logger.info("Type :help for commands. View/language filters are auto-extracted from queries.")
 
     while True:
         try:
@@ -143,25 +138,7 @@ def run_repl(args: argparse.Namespace) -> int:
             continue
 
         if head == ":show":
-            show_settings(view, language, top_k, show_context, as_json, rag_mode, use_conversation)
-            continue
-
-        if head == ":view":
-            if len(cmd) < 2:
-                logger.warning("usage: :view <type|none>")
-                continue
-            value = cmd[1].lower()
-            view = None if value == "none" else value
-            logger.info(f"view set to {view or '<none>'}")
-            continue
-
-        if head == ":lang":
-            if len(cmd) < 2:
-                logger.warning("usage: :lang <name|none>")
-                continue
-            value = cmd[1]
-            language = None if value.lower() == "none" else value
-            logger.info(f"language set to {language or '<none>'}")
+            show_settings(top_k, show_context, as_json, rag_mode, use_conversation)
             continue
 
         if head == ":topk":
@@ -197,7 +174,7 @@ def run_repl(args: argparse.Namespace) -> int:
             new_rag_mode = parse_toggle(cmd[1])
             if new_rag_mode and not rag_use_case:
                 try:
-                    rag_use_case = RAGUseCase(embeddings_client, config, gen_config,verbose=verbose)
+                    rag_use_case = RAGUseCase(embeddings_client, config, gen_config, verbose=verbose)
                 except Exception as e:
                     logger.error(f"Failed to initialize RAG: {e}")
                     continue
@@ -236,8 +213,6 @@ def run_repl(args: argparse.Namespace) -> int:
         query = line
         try:
             RequestValidator.validate_query(query)
-            if view:
-                RequestValidator.validate_view(view)
             RequestValidator.validate_top_k(top_k)
         except ValidationError as exc:
             logger.warning(ResponseFormatter.format_error(exc))
@@ -245,11 +220,10 @@ def run_repl(args: argparse.Namespace) -> int:
 
         if rag_mode and rag_use_case:
             # RAG mode: generate answer with LLM
+            # SelfQueryRetriever auto-extracts view/language from query
             try:
                 response = rag_use_case.execute(
                     query=query,
-                    view=view,
-                    language=language,
                     top_k=top_k,
                     use_conversation=use_conversation,
                 )
@@ -259,11 +233,10 @@ def run_repl(args: argparse.Namespace) -> int:
                 logger.error(f"RAG failed: {e}")
         else:
             # Search mode: show results
+            # SelfQueryRetriever auto-extracts view/language from query
             try:
                 results = search_use_case.execute(
                     query=query,
-                    view=view,
-                    language=language,
                     top_k=top_k,
                     expand_context=show_context,
                 )
@@ -290,20 +263,13 @@ def run_repl(args: argparse.Namespace) -> int:
 
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Interactive search/RAG REPL")
+    parser = argparse.ArgumentParser(
+        description="Interactive search/RAG REPL (view/language auto-extracted from queries)"
+    )
     parser.add_argument(
         "--rag",
         action="store_true",
         help="Start in RAG mode (LLM-powered answers)",
-    )
-    parser.add_argument(
-        "--view",
-        choices=["text", "code", "image", "caption", "table", "figure"],
-        help="Default view filter",
-    )
-    parser.add_argument(
-        "--language",
-        help="Default language filter (python/javascript/etc.)",
     )
     parser.add_argument(
         "--top-k",

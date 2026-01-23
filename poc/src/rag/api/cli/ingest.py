@@ -24,22 +24,31 @@ from ..validators import RequestValidator, ValidationError
 
 
 def expand_file_patterns(patterns: List[str]) -> List[str]:
-    """Expand glob patterns to file paths.
+    """Expand glob patterns and directories to file paths.
 
     Args:
-        patterns: List of file patterns (e.g., ["*.txt", "docs/*.md"])
+        patterns: List of file patterns or directories (e.g., ["*.txt", "docs/", "file.md"])
 
     Returns:
         List of expanded file paths
     """
+    import os
+    
     files: List[str] = []
     for pattern in patterns:
-        matches = glob.glob(pattern, recursive=True)
-        if matches:
-            files.extend(matches)
+        # Handle directories: walk and collect all files
+        if os.path.isdir(pattern):
+            for root, _, filenames in os.walk(pattern):
+                for filename in filenames:
+                    files.append(os.path.join(root, filename))
         else:
-            # Not a glob pattern, treat as literal path
-            files.append(pattern)
+            # Handle glob patterns
+            matches = glob.glob(pattern, recursive=True)
+            if matches:
+                files.extend(matches)
+            else:
+                # Not a glob pattern, treat as literal path
+                files.append(pattern)
 
     # Deduplicate while preserving order
     seen = set()

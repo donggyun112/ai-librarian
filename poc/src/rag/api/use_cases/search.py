@@ -38,7 +38,7 @@ class SearchUseCase:
 
     Example:
         >>> use_case = SearchUseCase(embeddings_client, config)
-        >>> results = use_case.execute("python list comprehension", view="code", top_k=5)
+        >>> results = use_case.execute("python list comprehension", top_k=5)
     """
 
     def __init__(
@@ -58,8 +58,6 @@ class SearchUseCase:
     def execute(
         self,
         query: str,
-        view: Optional[str] = None,
-        language: Optional[str] = None,
         top_k: int = 10,
         expand_context: bool = True,
     ) -> List[ExpandedResult]:
@@ -67,8 +65,6 @@ class SearchUseCase:
 
         Args:
             query: Search query string
-            view: Optional view filter (text, code, image, etc.)
-            language: Optional language filter (python, javascript, etc.)
             top_k: Number of results to retrieve
             expand_context: Whether to fetch parent context
 
@@ -77,14 +73,11 @@ class SearchUseCase:
         """
         # Validate inputs (PKG-API-002)
         RequestValidator.validate_query(query)
-        RequestValidator.validate_view(view)
         RequestValidator.validate_top_k(top_k)
 
-        # Delegate to retrieval pipeline (QueryOptimizer handles query optimization)
+        # Delegate to retrieval pipeline (QueryOptimizer handles filter extraction)
         return self.pipeline.retrieve(
             query=query,
-            view=view,
-            language=language,
             top_k=top_k,
             expand_context=expand_context,
         )

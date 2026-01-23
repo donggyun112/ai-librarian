@@ -93,8 +93,6 @@ class RAGUseCase:
         self,
         query: str,
         *,
-        view: Optional[str] = None,
-        language: Optional[str] = None,
         top_k: int = 5,
         use_conversation: bool = False,
     ) -> GeneratedResponse:
@@ -102,8 +100,6 @@ class RAGUseCase:
 
         Args:
             query: User question
-            view: Optional view filter (explicit override, otherwise auto-detected)
-            language: Optional language filter (explicit override, otherwise auto-detected)
             top_k: Number of results to retrieve
             use_conversation: Whether to use conversation history
 
@@ -112,11 +108,8 @@ class RAGUseCase:
         """
         # Stage 1: Retrieval with QueryOptimizer
         # QueryOptimizer automatically extracts view/language filters from the query
-        # Explicit view/language parameters override auto-detection
         results = self.retrieval.retrieve(
             query=query,
-            view=view,
-            language=language,
             top_k=top_k,
             expand_context=True,
         )

@@ -70,8 +70,6 @@ class TestRAGUseCase:
         assert result == mock_response
         use_case.retrieval.retrieve.assert_called_once_with(
             query="test query",
-            view=None,
-            language=None,
             top_k=5,
             expand_context=True,
         )
@@ -94,8 +92,8 @@ class TestRAGUseCase:
         with pytest.raises(RuntimeError, match="Vector DB down"):
             use_case.execute("test query")
 
-    def test_execute_with_filters(self, mock_deps):
-        """Test execution with explicit filters."""
+    def test_execute_with_custom_top_k(self, mock_deps):
+        """Test execution with custom top_k parameter."""
         client, e_conf, g_conf = mock_deps
         use_case = RAGUseCase(client, e_conf, g_conf)
         
@@ -104,15 +102,11 @@ class TestRAGUseCase:
         
         use_case.execute(
             "test query", 
-            view="code", 
-            language="python", 
             top_k=10
         )
         
         use_case.retrieval.retrieve.assert_called_once_with(
             query="test query",
-            view="code",
-            language="python",
             top_k=10,
             expand_context=True,
         )
