@@ -63,7 +63,7 @@ def main(args: argparse.Namespace) -> int:
                 results,
                 show_context=not args.no_context,
             )
-            sys.stdout.write(f"{output}\ns")
+            sys.stdout.write(f"{output}\n")
         else:
             output = ResponseFormatter.format_search_results_text(
                 results,
