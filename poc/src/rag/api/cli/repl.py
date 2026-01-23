@@ -82,7 +82,7 @@ def run_repl(args: argparse.Namespace) -> int:
         config = load_config()
         gen_config = load_generation_config()
         embeddings_client = EmbeddingProviderFactory.create(config)
-    except ConfigurationError as e:
+    except (ConfigurationError, RuntimeError) as e:
         logger.error(f"Configuration error: {e}")
         logger.error("Please set PG_CONN and COLLECTION_NAME environment variables.")
         return 1
