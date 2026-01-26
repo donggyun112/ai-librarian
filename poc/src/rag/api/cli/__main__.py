@@ -48,11 +48,6 @@ def main() -> None:
         # Search subcommand
         search_parser = subparsers.add_parser("search", help="Search documents")
         search_parser.add_argument("query", help="Search query")
-        search_parser.add_argument(
-            "--view",
-            choices=["text", "code", "image", "caption", "table", "figure"],
-        )
-        search_parser.add_argument("--language", help="Language filter")
         search_parser.add_argument("--top-k", type=int, default=10)
         search_parser.add_argument("--no-context", action="store_true")
         search_parser.add_argument("--json", action="store_true")
@@ -74,7 +69,7 @@ def main() -> None:
             sys.exit(repl.run_repl(args))
 
     # Default: REPL mode (no subcommand provided)
-    # Use repl's parser to handle repl-specific flags (--rag, --view, etc.)
+    # Use repl's parser to handle repl-specific flags
     parser = repl.create_parser()
     args = parser.parse_args()
     sys.exit(repl.run_repl(args))
