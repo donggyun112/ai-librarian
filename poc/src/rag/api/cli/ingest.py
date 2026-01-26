@@ -13,6 +13,7 @@ Rules:
 import argparse
 import glob
 import sys
+import os
 from typing import List
 
 from src.rag.shared.config import EmbeddingConfig, load_config
@@ -32,7 +33,6 @@ def expand_file_patterns(patterns: List[str]) -> List[str]:
     Returns:
         List of expanded file paths
     """
-    import os
     
     files: List[str] = []
     for pattern in patterns:
