@@ -228,24 +228,32 @@ class TestMainFunction:
         captured = capsys.readouterr()
         assert "No reply content" in captured.err
 
-    def test_main_dry_run(self, tmp_path, sample_reply_payload, capsys):
-        """Test dry-run mode prints actions without executing."""
+    @patch("post_reply.run_gh")
+    def test_main_dry_run(self, mock_gh, tmp_path, capsys):
+        """Test main function with --dry-run flag prints actions without executing."""
         from post_reply import main
         import sys
 
+        payload = {"reply": "Test reply content", "resolve_thread": True}
         input_file = tmp_path / "reply.json"
-        input_file.write_text(json.dumps(sample_reply_payload))
+        input_file.write_text(json.dumps(payload))
 
         with patch.object(sys, "argv", [
             "post_reply.py",
             "--repo", "owner/repo",
             "--pr", "42",
             "--event-type", "issue_comment",
-            "--dry-run",
-            "--input", str(input_file)
+            "--thread-node-id", "PRRT_abc123",
+            "--input", str(input_file),
+            "--dry-run"
         ]):
             main()
 
+        # gh CLI should not be called in dry-run mode
+        mock_gh.assert_not_called()
+
         captured = capsys.readouterr()
         assert "DRY RUN" in captured.out
-        assert "owner/repo" in captured.out
+        assert "Repo: owner/repo" in captured.out
+        assert "PR: 42" in captured.out
+        assert "Resolve thread: True" in captured.out

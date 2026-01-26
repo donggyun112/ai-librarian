@@ -29,10 +29,11 @@ class TestToolsList:
         tool_names = [t.name for t in TOOLS]
         assert "think" in tool_names
         assert "aweb_search" in tool_names
+        assert "rag_search" in tool_names
 
     def test_tools_count(self):
         """도구 개수 확인"""
-        assert len(TOOLS) == 2
+        assert len(TOOLS) == 3
 
 
 class TestAwebSearch:

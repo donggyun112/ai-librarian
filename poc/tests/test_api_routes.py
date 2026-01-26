@@ -52,6 +52,10 @@ class TestSessionEndpointsWithUserID:
             mock_memory.get_messages_async.__code__ = MagicMock()
             mock_memory.get_messages_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
 
+            mock_memory.clear_async = AsyncMock()
+            mock_memory.clear_async.__code__ = MagicMock()
+            mock_memory.clear_async.__code__.co_varnames = ['self', 'session_id', 'user_id']
+
             yield mock_memory
 
     def test_list_sessions_with_user_id(self, client, mock_supabase_memory):
@@ -142,6 +146,39 @@ class TestSessionEndpointsWithUserID:
         data = response.json()
         assert "Authorization header required" in data["detail"]
 
+    def test_clear_session_without_auth_fails(self, client, mock_supabase_memory):
+        """Authorization 헤더 없이 세션 메시지 초기화 시도 (Supabase 백엔드는 거부해야 함)"""
+        response = client.delete("/sessions/session-1/messages")
+
+        # Supabase 백엔드는 Authorization 헤더 필수
+        assert response.status_code == 401
+        data = response.json()
+        assert "Authorization header required" in data["detail"]
+
+    def test_clear_session_with_auth(self, client, mock_supabase_memory):
+        """Authorization 헤더로 세션 메시지 초기화"""
+        mock_supabase_memory.list_sessions_async.return_value = ["session-1"]
+
+        response = client.delete("/sessions/session-1/messages", headers={"Authorization": "Bearer user-1"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["message"] == "Session cleared"
+        assert data["session_id"] == "session-1"
+
+        # user_id로 clear가 호출되었는지 확인
+        mock_supabase_memory.clear_async.assert_called_once_with("session-1", user_id="user-1")
+
+    def test_clear_session_denies_access_for_wrong_user(self, client, mock_supabase_memory):
+        """잘못된 user_id로는 세션 메시지 초기화 불가"""
+        mock_supabase_memory.list_sessions_async.return_value = []
+
+        response = client.delete("/sessions/session-1/messages", headers={"Authorization": "Bearer wrong-user"})
+
+        assert response.status_code == 404
+        data = response.json()
+        assert "not found" in data["detail"].lower() or "denied" in data["detail"].lower()
+
 
 class TestSessionEndpointsWithInMemory:
     """InMemoryChatMemory를 사용한 세션 엔드포인트 테스트"""
@@ -205,5 +242,121 @@ class TestSessionEndpointsWithInMemory:
 
         # user_id 없이 호출되었는지 확인 (InMemory는 user_id 무시)
         mock_inmemory.get_messages.assert_called_once_with("session-1")
+
+class TestChatEndpoints:
+    """채팅 엔드포인트 테스트"""
+
+    @pytest.fixture
+    def mock_supervisor(self):
+        """Mock Supervisor"""
+        with patch('src.api.routes.supervisor') as mock_sup:
+            yield mock_sup
+
+    def test_chat_requires_user_id_with_supabase(self, client, mock_supervisor):
+        """POST /sessions/{id}/messages without auth returns 401 with Supabase backend"""
+        with patch('src.api.routes.memory') as mock_memory:
+            mock_memory.__class__ = SupabaseChatMemory
+
+            response = client.post("/sessions/session-1/messages", json={"message": "hello"})
+
+            assert response.status_code == 401
+            data = response.json()
+            assert "Authorization header required" in data["detail"]
+
+    def test_chat_works_with_user_id_and_supabase(self, client, mock_supervisor):
+        """POST /sessions/{id}/messages with auth succeeds with Supabase backend"""
+        with patch('src.api.routes.memory') as mock_memory:
+            mock_memory.__class__ = SupabaseChatMemory
+            # Session existence check mock
+            mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
+
+            # Mock supervisor response
+            from src.schemas.models import SupervisorResponse
+            mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
+                answer="Test response",
+                sources=["aweb_search"],
+                execution_log=[],
+                total_confidence=1.0
+            ))
+
+            response = client.post(
+                "/sessions/session-1/messages",
+                headers={"Authorization": "Bearer user-1"},
+                json={"message": "hello"}
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["answer"] == "Test response"
+            assert data["session_id"] == "session-1"
+
+            # Verify supervisor was called with user_id
+            mock_supervisor.process.assert_called_once()
+            call_kwargs = mock_supervisor.process.call_args.kwargs
+            assert call_kwargs["user_id"] == "user-1"
+
+    def test_chat_works_without_user_id_for_inmemory(self, client, mock_supervisor):
+        """POST /sessions/{id}/messages without auth succeeds with InMemory backend"""
+        with patch('src.api.routes.memory') as mock_memory:
+            mock_memory.__class__ = InMemoryChatMemory
+            # Session existence check mock (InMemory uses synchronous list_sessions)
+            mock_memory.list_sessions = MagicMock(return_value=["session-1"])
+
+            # Mock supervisor response
+            from src.schemas.models import SupervisorResponse
+            mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
+                answer="Test response",
+                sources=[],
+                execution_log=[],
+                total_confidence=1.0
+            ))
+
+            response = client.post("/sessions/session-1/messages", json={"message": "hello"})
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["answer"] == "Test response"
+
+    def test_chat_handles_supervisor_value_error(self, client, mock_supervisor):
+        """POST /sessions/{id}/messages returns 400 when Supervisor raises ValueError"""
+        with patch('src.api.routes.memory') as mock_memory:
+            mock_memory.__class__ = SupabaseChatMemory
+            mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
+
+            # Mock supervisor to raise ValueError
+            mock_supervisor.process = AsyncMock(side_effect=ValueError("Invalid input"))
+
+            response = client.post(
+                "/sessions/session-1/messages",
+                headers={"Authorization": "Bearer user-1"},
+                json={"message": "hello"}
+            )
+
+            assert response.status_code == 400
+            data = response.json()
+            assert "Invalid input" in data["detail"]
+
+
+class TestRagIngestSecurity:
+    """RAG Ingest 엔드포인트 보안 테스트"""
+
+    def test_rag_ingest_disabled_returns_501(self, client):
+        """POST /rag/ingest는 보안상 비활성화되어 501 반환"""
+        response = client.post("/rag/ingest")
+
+        assert response.status_code == 501
+        data = response.json()
+        assert "disabled for security reasons" in data["detail"]
+        assert "CLI" in data["detail"]
+
+    def test_rag_ingest_disabled_with_any_payload(self, client):
+        """POST /rag/ingest는 payload 유무와 관계없이 항상 501 반환"""
+        # 빈 요청
+        response = client.post("/rag/ingest")
+        assert response.status_code == 501
+
+        # JSON payload 포함 요청 (무시됨)
+        response = client.post("/rag/ingest", json={"any": "data"})
+        assert response.status_code == 501
 
 

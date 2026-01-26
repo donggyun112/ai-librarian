@@ -59,3 +59,45 @@ class HealthResponse(BaseModel):
     """헬스 체크 응답"""
     status: str = "ok"
     provider: str
+
+
+# ─────────────────────────────────────────────────────────────
+# Ingestion Schemas
+# ─────────────────────────────────────────────────────────────
+
+
+class IngestFileRequest(BaseModel):
+    """파일 임베딩 요청 (경로 기반)"""
+    file_path: str = Field(..., description="서버 내 파일 경로 (PDF, MD)")
+    force_ocr: bool = Field(False, description="OCR 강제 적용")
+
+
+class IngestResponse(BaseModel):
+    """임베딩 결과 응답"""
+    document_id: str = Field(..., description="생성된 문서 ID")
+    source_path: str = Field(..., description="원본 파일 경로")
+    fragments_count: int = Field(..., description="생성된 Fragment 수")
+    embeddings_count: int = Field(..., description="저장된 Embedding 수")
+    elapsed_seconds: float = Field(..., description="소요 시간 (초)")
+    status: str = Field(..., description="상태 (success/failed)")
+    errors: List[str] = Field(default_factory=list, description="에러 메시지")
+
+
+class IngestDirectoryRequest(BaseModel):
+    """디렉토리 일괄 임베딩 요청"""
+    dir_path: str = Field(..., description="디렉토리 경로")
+    pattern: str = Field("*.pdf", description="파일 패턴 (glob)")
+    force_ocr: bool = Field(False, description="OCR 강제 적용")
+    recursive: bool = Field(True, description="하위 디렉토리 포함")
+
+
+class BatchIngestResponse(BaseModel):
+    """일괄 임베딩 결과 응답"""
+    total_files: int = Field(..., description="처리 대상 파일 수")
+    successful_files: int = Field(..., description="성공한 파일 수")
+    failed_files: int = Field(..., description="실패한 파일 수")
+    total_fragments: int = Field(..., description="총 Fragment 수")
+    total_embeddings: int = Field(..., description="총 Embedding 수")
+    elapsed_seconds: float = Field(..., description="총 소요 시간 (초)")
+    results: List[IngestResponse] = Field(default_factory=list, description="개별 결과")
+

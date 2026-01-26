@@ -1,11 +1,11 @@
 """API 라우트 정의"""
 import json
 import uuid
+
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional, Dict, List, Union
 
 from langchain_core.messages import BaseMessage
-
 from fastapi import APIRouter, HTTPException, Depends, Header
 
 from sse_starlette.sse import EventSourceResponse
@@ -434,3 +434,64 @@ async def delete_session(
         memory.delete_session(session_id)
 
     return {"message": "Session deleted", "session_id": session_id}
+
+
+@router.delete("/sessions/{session_id}/messages")
+async def clear_session(
+    session_id: str,
+    user_id: Optional[str] = Depends(get_current_user)
+) -> Dict[str, str]:
+    """세션 메시지 초기화
+
+    Args:
+        session_id: 세션 ID
+
+    Headers:
+        Authorization: Bearer <token> (Supabase 사용 시 필수)
+    """
+    require_user_id(user_id)
+
+    # SupabaseChatMemory인 경우 소유권 검증
+    if isinstance(memory, SupabaseChatMemory):
+        user_sessions = await memory.list_sessions_async(user_id=user_id)
+        if session_id not in user_sessions:
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
+        await memory.clear_async(session_id, user_id=user_id)
+    else:
+        # InMemoryChatMemory는 user_id 무시하지만 존재 여부는 검증
+        if session_id not in memory.list_sessions():
+            raise HTTPException(status_code=404, detail="Session not found")
+        memory.clear(session_id)
+
+    return {"message": "Session cleared", "session_id": session_id}
+
+
+# ─────────────────────────────────────────────────────────────
+# RAG Endpoints (ingest only - search disabled for chat-only service)
+# ─────────────────────────────────────────────────────────────
+
+@router.post(
+    "/rag/ingest",
+    response_model=None,
+    status_code=501,
+    deprecated=True,
+    summary="문서 임베딩 (보안상 비활성화됨)",
+    responses={
+        501: {
+            "description": "Not Implemented - 보안상 비활성화됨. CLI 사용: python -m src.rag.api.cli ingest <files>",
+        }
+    },
+)
+async def rag_ingest() -> None:
+    """문서 임베딩 (보안상 비활성화됨)
+
+    ⚠️ SECURITY: 이 엔드포인트는 Remote File Read 취약점으로 인해 비활성화되었습니다.
+    현재는 CLI (python -m src.rag.api.cli ingest)를 통해서만 사용 가능합니다.
+    """
+    raise HTTPException(
+        status_code=501,
+        detail="Ingestion via REST API is disabled for security reasons. "
+               "Use CLI instead: python -m src.rag.api.cli ingest <files>"
+    )
+
+
