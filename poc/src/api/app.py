@@ -7,12 +7,16 @@ from pathlib import Path
 
 from config import config
 from .routes import router
+from src.auth import router as auth_router
+from src.auth.utils import lifespan
+from .books import router as books_router
 
 # 앱 생성
 app = FastAPI(
     title="AI Librarian",
     description="AI 기반 문서 검색 및 질의응답 서비스",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # CORS 설정
@@ -26,6 +30,8 @@ app.add_middleware(
 
 # API 라우트 등록
 app.include_router(router, prefix="/v1")
+app.include_router(auth_router)
+app.include_router(books_router)
 
 # Static 파일 서빙 (UI)
 static_dir = Path(__file__).parent.parent.parent / "static"
