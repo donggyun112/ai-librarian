@@ -2,18 +2,21 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional, Dict, List, Union
+from typing import AsyncGenerator, Dict, List, Optional, Union
 
 from langchain_core.messages import BaseMessage
 
-from fastapi import APIRouter, HTTPException, Depends, Header
+from fastapi import APIRouter, HTTPException, Depends, Request
 
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
-from src.memory import InMemoryChatMemory, SupabaseChatMemory
-from config import config
+from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
+from src.memory.base import ChatMemory
+from supabase import AsyncClient
+from src.auth.dependencies import verify_current_user, get_user_scoped_client
+from src.auth.schemas import User
 from .schemas import (
     MessageRequest,
     ChatResponse,
@@ -25,65 +28,6 @@ from .schemas import (
     MessageInfo,
     HealthResponse,
 )
-
-
-async def get_current_user(authorization: Optional[str] = Header(None)) -> Optional[str]:
-    """Authorization 헤더에서 user_id 추출
-
-    TODO: 실제 JWT 검증 로직 구현 필요
-    현재는 Bearer 토큰을 user_id로 직접 사용 (개발용)
-
-    Args:
-        authorization: Authorization 헤더 (Bearer <token>)
-
-    Returns:
-        user_id 또는 None (InMemory 모드)
-
-    Raises:
-        HTTPException: Supabase 모드에서 토큰 없을 때
-    """
-    if not authorization:
-        return None
-
-    # Bearer 토큰 파싱
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid authorization header format. Use: Bearer <token>"
-        )
-
-    token = parts[1]
-
-    # TODO: JWT 검증 및 user_id 추출
-    # 현재는 토큰을 그대로 user_id로 사용 (개발용)
-    # 실제 구현 시:
-    # decoded = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-    # return decoded["sub"]  # or decoded["user_id"]
-
-    return token
-
-
-def require_user_id(user_id: Optional[str], mem: Union[InMemoryChatMemory, SupabaseChatMemory, None] = None) -> Optional[str]:
-    """Supabase 모드에서 user_id 필수 검증
-
-    Args:
-        user_id: 사용자 ID (Authorization 헤더에서 추출)
-        mem: 메모리 인스턴스 (테스트용, 기본값은 전역 memory 사용)
-
-    Returns:
-        user_id (Supabase 모드) 또는 None (InMemory 모드)
-
-    Raises:
-        HTTPException: Supabase 모드에서 user_id 없을 때
-    """
-    mem = mem or memory
-    if isinstance(mem, SupabaseChatMemory) and not user_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Authorization header required. Use: Bearer <token>"
-        )
-    return user_id
 
 
 def _extract_timestamps(messages: List[BaseMessage]) -> tuple[Optional[str], Optional[str]]:
@@ -107,22 +51,27 @@ def _extract_timestamps(messages: List[BaseMessage]) -> tuple[Optional[str], Opt
 
 router = APIRouter()
 
-# 전역 인스턴스 (애플리케이션 수명 동안 유지)
-if config.SUPABASE_URL and config.SUPABASE_SERVICE_ROLE_KEY:
-    logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
-    memory = SupabaseChatMemory(
-        url=config.SUPABASE_URL,
-        key=config.SUPABASE_SERVICE_ROLE_KEY
-    )
-else:
-    logger.info("Using In-Memory storage (not persistent)")
-    memory = InMemoryChatMemory()
+def get_memory(request: Request) -> ChatMemory:
+    if not hasattr(request.app.state, "memory") or request.app.state.memory is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Memory storage not initialized",
+        )
+    return request.app.state.memory
 
-supervisor = Supervisor(memory=memory)
+def get_supervisor(request: Request) -> Supervisor:
+    if not hasattr(request.app.state, "supervisor") or request.app.state.supervisor is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Supervisor not initialized",
+        )
+    return request.app.state.supervisor
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+async def health_check(
+    supervisor: Supervisor = Depends(get_supervisor),
+) -> HealthResponse:
     """헬스 체크"""
     return HealthResponse(
         status="ok",
@@ -132,24 +81,25 @@ async def health_check() -> HealthResponse:
 
 @router.post("/sessions", response_model=SessionCreateResponse)
 async def create_session(
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
 ) -> SessionCreateResponse:
     """새 세션 생성
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
 
     Returns:
         SessionCreateResponse: 생성된 세션 정보
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
     session_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
-    # 세션 저장소에 실제로 세션 생성
     if isinstance(memory, SupabaseChatMemory):
-        success = await memory.init_session_async(session_id, user_id)
+        success = await memory.init_session_async(session_id, user_id, client=client)
         if not success:
             raise HTTPException(
                 status_code=500,
@@ -159,7 +109,6 @@ async def create_session(
         # InMemoryChatMemory
         memory.init_session(session_id)
 
-    # user_id는 토큰이므로 로그에 출력하지 않음 (credential leak 방지)
     logger.info(f"Created new session: {session_id}")
 
     return SessionCreateResponse(
@@ -171,7 +120,9 @@ async def create_session(
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
 async def get_session_detail(
     session_id: str,
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
 ) -> SessionDetailResponse:
     """세션 상세 정보 조회
 
@@ -179,24 +130,24 @@ async def get_session_detail(
         session_id: 세션 ID
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
 
     Returns:
         SessionDetailResponse: 세션 상세 정보
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
     if isinstance(memory, SupabaseChatMemory):
-        # 세션 존재 및 소유권 검증
-        user_sessions = await memory.list_sessions_async(user_id=user_id)
-        if session_id not in user_sessions:
+        try:
+            message_count = await memory.get_message_count_async(session_id, user_id=user_id, client=client)
+            messages = await memory.get_messages_async(
+                session_id, user_id=user_id, client=client, _ownership_verified=True
+            )
+        except SessionAccessDenied:
             raise HTTPException(
                 status_code=404,
                 detail="Session not found or access denied"
             )
-
-        message_count = await memory.get_message_count_async(session_id, user_id=user_id)
-        messages = await memory.get_messages_async(session_id, user_id=user_id)
     else:
         # InMemoryChatMemory
         if session_id not in memory.list_sessions():
@@ -219,7 +170,9 @@ async def get_session_detail(
 async def send_message(
     session_id: str,
     body: MessageRequest,
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    supervisor: Supervisor = Depends(get_supervisor),
 ) -> Union[EventSourceResponse, ChatResponse]:
     """메시지 전송 (body.stream으로 스트리밍/JSON 구분)
 
@@ -228,7 +181,7 @@ async def send_message(
         body: 메시지 요청 본문 (message, stream)
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
 
     Returns:
         - stream: true → SSE 스트리밍 응답
@@ -242,9 +195,8 @@ async def send_message(
         - done: 스트림 완료
         - error: 에러 발생
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
-    # 스트리밍 응답
     if body.stream:
         async def event_generator() -> AsyncGenerator[dict, None]:
             try:
@@ -255,6 +207,7 @@ async def send_message(
                 async for event in supervisor.process_stream(
                     question=body.message,
                     session_id=session_id,
+                    client=client,
                     **kwargs
                 ):
                     event_type = event.get("type", "token")
@@ -283,17 +236,22 @@ async def send_message(
                             "data": json.dumps({"content": event.get("content", "")})
                         }
 
-                # 완료 이벤트
                 yield {
                     "event": "done",
                     "data": json.dumps({"session_id": session_id})
                 }
 
-            except ValueError as e:
-                logger.error(f"Validation error: {e}")
+            except SessionAccessDenied:
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": str(e)})
+                    "data": json.dumps({"error": "Session not found or access denied"})
+                }
+
+            except ValueError:
+                logger.warning("Validation error in stream processing")
+                yield {
+                    "event": "error",
+                    "data": json.dumps({"error": "잘못된 요청입니다."})
                 }
 
             except Exception as e:
@@ -305,7 +263,6 @@ async def send_message(
 
         return EventSourceResponse(event_generator())
 
-    # JSON 응답
     else:
         try:
             kwargs = {}
@@ -315,6 +272,7 @@ async def send_message(
             result = await supervisor.process(
                 question=body.message,
                 session_id=session_id,
+                client=client,
                 **kwargs
             )
             return ChatResponse(
@@ -322,11 +280,16 @@ async def send_message(
                 sources=result.sources,
                 session_id=session_id
             )
-        except ValueError as e:
-            logger.error(f"Validation error: {e}")
+        except SessionAccessDenied:
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found or access denied"
+            )
+        except ValueError:
+            logger.warning("Validation error in chat processing")
             raise HTTPException(
                 status_code=400,
-                detail=str(e)
+                detail="잘못된 요청입니다."
             )
         except Exception as e:
             logger.exception("Chat processing failed")
@@ -338,21 +301,25 @@ async def send_message(
 
 @router.get("/sessions", response_model=SessionListResponse)
 async def list_sessions(
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
 ) -> SessionListResponse:
     """세션 목록 조회
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
     if isinstance(memory, SupabaseChatMemory):
-        session_ids = await memory.list_sessions_async(user_id=user_id)
+        session_ids = await memory.list_sessions_async(user_id=user_id, client=client)
         sessions = [
             SessionInfo(
                 session_id=sid,
-                message_count=await memory.get_message_count_async(sid, user_id=user_id)
+                message_count=await memory.get_message_count_async(
+                    sid, user_id=user_id, client=client, _ownership_verified=True
+                )
             )
             for sid in session_ids
         ]
@@ -373,7 +340,9 @@ async def list_sessions(
 @router.get("/sessions/{session_id}/messages", response_model=SessionHistoryResponse)
 async def get_session_messages(
     session_id: str,
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
 ) -> SessionHistoryResponse:
     """세션의 대화 히스토리 조회
 
@@ -381,17 +350,21 @@ async def get_session_messages(
         session_id: 세션 ID
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
     if isinstance(memory, SupabaseChatMemory):
-        messages = await memory.get_messages_async(session_id, user_id=user_id)
+        try:
+            messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
+        except SessionAccessDenied:
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
     else:
         # InMemoryChatMemory는 user_id 무시
+        if session_id not in memory.list_sessions():
+            raise HTTPException(status_code=404, detail="Session not found")
         messages = memory.get_messages(session_id)
 
-    # Convert BaseMessage objects to MessageInfo
     message_list = []
     for msg in messages:
         message_list.append(MessageInfo(
@@ -409,7 +382,9 @@ async def get_session_messages(
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: str,
-    user_id: Optional[str] = Depends(get_current_user)
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
 ) -> Dict[str, str]:
     """세션 삭제
 
@@ -417,16 +392,15 @@ async def delete_session(
         session_id: 세션 ID
 
     Headers:
-        Authorization: Bearer <token> (Supabase 사용 시 필수)
+        Authorization: Bearer <token> (JWT required)
     """
-    require_user_id(user_id)
+    user_id = current_user.id
 
     if isinstance(memory, SupabaseChatMemory):
-        # 소유권 검증
-        user_sessions = await memory.list_sessions_async(user_id=user_id)
-        if session_id not in user_sessions:
+        try:
+            await memory.delete_session_async(session_id, user_id=user_id, client=client)
+        except SessionAccessDenied:
             raise HTTPException(status_code=404, detail="Session not found or access denied")
-        await memory.delete_session_async(session_id, user_id=user_id)
     else:
         # InMemoryChatMemory는 user_id 무시
         if session_id not in memory.list_sessions():

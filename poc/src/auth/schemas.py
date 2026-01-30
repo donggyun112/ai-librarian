@@ -1,6 +1,5 @@
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
-from datetime import datetime
 
 class UserIdentity(BaseModel):
     id: str
@@ -13,7 +12,7 @@ class UserIdentity(BaseModel):
 
 class UserAppMetadata(BaseModel):
     provider: Optional[str] = None
-    providers: List[str] = []
+    providers: List[str] = Field(default_factory=list)
 
 class User(BaseModel):
     """Supabase User Model Mirror"""

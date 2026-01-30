@@ -8,6 +8,13 @@ from src.auth.schemas import User
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def clear_dependency_overrides():
+    app.dependency_overrides = {}
+    yield
+    app.dependency_overrides = {}
+
+
 @pytest.fixture
 def mock_supabase_client():
     """Mock Supabase AsyncClient"""
@@ -48,7 +55,7 @@ def mock_current_user():
 def test_get_books_without_auth():
     """Test GET /v1/books without authentication"""
     response = client.get("/v1/books")
-    assert response.status_code == 401  # HTTPBearer auto_error returns 401
+    assert response.status_code == 401  # HTTPBearer auto_error returns 401 for missing credentials
 
 
 def test_get_books_success(mock_supabase_client, mock_current_user):
@@ -58,6 +65,7 @@ def test_get_books_success(mock_supabase_client, mock_current_user):
 
     # Setup mock response
     mock_execute_response = MagicMock()
+    mock_execute_response.error = None
     mock_execute_response.data = [
         {
             "id": "book-1",
@@ -93,6 +101,7 @@ def test_get_books_empty(mock_supabase_client, mock_current_user):
 
     # Setup empty response
     mock_execute_response = MagicMock()
+    mock_execute_response.error = None
     mock_execute_response.data = []
     mock_supabase_client.execute.return_value = mock_execute_response
 
@@ -109,7 +118,7 @@ def test_get_books_empty(mock_supabase_client, mock_current_user):
 def test_create_book_without_auth():
     """Test POST /v1/books without authentication"""
     response = client.post("/v1/books", json={"title": "New Book"})
-    assert response.status_code == 401  # HTTPBearer auto_error returns 401
+    assert response.status_code == 401  # HTTPBearer auto_error returns 401 for missing credentials
 
 
 def test_create_book_success(mock_supabase_client, mock_current_user):
@@ -119,6 +128,7 @@ def test_create_book_success(mock_supabase_client, mock_current_user):
 
     # Setup mock response
     mock_execute_response = MagicMock()
+    mock_execute_response.error = None
     mock_execute_response.data = [
         {
             "id": "book-new",
@@ -166,6 +176,7 @@ def test_create_book_db_error(mock_supabase_client, mock_current_user):
 
     # Setup mock to return empty data (simulating insert failure)
     mock_execute_response = MagicMock()
+    mock_execute_response.error = None
     mock_execute_response.data = []
     mock_supabase_client.execute.return_value = mock_execute_response
 

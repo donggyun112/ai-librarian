@@ -20,7 +20,7 @@ def mock_supabase_dependency():
         mock_query = AsyncMock()
         mock_query.execute.return_value = MagicMock(data=[
             {"id": "book-1", "user_id": "user-123", "title": "Test Book", "created_at": "2023-01-01"}
-        ])
+        ], error=None)
         mock_client.table.return_value.select.return_value = mock_query
         
         mock_create.return_value = mock_client

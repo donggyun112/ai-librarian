@@ -1,14 +1,14 @@
 """Supabase 통합 테스트 - 세션 관리 및 히스토리 보존 검증"""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage
 
-from src.memory.supabase_memory import SupabaseChatMemory
+from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
 
 
 @pytest.fixture
 def mock_supabase_client():
-    """Mock Supabase 클라이언트 with realistic behavior"""
+    """Mock Supabase AsyncClient with realistic behavior"""
     with patch('src.memory.supabase_memory.create_client') as mock_create:
         mock_client = MagicMock()
 
@@ -51,10 +51,10 @@ def mock_supabase_client():
                                         result.data = []
                                     return result
 
-                                eq2_mock.execute.side_effect = execute_select_with_user
+                                eq2_mock.execute = AsyncMock(side_effect=execute_select_with_user)
                                 return eq2_mock
 
-                            eq_mock.execute.side_effect = execute_select
+                            eq_mock.execute = AsyncMock(side_effect=execute_select)
                             eq_mock.eq.side_effect = eq_user_handler
                         # For user_id filtering (used in list_sessions)
                         elif field == "user_id":
@@ -73,7 +73,7 @@ def mock_supabase_client():
                                     result.data = filtered_sessions
                                     return result
 
-                                order_mock.execute.side_effect = execute_list_filtered
+                                order_mock.execute = AsyncMock(side_effect=execute_list_filtered)
                                 return order_mock
 
                             eq_mock.order = order_handler_with_filter
@@ -88,7 +88,7 @@ def mock_supabase_client():
                             result.data = list(sessions_db.values())
                             return result
 
-                        order_mock.execute.side_effect = execute_list
+                        order_mock.execute = AsyncMock(side_effect=execute_list)
                         return order_mock
 
                     select_mock.eq.side_effect = eq_handler
@@ -105,7 +105,7 @@ def mock_supabase_client():
                         result.data = [data]
                         return result
 
-                    insert_mock.execute.side_effect = execute_insert
+                    insert_mock.execute = AsyncMock(side_effect=execute_insert)
                     return insert_mock
 
                 # UPDATE 핸들러
@@ -121,7 +121,7 @@ def mock_supabase_client():
                             result = MagicMock()
                             return result
 
-                        eq_mock.execute.side_effect = execute_update
+                        eq_mock.execute = AsyncMock(side_effect=execute_update)
                         return eq_mock
 
                     update_mock.eq.side_effect = eq_handler
@@ -155,10 +155,10 @@ def mock_supabase_client():
                                 result = MagicMock()
                                 return result
 
-                            eq2_mock.execute.side_effect = execute_delete_with_user
+                            eq2_mock.execute = AsyncMock(side_effect=execute_delete_with_user)
                             return eq2_mock
 
-                        eq_mock.execute.side_effect = execute_delete
+                        eq_mock.execute = AsyncMock(side_effect=execute_delete)
                         eq_mock.eq.side_effect = eq_user_handler
                         return eq_mock
 
@@ -186,7 +186,7 @@ def mock_supabase_client():
                                 result.data = [m for m in messages_db if m.get("session_id") == value]
                                 return result
 
-                            order_mock.execute.side_effect = execute_messages
+                            order_mock.execute = AsyncMock(side_effect=execute_messages)
                             return order_mock
 
                         def execute_count():
@@ -195,7 +195,7 @@ def mock_supabase_client():
                             return result
 
                         eq_mock.order.side_effect = order_handler
-                        eq_mock.execute.side_effect = execute_count
+                        eq_mock.execute = AsyncMock(side_effect=execute_count)
                         return eq_mock
 
                     select_mock.eq.side_effect = eq_handler
@@ -211,7 +211,7 @@ def mock_supabase_client():
                         result.data = [data]
                         return result
 
-                    insert_mock.execute.side_effect = execute_insert
+                    insert_mock.execute = AsyncMock(side_effect=execute_insert)
                     return insert_mock
 
                 # DELETE 핸들러
@@ -227,7 +227,7 @@ def mock_supabase_client():
                             result = MagicMock()
                             return result
 
-                        eq_mock.execute.side_effect = execute_delete
+                        eq_mock.execute = AsyncMock(side_effect=execute_delete)
                         return eq_mock
 
                     delete_mock.eq.side_effect = eq_handler
@@ -250,7 +250,7 @@ class TestSupabaseSessionManagement:
     @pytest.mark.asyncio
     async def test_session_lifecycle_with_user_id(self, mock_supabase_client):
         """사용자별 세션 생명주기 전체 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # 1. 새 세션에 메시지 추가 (세션 자동 생성)
         await memory.save_conversation_async(
@@ -277,7 +277,7 @@ class TestSupabaseSessionManagement:
     @pytest.mark.asyncio
     async def test_multi_user_isolation(self, mock_supabase_client):
         """다중 사용자 격리 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # User 1의 세션
         await memory.save_conversation_async(
@@ -306,8 +306,8 @@ class TestSupabaseSessionManagement:
         assert "session-user1" not in user2_sessions
 
         # User 1은 User 2의 메시지를 볼 수 없음
-        messages = await memory.get_messages_async("session-user2", user_id="user-1")
-        assert len(messages) == 0
+        with pytest.raises(SessionAccessDenied):
+            await memory.get_messages_async("session-user2", user_id="user-1")
 
         # User 2는 자신의 메시지를 볼 수 있음
         messages = await memory.get_messages_async("session-user2", user_id="user-2")
@@ -316,7 +316,7 @@ class TestSupabaseSessionManagement:
     @pytest.mark.asyncio
     async def test_session_history_preservation(self, mock_supabase_client):
         """세션 히스토리 보존 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # 여러 대화 추가
         conversations = [
@@ -354,7 +354,7 @@ class TestSupabaseSessionManagement:
     @pytest.mark.asyncio
     async def test_metadata_preservation(self, mock_supabase_client):
         """메타데이터 보존 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # 커스텀 메타데이터와 함께 저장
         await memory.save_conversation_async(
@@ -373,43 +373,58 @@ class TestSupabaseSessionManagement:
     @pytest.mark.asyncio
     async def test_unauthorized_access_denied(self, mock_supabase_client):
         """권한 없는 접근 차단 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # User 2는 User 1의 세션에 접근 불가
-        messages = await memory.get_messages_async("session-user1", user_id="user-2")
-        assert len(messages) == 0
+        with pytest.raises(SessionAccessDenied):
+            await memory.get_messages_async("session-user1", user_id="user-2")
 
         # User 2는 User 1의 세션 메시지 개수를 볼 수 없음
-        count = await memory.get_message_count_async("session-user1", user_id="user-2")
-        assert count == 0
+        with pytest.raises(SessionAccessDenied):
+            await memory.get_message_count_async("session-user1", user_id="user-2")
 
     @pytest.mark.asyncio
     async def test_clear_session_with_ownership(self, mock_supabase_client):
         """소유권 검증 후 세션 정리 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
+
+        # User 1의 세션 생성
+        await memory.save_conversation_async(
+            "session-clear-test", "질문", "답변", user_id="user-1"
+        )
 
         # User 2는 User 1의 세션을 정리할 수 없음
-        await memory.clear_async("session-user1", user_id="user-2")
+        with pytest.raises(SessionAccessDenied):
+            await memory.clear_async("session-clear-test", user_id="user-2")
 
         # User 1은 자신의 세션을 정리할 수 있음
-        await memory.clear_async("session-user1", user_id="user-1")
+        await memory.clear_async("session-clear-test", user_id="user-1")
 
     @pytest.mark.asyncio
     async def test_delete_session_with_ownership(self, mock_supabase_client):
         """소유권 검증 후 세션 삭제 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
-        # User 1의 세션은 User 1만 삭제 가능
-        await memory.delete_session_async("session-user1", user_id="user-1")
+        # 세션 생성
+        await memory.save_conversation_async(
+            "session-del", "질문", "답변", user_id="user-1"
+        )
+
+        # User 2는 삭제 불가
+        with pytest.raises(SessionAccessDenied):
+            await memory.delete_session_async("session-del", user_id="user-2")
+
+        # User 1은 자신의 세션 삭제 가능
+        await memory.delete_session_async("session-del", user_id="user-1")
 
         # 삭제 후 조회 불가
         sessions = await memory.list_sessions_async(user_id="user-1")
-        assert "session-user1" not in sessions
+        assert "session-del" not in sessions
 
     @pytest.mark.asyncio
     async def test_cannot_write_to_other_users_session(self, mock_supabase_client):  # noqa: ARG002
         """다른 사용자의 세션에 메시지 작성 불가 테스트"""
-        memory = SupabaseChatMemory(url="http://test", key="test-key")
+        memory = SupabaseChatMemory(url="http://test", key="test-key", async_client=mock_supabase_client)
 
         # User 1이 세션 생성
         await memory.save_conversation_async(
@@ -420,7 +435,7 @@ class TestSupabaseSessionManagement:
         )
 
         # User 2가 User 1의 세션에 메시지 추가 시도 -> 실패해야 함
-        with pytest.raises(ValueError, match="could not be established"):
+        with pytest.raises(SessionAccessDenied):
             await memory.save_conversation_async(
                 "session-user1",  # User 1의 세션
                 "User 2의 질문",

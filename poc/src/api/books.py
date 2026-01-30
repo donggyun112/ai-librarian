@@ -24,6 +24,19 @@ async def get_books(
         # Query books table - RLS automatically filters by current user
         response = await client.table("books").select("*").execute()
 
+        if getattr(response, "error", None):
+            logger.error(f"Supabase error while retrieving books: {response.error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve books"
+            )
+
+        if response.data is None:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to retrieve books"
+            )
+
         books = [
             BookResponse(
                 id=book["id"],
@@ -66,6 +79,13 @@ async def create_book(
             "title": request.title,
             "user_id": current_user.id,  # Explicit for clarity (RLS validates)
         }).execute()
+
+        if getattr(response, "error", None):
+            logger.error(f"Supabase error while creating book: {response.error}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create book"
+            )
 
         if not response.data or len(response.data) == 0:
             raise HTTPException(

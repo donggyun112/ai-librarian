@@ -48,4 +48,13 @@ class Config:
         "http://localhost:8000,http://localhost:3000"
     ).split(",")
 
+    # Rate limit 설정
+    RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("1", "true", "yes")
+    RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "60"))
+    RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
+
+    # History 저장 재시도 설정
+    HISTORY_SAVE_RETRIES = int(os.getenv("HISTORY_SAVE_RETRIES", "3"))
+    HISTORY_SAVE_RETRY_DELAY_SECONDS = float(os.getenv("HISTORY_SAVE_RETRY_DELAY_SECONDS", "0.2"))
+
 config = Config()
