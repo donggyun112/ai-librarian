@@ -16,7 +16,7 @@ def mock_supabase_client():
 
 def test_get_me_without_token():
     response = client.get("/v1/auth/me")
-    assert response.status_code == 401  # HTTPBearer auto_error returns 401
+    assert response.status_code == 401  # HTTPBearer auto_error returns 401 for missing credentials
 
 def test_get_me_with_invalid_token(mock_supabase_client):
     app.dependency_overrides[get_supabase_client] = lambda: mock_supabase_client

@@ -1,9 +1,11 @@
 """FastAPI 애플리케이션"""
-from fastapi import FastAPI
+import time
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
+from fastapi.responses import JSONResponse
 
 from config import config
 from .routes import router
@@ -27,6 +29,31 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    if not config.RATE_LIMIT_ENABLED:
+        return await call_next(request)
+
+    limiter = getattr(request.app.state, "rate_limiter", None)
+    if limiter is None:
+        return await call_next(request)
+
+    # TODO: Replace in-memory limiter with shared store (e.g., Redis) for multi-worker deployments.
+    window = config.RATE_LIMIT_WINDOW_SECONDS
+    limit = config.RATE_LIMIT_REQUESTS
+    key = request.client.host if request.client else "unknown"
+    now = time.monotonic()
+
+    async with limiter["lock"]:
+        hits = limiter["hits"][key]
+        while hits and (now - hits[0]) > window:
+            hits.popleft()
+        if len(hits) >= limit:
+            return JSONResponse(status_code=429, content={"detail": "Too Many Requests"})
+        hits.append(now)
+
+    return await call_next(request)
 
 # API 라우트 등록
 app.include_router(router, prefix="/v1")

@@ -2,6 +2,8 @@
 import asyncio
 from typing import Coroutine, TypeVar
 
+import nest_asyncio
+
 T = TypeVar("T")
 
 
@@ -11,7 +13,6 @@ def run_async(coro: Coroutine[None, None, T]) -> T:
         loop = asyncio.get_event_loop()
         if loop.is_running():
             # 이미 이벤트 루프가 실행 중인 경우 (Jupyter 등)
-            import nest_asyncio
             nest_asyncio.apply()
             return loop.run_until_complete(coro)
         else:

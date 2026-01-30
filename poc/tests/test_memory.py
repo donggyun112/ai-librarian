@@ -1,11 +1,11 @@
 """Memory 모듈 테스트"""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.memory import ChatMemory, InMemoryChatMemory
 from src.memory.base import ChatMemory as ChatMemoryBase
-from src.memory.supabase_memory import SupabaseChatMemory
+from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
 
 
 class TestChatMemoryInterface:
@@ -201,6 +201,44 @@ class TestSupervisorWithMemory:
         assert messages[2].content == "이전 답변"
         assert messages[3].content == "새 질문"
 
+    @pytest.mark.asyncio
+    async def test_build_messages_passes_client_to_memory(self):
+        """_build_messages가 user-scoped client를 메모리에 전달하는지 확인"""
+        from src.supervisor import Supervisor
+
+        class DummyAsyncMemory:
+            def __init__(self):
+                self.captured_client = None
+
+            async def get_messages_async(self, session_id: str, user_id=None, client=None):
+                self.captured_client = client
+                return []
+
+        memory = DummyAsyncMemory()
+        supervisor = Supervisor(memory=memory)
+
+        client = object()
+        await supervisor._build_messages("session-1", "새 질문", user_id="user-1", client=client)
+
+        assert memory.captured_client is client
+
+
+class TestSupabaseMemoryGuard:
+    """SupabaseChatMemory의 user-scoped client 강제 확인"""
+
+    @pytest.mark.asyncio
+    async def test_requires_user_scoped_client_when_enabled(self):
+        from src.memory.supabase_memory import SupabaseChatMemory
+
+        memory = SupabaseChatMemory(
+            url="http://localhost",
+            key="test-key",
+            require_user_scoped_client=True,
+        )
+
+        with pytest.raises(ValueError):
+            await memory.get_messages_async("session-1", user_id="user-1", client=None)
+
     def test_save_to_history_adds_to_memory(self):
         """_save_to_history가 메모리에 저장하는지 확인"""
         from src.supervisor import Supervisor
@@ -281,9 +319,23 @@ class TestSupabaseChatMemory:
             yield mock_client
 
     @pytest.fixture
+    def mock_async_supabase_client(self):
+        """Mock Supabase AsyncClient"""
+        return MagicMock()
+
+    @pytest.fixture
     def memory(self, mock_supabase_client):
         """SupabaseChatMemory 인스턴스"""
         return SupabaseChatMemory(url="http://test", key="test-key")
+
+    @pytest.fixture
+    def memory_async(self, mock_supabase_client, mock_async_supabase_client):
+        """SupabaseChatMemory 인스턴스 (async client 포함)"""
+        return SupabaseChatMemory(
+            url="http://test",
+            key="test-key",
+            async_client=mock_async_supabase_client,
+        )
 
     def test_implements_interface(self, memory):
         """SupabaseChatMemory는 ChatMemory 구현체"""
@@ -308,16 +360,14 @@ class TestSupabaseChatMemory:
         assert messages == []
 
     def test_get_messages_denies_access_for_wrong_user(self, memory, mock_supabase_client):
-        """잘못된 user_id로는 메시지 조회 불가"""
+        """잘못된 user_id로는 SessionAccessDenied 발생"""
         # 세션 소유권 확인 실패 설정
         session_check = MagicMock()
         session_check.data = []  # 소유권 없음
         mock_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.execute.return_value = session_check
 
-        messages = memory.get_messages("session-1", user_id="wrong-user")
-
-        # 빈 리스트 반환
-        assert messages == []
+        with pytest.raises(SessionAccessDenied):
+            memory.get_messages("session-1", user_id="wrong-user")
 
     def test_list_sessions_filters_by_user_id(self, memory, mock_supabase_client):
         """user_id가 제공되면 해당 사용자의 세션만 조회"""
@@ -365,7 +415,7 @@ class TestSupabaseChatMemory:
 
     def test_clear_with_user_id_verifies_ownership(self, memory, mock_supabase_client):
         """user_id가 제공되면 세션 소유권 검증 후 삭제"""
-        # 세션 소유권 확인 설정
+        # 세션 소유권 확인 설정 (소유권 있음)
         session_check = MagicMock()
         session_check.data = [{"id": "session-1", "user_id": "user-1"}]
 
@@ -388,23 +438,48 @@ class TestSupabaseChatMemory:
         # 소유권 확인이 호출되었는지 확인
         assert mock_table.select.called
 
+    def test_clear_denies_access_for_wrong_user(self, memory, mock_supabase_client):
+        """잘못된 user_id로는 clear 시 SessionAccessDenied 발생"""
+        session_check = MagicMock()
+        session_check.data = []  # 소유권 없음
+
+        mock_table = mock_supabase_client.table.return_value
+        mock_select = mock_table.select.return_value
+        mock_eq1 = mock_select.eq.return_value
+        mock_eq2 = mock_eq1.eq.return_value
+        mock_eq2.execute.return_value = session_check
+
+        with pytest.raises(SessionAccessDenied):
+            memory.clear("session-1", user_id="wrong-user")
+
     @pytest.mark.asyncio
-    async def test_save_conversation_async_preserves_metadata(self, memory, mock_supabase_client):
+    async def test_save_conversation_async_preserves_metadata(self, memory_async, mock_async_supabase_client):
         """비동기 save_conversation이 메타데이터를 보존"""
-        # _ensure_session 설정
         session_check = MagicMock()
         session_check.data = [{"id": "session-1", "user_id": "user-1"}]
-        mock_supabase_client.table.return_value.select.return_value.eq.return_value.execute.return_value = session_check
+
+        # _ensure_session: .select().eq(id).execute() -> session exists
+        mock_async_supabase_client.table.return_value.select.return_value.eq.return_value.execute = AsyncMock(
+            return_value=session_check
+        )
+        # _check_session_ownership_async: .select().eq(id).eq(user_id).execute()
+        mock_async_supabase_client.table.return_value.select.return_value.eq.return_value.eq.return_value.execute = AsyncMock(
+            return_value=session_check
+        )
 
         # insert 설정
         mock_insert = MagicMock()
-        mock_supabase_client.table.return_value.insert.return_value.execute.return_value = mock_insert
+        mock_async_supabase_client.table.return_value.insert.return_value.execute = AsyncMock(
+            return_value=mock_insert
+        )
 
         # update 설정
         mock_update = MagicMock()
-        mock_supabase_client.table.return_value.update.return_value.eq.return_value.execute.return_value = mock_update
+        mock_async_supabase_client.table.return_value.update.return_value.eq.return_value.execute = AsyncMock(
+            return_value=mock_update
+        )
 
-        await memory.save_conversation_async(
+        await memory_async.save_conversation_async(
             "session-1",
             "질문",
             "답변",
@@ -413,7 +488,7 @@ class TestSupabaseChatMemory:
         )
 
         # insert가 2번 호출되었는지 확인 (user message + ai message)
-        assert mock_supabase_client.table.return_value.insert.call_count >= 2
+        assert mock_async_supabase_client.table.return_value.insert.call_count >= 2
 
     def test_get_message_count_with_user_id_verifies_ownership(self, memory, mock_supabase_client):
         """user_id가 제공되면 세션 소유권 검증 후 개수 조회"""
@@ -442,8 +517,8 @@ class TestSupabaseChatMemory:
         # 소유권 확인이 호출되었는지 확인
         assert count == 5
 
-    def test_get_message_count_returns_zero_for_wrong_user(self, memory, mock_supabase_client):
-        """잘못된 user_id로는 개수 0 반환"""
+    def test_get_message_count_raises_for_wrong_user(self, memory, mock_supabase_client):
+        """잘못된 user_id로는 SessionAccessDenied 발생"""
         # 세션 소유권 확인 실패 설정
         session_check = MagicMock()
         session_check.data = []  # 소유권 없음
@@ -454,6 +529,5 @@ class TestSupabaseChatMemory:
         mock_eq2 = mock_eq1.eq.return_value
         mock_eq2.execute.return_value = session_check
 
-        count = memory.get_message_count("session-1", user_id="wrong-user")
-
-        assert count == 0
+        with pytest.raises(SessionAccessDenied):
+            memory.get_message_count("session-1", user_id="wrong-user")

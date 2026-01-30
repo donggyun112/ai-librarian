@@ -16,6 +16,7 @@ import uuid
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.memory.supabase_memory import SupabaseChatMemory
+from supabase import create_async_client
 
 
 # 환경 변수가 설정되어 있을 때만 테스트 실행
@@ -47,19 +48,30 @@ def test_user_id():
     return os.getenv("TEST_USER_ID", "00000000-0000-0000-0000-000000000001")
 
 
+@pytest.fixture
+def test_user_id_2():
+    """두 번째 테스트용 사용자 ID (격리 테스트용)"""
+    return os.getenv("TEST_USER_ID_2")
+
+
 class TestRealSupabaseIntegration:
     """실제 Supabase 데이터베이스 통합 테스트"""
 
     @pytest.mark.asyncio
     async def test_session_creation_and_message_storage(self, memory, test_session_id, test_user_id):
         """세션 생성 및 메시지 저장 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
             # 메시지 저장
             await memory.save_conversation_async(
                 test_session_id,
                 "테스트 질문",
                 "테스트 답변",
-                user_id=test_user_id
+                user_id=test_user_id,
+                client=async_client,
             )
 
             # 세션 목록 확인
@@ -81,10 +93,15 @@ class TestRealSupabaseIntegration:
         finally:
             # 정리
             memory.delete_session(test_session_id, user_id=test_user_id)
+            await async_client.aclose()
 
     @pytest.mark.asyncio
     async def test_multiple_conversations_history(self, memory, test_session_id, test_user_id):
         """여러 대화의 히스토리 보존 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
             # 3개의 대화 추가
             conversations = [
@@ -98,7 +115,8 @@ class TestRealSupabaseIntegration:
                     test_session_id,
                     q,
                     a,
-                    user_id=test_user_id
+                    user_id=test_user_id,
+                    client=async_client,
                 )
 
             # 히스토리 확인
@@ -112,13 +130,17 @@ class TestRealSupabaseIntegration:
 
         finally:
             memory.delete_session(test_session_id, user_id=test_user_id)
+            await async_client.aclose()
 
-    def test_user_isolation(self, memory, test_user_id):
+    def test_user_isolation(self, memory, test_user_id, test_user_id_2):
         """사용자 간 데이터 격리 테스트"""
         user1_id = test_user_id
-        user2_id = str(uuid.uuid4())
+        user2_id = test_user_id_2
         session1_id = str(uuid.uuid4())
         session2_id = str(uuid.uuid4())
+
+        if not user2_id:
+            pytest.skip("TEST_USER_ID_2 is not set; skipping user isolation test.")
 
         try:
             # User 1의 세션 (동기 메서드 사용)
@@ -177,6 +199,10 @@ class TestRealSupabaseIntegration:
     @pytest.mark.asyncio
     async def test_metadata_preservation(self, memory, test_session_id, test_user_id):
         """메타데이터 보존 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
             # 커스텀 메타데이터와 함께 저장
             await memory.save_conversation_async(
@@ -185,7 +211,8 @@ class TestRealSupabaseIntegration:
                 "답변",
                 user_id=test_user_id,
                 custom_field="custom_value",
-                timestamp="2024-01-01"
+                timestamp="2024-01-01",
+                client=async_client,
             )
 
             # 메시지 확인 (메타데이터는 additional_kwargs에 저장됨)
@@ -197,6 +224,7 @@ class TestRealSupabaseIntegration:
 
         finally:
             memory.delete_session(test_session_id, user_id=test_user_id)
+            await async_client.aclose()
 
 
 class TestSupabaseConnectionHealth:

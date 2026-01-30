@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AsyncClient, create_async_client
@@ -8,10 +10,10 @@ from .schemas import User
 # Bearer Token Scheme mainly for Swagger UI
 oauth2_scheme = HTTPBearer(auto_error=True)
 
-def get_supabase_admin_client(request: Request) -> AsyncClient:
+def get_supabase_client(request: Request) -> AsyncClient:
     """
-    Dependency to get Admin Supabase Client (SERVICE_ROLE_KEY)
-    RLS is BYPASSED - use only for admin operations or JWT verification
+    Dependency to get Supabase Client (ANON_KEY)
+    RLS는 JWT에 따라 적용됩니다.
     """
     if not hasattr(request.app.state, "supabase"):
         raise HTTPException(
@@ -20,29 +22,21 @@ def get_supabase_admin_client(request: Request) -> AsyncClient:
         )
     return request.app.state.supabase
 
-# Backward compatibility alias
-get_supabase_client = get_supabase_admin_client
-
 async def get_user_scoped_client(
     token: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
 ) -> AsyncClient:
     """
-    Create a user-scoped Supabase client with JWT token.
-    RLS is ENABLED - auth.uid() automatically set to current user.
+    Create a per-request Supabase client with the caller's JWT for RLS.
 
-    Use this for all user data operations.
-    Performance: Client is properly closed after request.
+    Per-request creation is intentional: concurrent requests must not
+    share auth headers, so each request gets its own client instance.
     """
+    client: AsyncClient | None = None
     try:
-        # Create client with ANON_KEY (RLS enabled)
-        # Using create_async_client to avoid blocking I/O
-        client: AsyncClient = await create_async_client(
+        client = await create_async_client(
             config.SUPABASE_URL,
             config.SUPABASE_ANON_KEY
         )
-
-        # Set the user's JWT token for RLS auth
-        # This headers injection is crucial for RLS
         client.postgrest.auth(token.credentials)
 
         yield client
@@ -54,8 +48,7 @@ async def get_user_scoped_client(
             detail="Failed to initialize database connection"
         )
     finally:
-        # Resource cleanup (Critical for connection pooling)
-        if 'client' in locals():
+        if client is not None:
             await client.aclose()
 
 async def verify_current_user(
@@ -101,7 +94,7 @@ async def verify_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        # 🔒 Security: Log error type only, not full message (may contain sensitive info)
+        # Security: log error type only, not full message (may contain sensitive info)
         logger.exception(f"Token verification failed: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

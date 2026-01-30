@@ -1,18 +1,25 @@
 from contextlib import asynccontextmanager
+from collections import defaultdict, deque
+import asyncio
 from fastapi import FastAPI
 from supabase import create_async_client, AsyncClient, ClientOptions
 from loguru import logger
 from config import config
+from src.memory import InMemoryChatMemory, SupabaseChatMemory
+from src.supervisor import Supervisor
 
-def create_supabase_client() -> AsyncClient:
+
+async def create_supabase_client() -> AsyncClient:
     """
-    Supabase Async Client 생성 (Factory Pattern)
-    state 저장을 위한 factory 함수입니다.
+    Supabase Client 생성 (ANON_KEY 사용)
+
+    RLS가 활성화된 사용자 범위 접근을 위해 사용합니다.
+    JWT 검증 등 인증 작업에도 사용됩니다.
     """
     if not config.SUPABASE_URL or not config.SUPABASE_ANON_KEY:
         logger.warning("Supabase configuration missing (URL or ANON_KEY). Auth might fail.")
-    
-    return create_async_client(
+
+    return await create_async_client(
         config.SUPABASE_URL,
         config.SUPABASE_ANON_KEY,
         options=ClientOptions(
@@ -20,6 +27,7 @@ def create_supabase_client() -> AsyncClient:
             storage_client_timeout=10,
         )
     )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -29,11 +37,28 @@ async def lifespan(app: FastAPI):
     """
     # Startup
     logger.info("Initializing Supabase Client...")
-    app.state.supabase = create_supabase_client()
+    app.state.supabase = await create_supabase_client()
+
+    if config.SUPABASE_URL and config.SUPABASE_ANON_KEY:
+        logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
+        app.state.memory = SupabaseChatMemory(
+            url=config.SUPABASE_URL,
+            key=config.SUPABASE_ANON_KEY,
+            require_user_scoped_client=True,
+        )
+    else:
+        logger.info("Using In-Memory storage (not persistent)")
+        app.state.memory = InMemoryChatMemory()
+
+    app.state.supervisor = Supervisor(memory=app.state.memory)
+    app.state.rate_limiter = {
+        "lock": asyncio.Lock(),
+        "hits": defaultdict(deque),
+    }
     
     yield
-    
+
     # Shutdown
-    # supabase-py's AsyncClient currently doesn't require explicit close, 
-    # but if it does in future, add it here.
-    logger.info("Closing Supabase Client resources...")
+    logger.info("Closing Supabase Client...")
+    if hasattr(app.state, "supabase") and app.state.supabase:
+        await app.state.supabase.aclose()

@@ -16,7 +16,7 @@ def mock_supabase_client():
 
 def test_get_me_without_token():
     response = client.get("/v1/auth/me")
-    assert response.status_code == 401  # HTTPBearer auto_error=True returns 401 or 403
+    assert response.status_code == 401  # HTTPBearer auto_error=True returns 401 for missing credentials
 
 def test_get_me_with_invalid_token(mock_supabase_client):
     app.dependency_overrides[get_supabase_client] = lambda: mock_supabase_client
@@ -32,19 +32,21 @@ def test_get_me_with_invalid_token(mock_supabase_client):
 def test_get_me_success(mock_supabase_client):
     app.dependency_overrides[get_supabase_client] = lambda: mock_supabase_client
     
-    # Setup mock success
+    # Setup mock user with actual attributes (not model_dump)
     mock_user = MagicMock()
-    mock_user.model_dump.return_value = {
-        "id": "user-123",
-        "aud": "authenticated",
-        "email": "test@example.com",
-        "role": "authenticated",
-        "created_at": "2023-01-01T00:00:00Z",
-        "updated_at": "2023-01-01T00:00:00Z",
-        "app_metadata": {},
-        "user_metadata": {},
-        "identities": []
-    }
+    mock_user.id = "user-123"
+    mock_user.aud = "authenticated"
+    mock_user.role = "authenticated"
+    mock_user.email = "test@example.com"
+    mock_user.email_confirmed_at = "2023-01-01T00:00:00Z"
+    mock_user.phone = None
+    mock_user.confirmed_at = "2023-01-01T00:00:00Z"
+    mock_user.last_sign_in_at = "2023-01-01T00:00:00Z"
+    mock_user.app_metadata = {}
+    mock_user.user_metadata = {}
+    mock_user.identities = []
+    mock_user.created_at = "2023-01-01T00:00:00Z"
+    mock_user.updated_at = "2023-01-01T00:00:00Z"
     
     mock_response = MagicMock()
     mock_response.user = mock_user
