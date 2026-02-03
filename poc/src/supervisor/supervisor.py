@@ -13,7 +13,7 @@ Adapter 패턴:
     - Supervisor는 Adapter 인터페이스만 사용
 """
 
-from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional, Any
+from typing import Any, List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
 import anyio
 from langchain_core.messages import (
@@ -184,41 +184,21 @@ class Supervisor:
             session_id: 세션 ID
             question: 사용자 질문
             user_id: 사용자 ID (SupabaseChatMemory 사용 시 필수)
-
-        Raises:
-            ValueError: SupabaseChatMemory 사용 시 user_id가 None인 경우
+            client: user-scoped Supabase client
         """
-        # 도구 정보를 동적으로 주입하여 프롬프트 생성
         messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))]
-
-        # SupabaseChatMemory인 경우 비동기 메서드 사용
-        if hasattr(self.memory, 'get_messages_async'):
-            if user_id is None:
-                raise ValueError("user_id is required when using SupabaseChatMemory")
-            messages.extend(await self.memory.get_messages_async(session_id, user_id=user_id, client=client))
-        else:
-            # InMemoryChatMemory 등 동기 메모리는 그대로 사용
-            messages.extend(self.memory.get_messages(session_id))
-
+        messages.extend(await self.memory.get_messages_async(session_id, user_id=user_id, client=client))
         messages.append(HumanMessage(content=question))
         return messages
 
     async def _save_to_history_async(self, session_id: str, question: str, answer: str, **kwargs) -> None:
         """대화 히스토리에 비동기 저장"""
-        # TODO: Finalize streaming failure UX and move to outbox/retry queue in a follow-up PR.
         retries = max(1, config.HISTORY_SAVE_RETRIES)
         delay = max(0.0, config.HISTORY_SAVE_RETRY_DELAY_SECONDS)
 
         for attempt in range(1, retries + 1):
             try:
-                # SupabaseChatMemory의 경우 비동기 메서드 사용
-                if hasattr(self.memory, 'save_conversation_async'):
-                    await self.memory.save_conversation_async(session_id, question, answer, **kwargs)
-                else:
-                    # 동기 메모리의 경우 스레드에서 실행
-                    await anyio.to_thread.run_sync(
-                        lambda: self.memory.save_conversation(session_id, question, answer, **kwargs)
-                    )
+                await self.memory.save_conversation_async(session_id, question, answer, **kwargs)
                 return
             except Exception as e:
                 if attempt >= retries:
@@ -229,14 +209,6 @@ class Supervisor:
                 )
                 if delay:
                     await anyio.sleep(delay)
-
-    def _save_to_history(self, session_id: str, question: str, answer: str, **kwargs) -> None:
-        """대화 히스토리에 저장 (동기 wrapper)"""
-        self.memory.save_conversation(session_id, question, answer, **kwargs)
-
-    def clear_history(self, session_id: str) -> None:
-        """세션 히스토리 초기화"""
-        self.memory.clear(session_id)
 
     # ============================================================
     # 비스트리밍 처리

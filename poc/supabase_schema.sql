@@ -68,8 +68,8 @@ CREATE TABLE IF NOT EXISTS public.chat_sessions (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS chat_sessions_user_id_idx ON public.chat_sessions(user_id);
-CREATE INDEX IF NOT EXISTS chat_sessions_last_message_at_idx ON public.chat_sessions(last_message_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON public.chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_last_message_at ON public.chat_sessions(last_message_at DESC);
 
 -- Enable RLS
 ALTER TABLE public.chat_sessions ENABLE ROW LEVEL SECURITY;
@@ -108,10 +108,10 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
 );
 
 -- Indexes
-CREATE INDEX IF NOT EXISTS chat_messages_session_id_created_at_idx
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id_created_at
     ON public.chat_messages(session_id, created_at);
 
-CREATE INDEX IF NOT EXISTS chat_messages_session_id_id_idx
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id_id
     ON public.chat_messages(session_id, id);
 
 -- Enable RLS

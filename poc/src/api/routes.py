@@ -12,7 +12,7 @@ from sse_starlette.sse import EventSourceResponse
 from loguru import logger
 
 from src.supervisor import Supervisor
-from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
+from src.memory.supabase_memory import SessionAccessDenied
 from src.memory.base import ChatMemory
 from supabase import AsyncClient
 from src.auth.dependencies import verify_current_user, get_user_scoped_client
@@ -98,16 +98,12 @@ async def create_session(
     session_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
-    if isinstance(memory, SupabaseChatMemory):
-        success = await memory.init_session_async(session_id, user_id, client=client)
-        if not success:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to create session"
-            )
-    else:
-        # InMemoryChatMemory
-        memory.init_session(session_id)
+    success = await memory.init_session_async(session_id, user_id, client=client)
+    if not success:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to create session"
+        )
 
     logger.info(f"Created new session: {session_id}")
 
@@ -137,24 +133,16 @@ async def get_session_detail(
     """
     user_id = current_user.id
 
-    if isinstance(memory, SupabaseChatMemory):
-        try:
-            message_count = await memory.get_message_count_async(session_id, user_id=user_id, client=client)
-            messages = await memory.get_messages_async(
-                session_id, user_id=user_id, client=client, _ownership_verified=True
-            )
-        except SessionAccessDenied:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
-    else:
-        # InMemoryChatMemory
-        if session_id not in memory.list_sessions():
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        message_count = memory.get_message_count(session_id)
-        messages = memory.get_messages(session_id)
+    try:
+        message_count = await memory.get_message_count_async(session_id, user_id=user_id, client=client)
+        messages = await memory.get_messages_async(
+            session_id, user_id=user_id, client=client, _ownership_verified=True
+        )
+    except SessionAccessDenied:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found or access denied"
+        )
 
     created_at, last_activity = _extract_timestamps(messages)
 
@@ -254,7 +242,7 @@ async def send_message(
                     "data": json.dumps({"error": "잘못된 요청입니다."})
                 }
 
-            except Exception as e:
+            except Exception:
                 logger.exception("Stream processing failed")
                 yield {
                     "event": "error",
@@ -291,7 +279,7 @@ async def send_message(
                 status_code=400,
                 detail="잘못된 요청입니다."
             )
-        except Exception as e:
+        except Exception:
             logger.exception("Chat processing failed")
             raise HTTPException(
                 status_code=500,
@@ -312,27 +300,16 @@ async def list_sessions(
     """
     user_id = current_user.id
 
-    if isinstance(memory, SupabaseChatMemory):
-        session_ids = await memory.list_sessions_async(user_id=user_id, client=client)
-        sessions = [
-            SessionInfo(
-                session_id=sid,
-                message_count=await memory.get_message_count_async(
-                    sid, user_id=user_id, client=client, _ownership_verified=True
-                )
+    session_ids = await memory.list_sessions_async(user_id=user_id, client=client)
+    sessions = [
+        SessionInfo(
+            session_id=sid,
+            message_count=await memory.get_message_count_async(
+                sid, user_id=user_id, client=client, _ownership_verified=True
             )
-            for sid in session_ids
-        ]
-    else:
-        # InMemoryChatMemory는 user_id 무시
-        session_ids = memory.list_sessions()
-        sessions = [
-            SessionInfo(
-                session_id=sid,
-                message_count=memory.get_message_count(sid)
-            )
-            for sid in session_ids
-        ]
+        )
+        for sid in session_ids
+    ]
 
     return SessionListResponse(sessions=sessions)
 
@@ -354,16 +331,10 @@ async def get_session_messages(
     """
     user_id = current_user.id
 
-    if isinstance(memory, SupabaseChatMemory):
-        try:
-            messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
-        except SessionAccessDenied:
-            raise HTTPException(status_code=404, detail="Session not found or access denied")
-    else:
-        # InMemoryChatMemory는 user_id 무시
-        if session_id not in memory.list_sessions():
-            raise HTTPException(status_code=404, detail="Session not found")
-        messages = memory.get_messages(session_id)
+    try:
+        messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
+    except SessionAccessDenied:
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
 
     message_list = []
     for msg in messages:
@@ -396,15 +367,9 @@ async def delete_session(
     """
     user_id = current_user.id
 
-    if isinstance(memory, SupabaseChatMemory):
-        try:
-            await memory.delete_session_async(session_id, user_id=user_id, client=client)
-        except SessionAccessDenied:
-            raise HTTPException(status_code=404, detail="Session not found or access denied")
-    else:
-        # InMemoryChatMemory는 user_id 무시
-        if session_id not in memory.list_sessions():
-            raise HTTPException(status_code=404, detail="Session not found")
-        memory.delete_session(session_id)
+    try:
+        await memory.delete_session_async(session_id, user_id=user_id, client=client)
+    except SessionAccessDenied:
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
 
     return {"message": "Session deleted", "session_id": session_id}

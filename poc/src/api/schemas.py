@@ -1,6 +1,5 @@
 """API 스키마 정의"""
 from typing import Optional, List
-from datetime import datetime
 from pydantic import BaseModel, Field
 
 
