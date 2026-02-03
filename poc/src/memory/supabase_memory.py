@@ -252,6 +252,18 @@ class SupabaseChatMemory(ChatMemory):
         await self._add_message_async(session_id, user_msg, **kwargs)
         await self._add_message_async(session_id, ai_msg, **kwargs)
 
+    async def add_user_message_async(self, session_id: str, content: str, **kwargs) -> None:
+        """사용자 메시지 단건 추가 (비동기)"""
+        metadata = {k: v for k, v in kwargs.items() if k != "user_id"}
+        message = HumanMessage(content=content, additional_kwargs=metadata)
+        await self._add_message_async(session_id, message, **kwargs)
+
+    async def add_ai_message_async(self, session_id: str, content: str, **kwargs) -> None:
+        """AI 메시지 단건 추가 (비동기)"""
+        metadata = {k: v for k, v in kwargs.items() if k != "user_id"}
+        message = AIMessage(content=content, additional_kwargs=metadata)
+        await self._add_message_async(session_id, message, **kwargs)
+
     async def clear_async(
         self,
         session_id: str,
