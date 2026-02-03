@@ -136,7 +136,7 @@ async def get_session_detail(
     try:
         message_count = await memory.get_message_count_async(session_id, user_id=user_id, client=client)
         messages = await memory.get_messages_async(
-            session_id, user_id=user_id, client=client, _ownership_verified=True
+            session_id, user_id=user_id, client=client
         )
     except SessionAccessDenied:
         raise HTTPException(
@@ -305,7 +305,7 @@ async def list_sessions(
         SessionInfo(
             session_id=sid,
             message_count=await memory.get_message_count_async(
-                sid, user_id=user_id, client=client, _ownership_verified=True
+                sid, user_id=user_id, client=client
             )
         )
         for sid in session_ids
