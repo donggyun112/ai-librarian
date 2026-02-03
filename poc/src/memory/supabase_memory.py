@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import AsyncClient
+from postgrest.exceptions import APIError
 from loguru import logger
 
 from .base import ChatMemory
@@ -96,10 +97,21 @@ class SupabaseChatMemory(ChatMemory):
         if not user_id:
             raise ValueError("user_id is required for new sessions")
 
-        await client.table(self.sessions_table) \
-            .insert({"id": session_id, "user_id": user_id}) \
-            .execute()
-        return True
+        try:
+            await client.table(self.sessions_table) \
+                .insert({"id": session_id, "user_id": user_id}) \
+                .execute()
+            return True
+        except APIError as e:
+            if e.code == "23505":
+                # Unique constraint violation: session exists but RLS hid it
+                logger.warning(
+                    f"Session {session_id} exists but is not accessible to user {user_id}"
+                )
+                raise SessionAccessDenied(
+                    f"Session {session_id} is not accessible"
+                )
+            raise SupabaseOperationError(f"Failed to create session: {e}", e)
 
 
     async def init_session_async(
@@ -158,15 +170,13 @@ class SupabaseChatMemory(ChatMemory):
         session_id: str,
         user_id: Optional[str] = None,
         client: Optional[AsyncClient] = None,
-        *,
-        _ownership_verified: bool = False,
+        **kwargs,
     ) -> List[BaseMessage]:
         """세션의 전체 대화 히스토리 조회 (비동기)
 
         Args:
             session_id: 세션 ID
             user_id: 사용자 ID (제공 시 소유권 검증)
-            _ownership_verified: 내부용 - 호출자가 이미 소유권을 검증한 경우 True
 
         Raises:
             SessionAccessDenied: 소유권 검증 실패
@@ -174,7 +184,7 @@ class SupabaseChatMemory(ChatMemory):
         self._ensure_user_scoped_client(user_id, client)
         client = self._get_async_client(client)
 
-        if user_id and not _ownership_verified:
+        if user_id:
             await self._check_session_ownership_async(session_id, user_id, client)
 
         try:
@@ -347,15 +357,13 @@ class SupabaseChatMemory(ChatMemory):
         session_id: str,
         user_id: Optional[str] = None,
         client: Optional[AsyncClient] = None,
-        *,
-        _ownership_verified: bool = False,
+        **kwargs,
     ) -> int:
         """세션의 메시지 개수 (비동기)
 
         Args:
             session_id: 세션 ID
             user_id: 사용자 ID (제공 시 소유권 검증)
-            _ownership_verified: 내부용 - 호출자가 이미 소유권을 검증한 경우 True
 
         Raises:
             SessionAccessDenied: 소유권 검증 실패
@@ -363,7 +371,7 @@ class SupabaseChatMemory(ChatMemory):
         self._ensure_user_scoped_client(user_id, client)
         client = self._get_async_client(client)
 
-        if user_id and not _ownership_verified:
+        if user_id:
             await self._check_session_ownership_async(session_id, user_id, client)
 
         try:
