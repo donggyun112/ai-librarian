@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import AsyncClient
-from postgrest.exceptions import APIError
 from loguru import logger
 
 from .base import ChatMemory
@@ -84,33 +83,26 @@ class SupabaseChatMemory(ChatMemory):
         self._ensure_user_scoped_client(user_id, client)
         client = self._get_async_client(client)
 
-        res = await client.table(self.sessions_table) \
-            .select("id") \
-            .eq("id", session_id) \
-            .execute()
-
-        if res.data:
-            if user_id:
-                await self._check_session_ownership_async(session_id, user_id, client)
-            return True
-
         if not user_id:
+            res = await client.table(self.sessions_table) \
+                .select("id") \
+                .eq("id", session_id) \
+                .execute()
+
+            if res.data:
+                return True
             raise ValueError("user_id is required for new sessions")
 
         try:
             await client.table(self.sessions_table) \
                 .insert({"id": session_id, "user_id": user_id}) \
+                .on_conflict("id") \
                 .execute()
+            await self._check_session_ownership_async(session_id, user_id, client)
             return True
-        except APIError as e:
-            if e.code == "23505":
-                # Unique constraint violation: session exists but RLS hid it
-                logger.warning(
-                    f"Session {session_id} exists but is not accessible to user {user_id}"
-                )
-                raise SessionAccessDenied(
-                    f"Session {session_id} is not accessible"
-                )
+        except SessionAccessDenied:
+            raise
+        except Exception as e:
             raise SupabaseOperationError(f"Failed to create session: {e}", e)
 
 
@@ -383,5 +375,3 @@ class SupabaseChatMemory(ChatMemory):
         except Exception as e:
             logger.error(f"Failed to get message count for session {session_id}: {e}")
             raise SupabaseOperationError(f"Failed to get message count: {e}", e)
-
-

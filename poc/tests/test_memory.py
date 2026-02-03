@@ -424,9 +424,9 @@ class TestSupabaseChatMemory:
             return_value=session_check
         )
 
-        mock_async_client.table.return_value.insert.return_value.execute = AsyncMock(
-            return_value=MagicMock()
-        )
+        insert_mock = mock_async_client.table.return_value.insert.return_value
+        insert_mock.on_conflict.return_value = insert_mock
+        insert_mock.execute = AsyncMock(return_value=MagicMock())
         mock_async_client.table.return_value.update.return_value.eq.return_value.execute = AsyncMock(
             return_value=MagicMock()
         )
