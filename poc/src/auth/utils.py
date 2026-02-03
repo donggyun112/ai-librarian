@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from supabase import create_async_client, AsyncClient, ClientOptions
 from loguru import logger
 from config import config
-from src.memory import InMemoryChatMemory, SupabaseChatMemory
+from src.memory import SupabaseChatMemory
 from src.supervisor import Supervisor
 
 
@@ -17,7 +17,9 @@ async def create_supabase_client() -> AsyncClient:
     JWT 검증 등 인증 작업에도 사용됩니다.
     """
     if not config.SUPABASE_URL or not config.SUPABASE_ANON_KEY:
-        logger.warning("Supabase configuration missing (URL or ANON_KEY). Auth might fail.")
+        raise RuntimeError(
+            "Supabase configuration missing. Set SUPABASE_URL and SUPABASE_ANON_KEY."
+        )
 
     return await create_async_client(
         config.SUPABASE_URL,
@@ -36,26 +38,30 @@ async def lifespan(app: FastAPI):
     애플리케이션 시작/종료 시 리소스를 관리합니다.
     """
     # Startup
-    logger.info("Initializing Supabase Client...")
-    app.state.supabase = await create_supabase_client()
+    try:
+        logger.info("Initializing Supabase Client...")
+        app.state.supabase = await create_supabase_client()
 
-    if config.SUPABASE_URL and config.SUPABASE_ANON_KEY:
         logger.info(f"Supabase Memory enabled: {config.SUPABASE_URL}")
         app.state.memory = SupabaseChatMemory(
             url=config.SUPABASE_URL,
             key=config.SUPABASE_ANON_KEY,
             require_user_scoped_client=True,
         )
-    else:
-        logger.info("Using In-Memory storage (not persistent)")
-        app.state.memory = InMemoryChatMemory()
 
-    app.state.supervisor = Supervisor(memory=app.state.memory)
-    app.state.rate_limiter = {
-        "lock": asyncio.Lock(),
-        "hits": defaultdict(deque),
-    }
-    
+        app.state.supervisor = Supervisor(memory=app.state.memory)
+        app.state.rate_limiter = {
+            "lock": asyncio.Lock(),
+            "hits": defaultdict(deque),
+        }
+    except RuntimeError as e:
+        logger.error(
+            f"Startup failed: {e} | "
+            f"SUPABASE_URL={'set' if config.SUPABASE_URL else 'MISSING'}, "
+            f"SUPABASE_ANON_KEY={'set' if config.SUPABASE_ANON_KEY else 'MISSING'}"
+        )
+        raise
+
     yield
 
     # Shutdown
