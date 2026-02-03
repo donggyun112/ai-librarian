@@ -4,7 +4,7 @@
 실행하려면 Supabase URL과 KEY가 환경 변수에 설정되어 있어야 합니다.
 
 사용법:
-    SUPABASE_URL=<your-url> SUPABASE_SERVICE_ROLE_KEY=<your-key> pytest tests/test_real_supabase_integration.py -v
+    RUN_REAL_SUPABASE_TESTS=true SUPABASE_URL=<your-url> SUPABASE_SERVICE_ROLE_KEY=<your-key> pytest tests/test_real_supabase_integration.py -v
 
 주의:
     - 테스트 데이터베이스를 사용하세요 (프로덕션 DB 아님!)
@@ -19,10 +19,11 @@ from src.memory.supabase_memory import SupabaseChatMemory
 from supabase import create_async_client
 
 
-# 환경 변수가 설정되어 있을 때만 테스트 실행
+# 명시적으로 RUN_REAL_SUPABASE_TESTS=true 를 설정해야만 실행됩니다.
+# (.env 가 다른 테스트에서 로드되어 SUPABASE_URL이 존재하더라도 의도치 않게 실행되는 것을 방지)
 pytestmark = pytest.mark.skipif(
-    not (os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY")),
-    reason="Supabase credentials not provided. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to run these tests."
+    not os.getenv("RUN_REAL_SUPABASE_TESTS"),
+    reason="Set RUN_REAL_SUPABASE_TESTS=true (along with SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY) to run these tests."
 )
 
 
@@ -75,15 +76,15 @@ class TestRealSupabaseIntegration:
             )
 
             # 세션 목록 확인
-            sessions = memory.list_sessions(user_id=test_user_id)
+            sessions = await memory.list_sessions_async(user_id=test_user_id, client=async_client)
             assert test_session_id in sessions, f"Session {test_session_id} not found in {sessions}"
 
             # 메시지 개수 확인
-            count = memory.get_message_count(test_session_id, user_id=test_user_id)
+            count = await memory.get_message_count_async(test_session_id, user_id=test_user_id, client=async_client)
             assert count == 2, f"Expected 2 messages, got {count}"
 
             # 메시지 내용 확인
-            messages = memory.get_messages(test_session_id, user_id=test_user_id)
+            messages = await memory.get_messages_async(test_session_id, user_id=test_user_id, client=async_client)
             assert len(messages) == 2
             assert messages[0].content == "테스트 질문"
             assert messages[1].content == "테스트 답변"
@@ -92,8 +93,7 @@ class TestRealSupabaseIntegration:
 
         finally:
             # 정리
-            memory.delete_session(test_session_id, user_id=test_user_id)
-            await async_client.aclose()
+            await memory.delete_session_async(test_session_id, user_id=test_user_id, client=async_client)
 
     @pytest.mark.asyncio
     async def test_multiple_conversations_history(self, memory, test_session_id, test_user_id):
@@ -120,7 +120,7 @@ class TestRealSupabaseIntegration:
                 )
 
             # 히스토리 확인
-            messages = memory.get_messages(test_session_id, user_id=test_user_id)
+            messages = await memory.get_messages_async(test_session_id, user_id=test_user_id, client=async_client)
             assert len(messages) == 6, f"Expected 6 messages, got {len(messages)}"
 
             # 순서 확인
@@ -129,10 +129,10 @@ class TestRealSupabaseIntegration:
                 assert messages[i*2+1].content == a
 
         finally:
-            memory.delete_session(test_session_id, user_id=test_user_id)
-            await async_client.aclose()
+            await memory.delete_session_async(test_session_id, user_id=test_user_id, client=async_client)
 
-    def test_user_isolation(self, memory, test_user_id, test_user_id_2):
+    @pytest.mark.asyncio
+    async def test_user_isolation(self, memory, test_user_id, test_user_id_2):
         """사용자 간 데이터 격리 테스트"""
         user1_id = test_user_id
         user2_id = test_user_id_2
@@ -142,26 +142,30 @@ class TestRealSupabaseIntegration:
         if not user2_id:
             pytest.skip("TEST_USER_ID_2 is not set; skipping user isolation test.")
 
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
-            # User 1의 세션 (동기 메서드 사용)
-            memory.add_user_message(session1_id, "User 1 질문", user_id=user1_id)
-            memory.add_ai_message(session1_id, "User 1 답변", user_id=user1_id)
+            # User 1의 세션
+            await memory.add_user_message_async(session1_id, "User 1 질문", user_id=user1_id, client=async_client)
+            await memory.add_ai_message_async(session1_id, "User 1 답변", user_id=user1_id, client=async_client)
 
             # User 2의 세션
-            memory.add_user_message(session2_id, "User 2 질문", user_id=user2_id)
-            memory.add_ai_message(session2_id, "User 2 답변", user_id=user2_id)
+            await memory.add_user_message_async(session2_id, "User 2 질문", user_id=user2_id, client=async_client)
+            await memory.add_ai_message_async(session2_id, "User 2 답변", user_id=user2_id, client=async_client)
 
             # User 1은 User 2의 세션을 볼 수 없음
-            messages = memory.get_messages(session2_id, user_id=user1_id)
+            messages = await memory.get_messages_async(session2_id, user_id=user1_id, client=async_client)
             assert len(messages) == 0, "User 1 should not see User 2's messages"
 
             # User 2는 User 1의 세션을 볼 수 없음
-            messages = memory.get_messages(session1_id, user_id=user2_id)
+            messages = await memory.get_messages_async(session1_id, user_id=user2_id, client=async_client)
             assert len(messages) == 0, "User 2 should not see User 1's messages"
 
             # 각 사용자는 자신의 세션만 볼 수 있음
-            user1_sessions = memory.list_sessions(user_id=user1_id)
-            user2_sessions = memory.list_sessions(user_id=user2_id)
+            user1_sessions = await memory.list_sessions_async(user_id=user1_id, client=async_client)
+            user2_sessions = await memory.list_sessions_async(user_id=user2_id, client=async_client)
 
             assert session1_id in user1_sessions
             assert session2_id not in user1_sessions
@@ -170,31 +174,34 @@ class TestRealSupabaseIntegration:
 
         finally:
             # 정리
-            memory.delete_session(session1_id, user_id=user1_id)
-            memory.delete_session(session2_id, user_id=user2_id)
+            await memory.delete_session_async(session1_id, user_id=user1_id, client=async_client)
+            await memory.delete_session_async(session2_id, user_id=user2_id, client=async_client)
 
-    def test_session_clear(self, memory, test_session_id, test_user_id):
+    @pytest.mark.asyncio
+    async def test_session_clear(self, memory, test_session_id, test_user_id):
         """세션 메시지 정리 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
             # 메시지 추가
-            memory.add_user_message(test_session_id, "질문", user_id=test_user_id)
-            memory.add_ai_message(test_session_id, "답변", user_id=test_user_id)
+            await memory.add_user_message_async(test_session_id, "질문", user_id=test_user_id, client=async_client)
+            await memory.add_ai_message_async(test_session_id, "답변", user_id=test_user_id, client=async_client)
 
             # 메시지 확인
-            assert memory.get_message_count(test_session_id, user_id=test_user_id) == 2
+            count = await memory.get_message_count_async(test_session_id, user_id=test_user_id, client=async_client)
+            assert count == 2
 
             # 메시지 정리
-            memory.clear(test_session_id, user_id=test_user_id)
+            await memory.clear_async(test_session_id, user_id=test_user_id, client=async_client)
 
             # 메시지가 삭제되었는지 확인
-            assert memory.get_message_count(test_session_id, user_id=test_user_id) == 0
-
-            # 세션은 여전히 존재
-            sessions = memory.list_sessions(user_id=test_user_id)
-            # 세션이 존재할 수도 있고 아닐 수도 있음 (구현에 따라)
+            count = await memory.get_message_count_async(test_session_id, user_id=test_user_id, client=async_client)
+            assert count == 0
 
         finally:
-            memory.delete_session(test_session_id, user_id=test_user_id)
+            await memory.delete_session_async(test_session_id, user_id=test_user_id, client=async_client)
 
     @pytest.mark.asyncio
     async def test_metadata_preservation(self, memory, test_session_id, test_user_id):
@@ -216,35 +223,44 @@ class TestRealSupabaseIntegration:
             )
 
             # 메시지 확인 (메타데이터는 additional_kwargs에 저장됨)
-            messages = memory.get_messages(test_session_id, user_id=test_user_id)
+            messages = await memory.get_messages_async(test_session_id, user_id=test_user_id, client=async_client)
             assert len(messages) == 2
 
             # 메타데이터는 LangChain 메시지 객체의 additional_kwargs에 저장됩니다
             # (Supabase에 저장된 후 복원됨)
 
         finally:
-            memory.delete_session(test_session_id, user_id=test_user_id)
-            await async_client.aclose()
+            await memory.delete_session_async(test_session_id, user_id=test_user_id, client=async_client)
 
 
 class TestSupabaseConnectionHealth:
     """Supabase 연결 상태 테스트"""
 
-    def test_connection_works(self, memory):
+    @pytest.mark.asyncio
+    async def test_connection_works(self, memory):
         """기본 연결 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         # 세션 목록을 가져올 수 있으면 연결 성공
-        sessions = memory.list_sessions()
+        sessions = await memory.list_sessions_async(client=async_client)
         assert isinstance(sessions, list)
 
-    def test_table_schema(self, memory, test_session_id, test_user_id):
+    @pytest.mark.asyncio
+    async def test_table_schema(self, memory, test_session_id, test_user_id):
         """테이블 스키마가 올바르게 설정되었는지 테스트"""
+        async_client = await create_async_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        )
         try:
             # 세션과 메시지를 생성할 수 있으면 스키마가 올바름
-            memory.add_user_message(test_session_id, "테스트", user_id=test_user_id)
+            await memory.add_user_message_async(test_session_id, "테스트", user_id=test_user_id, client=async_client)
 
             # RLS 정책이 올바르게 작동하는지 확인
-            messages = memory.get_messages(test_session_id, user_id=test_user_id)
+            messages = await memory.get_messages_async(test_session_id, user_id=test_user_id, client=async_client)
             assert len(messages) == 1
 
         finally:
-            memory.delete_session(test_session_id, user_id=test_user_id)
+            await memory.delete_session_async(test_session_id, user_id=test_user_id, client=async_client)

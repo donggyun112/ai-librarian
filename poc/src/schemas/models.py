@@ -1,5 +1,5 @@
 """Pydantic 모델 정의"""
-from typing import List, Optional, Any, Literal
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 from enum import Enum
 

@@ -190,56 +190,46 @@ class TestSessionEndpointsWithUserID:
 
 
 class TestSessionEndpointsWithInMemory:
-    """InMemoryChatMemory를 사용한 세션 엔드포인트 테스트"""
+    """InMemoryChatMemory를 사용한 세션 엔드포인트 테스트
+
+    routes.py가 항상 async 메서드를 user_id, client와 함께 호출하므로,
+    InMemory는 이 파라미터들을 무시하고 정상 동작해야 한다.
+    """
 
     @pytest.fixture
     def mock_inmemory(self):
-        """Mock InMemoryChatMemory"""
+        """Mock InMemoryChatMemory (async 메서드)"""
         mock_memory = MagicMock()
-        # Configure methods
-        mock_memory.list_sessions = MagicMock(return_value=["session-1"])
-        mock_memory.list_sessions.__code__ = MagicMock()
-        mock_memory.list_sessions.__code__.co_varnames = ['self']  # user_id 파라미터 없음
-
-        mock_memory.get_message_count = MagicMock(return_value=3)
-        mock_memory.get_message_count.__code__ = MagicMock()
-        mock_memory.get_message_count.__code__.co_varnames = ['self', 'session_id']  # user_id 파라미터 없음
-
-        mock_memory.delete_session = MagicMock()
-        mock_memory.delete_session.__code__ = MagicMock()
-        mock_memory.delete_session.__code__.co_varnames = ['self', 'session_id']
-
+        mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
+        mock_memory.get_message_count_async = AsyncMock(return_value=3)
+        mock_memory.delete_session_async = AsyncMock()
+        mock_memory.get_messages_async = AsyncMock(return_value=[])
         yield mock_memory
 
-    def test_list_sessions_ignores_auth_for_inmemory(self, client, mock_inmemory, auth_overrides, app):
-        """InMemoryChatMemory는 Authorization 헤더를 무시"""
+    def test_list_sessions_with_inmemory(self, client, mock_inmemory, auth_overrides, app):
+        """InMemory 백엔드로 세션 목록 조회"""
         app.state.memory = mock_inmemory
         response = client.get("/sessions", headers={"Authorization": "Bearer user-1"})
 
         assert response.status_code == 200
+        mock_inmemory.list_sessions_async.assert_called_once()
 
-        # user_id 없이 호출되었는지 확인 (InMemoryChatMemory는 user_id 파라미터가 없음)
-        mock_inmemory.list_sessions.assert_called_once_with()
-
-    def test_delete_session_works_with_auth_for_inmemory(self, client, mock_inmemory, auth_overrides, app):
-        """InMemoryChatMemory는 Authorization 헤더를 무시하고 삭제"""
+    def test_delete_session_with_inmemory(self, client, mock_inmemory, auth_overrides, app):
+        """InMemory 백엔드로 세션 삭제"""
         app.state.memory = mock_inmemory
         response = client.delete("/sessions/session-1", headers={"Authorization": "Bearer user-1"})
 
         assert response.status_code == 200
+        mock_inmemory.delete_session_async.assert_called_once()
 
-        # user_id 없이 호출되었는지 확인
-        mock_inmemory.delete_session.assert_called_once_with("session-1")
-
-    def test_get_session_messages_ignores_auth_for_inmemory(self, client, mock_inmemory, auth_overrides, app):
-        """InMemoryChatMemory는 Authorization 헤더를 무시하고 메시지 조회"""
+    def test_get_session_messages_with_inmemory(self, client, mock_inmemory, auth_overrides, app):
+        """InMemory 백엔드로 메시지 조회"""
         app.state.memory = mock_inmemory
-        # Mock messages
         mock_messages = [
             HumanMessage(content="Test message"),
             AIMessage(content="Test response")
         ]
-        mock_inmemory.get_messages = MagicMock(return_value=mock_messages)
+        mock_inmemory.get_messages_async = AsyncMock(return_value=mock_messages)
 
         response = client.get("/sessions/session-1/messages", headers={"Authorization": "Bearer user-1"})
 
@@ -247,6 +237,4 @@ class TestSessionEndpointsWithInMemory:
         data = response.json()
         assert data["session_id"] == "session-1"
         assert len(data["messages"]) == 2
-
-        # user_id 없이 호출되었는지 확인 (InMemory는 user_id 무시)
-        mock_inmemory.get_messages.assert_called_once_with("session-1")
+        mock_inmemory.get_messages_async.assert_called_once()

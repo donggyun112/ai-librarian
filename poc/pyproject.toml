@@ -41,6 +41,7 @@ packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "../tests"]
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
@@ -52,4 +53,5 @@ dev = [
     "pyright>=1.1.407",
     "pytest-asyncio>=1.3.0",
     "pytest-cov>=7.0.0",
+    "ruff>=0.14.14",
 ]

@@ -1,6 +1,6 @@
 """Supabase 통합 테스트 - 세션 관리 및 히스토리 보존 검증"""
 import pytest
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
 
 from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
@@ -9,239 +9,224 @@ from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
 @pytest.fixture
 def mock_supabase_client():
     """Mock Supabase AsyncClient with realistic behavior"""
-    with patch('src.memory.supabase_memory.create_client') as mock_create:
-        mock_client = MagicMock()
+    mock_client = MagicMock()
 
-        # 세션 및 메시지 데이터 저장소
-        sessions_db = {}
-        messages_db = []
+    sessions_db = {}
+    messages_db = []
 
-        def table_handler(table_name):
-            """테이블별 핸들러"""
-            table_mock = MagicMock()
+    def table_handler(table_name):
+        """테이블별 핸들러"""
+        table_mock = MagicMock()
 
-            if table_name == "chat_sessions":
-                # SELECT 핸들러
-                def select_handler(fields):
-                    select_mock = MagicMock()
-                    # Track filtering state
-                    filter_state = {"user_id": None}
+        if table_name == "chat_sessions":
+            def select_handler(fields):
+                select_mock = MagicMock()
+                filter_state = {"user_id": None}
 
-                    def eq_handler(field, value):
-                        eq_mock = MagicMock()
+                def eq_handler(field, value):
+                    eq_mock = MagicMock()
 
-                        # For session ID filtering
-                        if field == "id":
-                            def execute_select():
-                                result = MagicMock()
-                                if value in sessions_db:
-                                    result.data = [sessions_db[value]]
-                                else:
-                                    result.data = []
-                                return result
-
-                            def eq_user_handler(field2, value2):
-                                eq2_mock = MagicMock()
-
-                                def execute_select_with_user():
-                                    result = MagicMock()
-                                    if value in sessions_db and sessions_db[value].get("user_id") == value2:
-                                        result.data = [sessions_db[value]]
-                                    else:
-                                        result.data = []
-                                    return result
-
-                                eq2_mock.execute = AsyncMock(side_effect=execute_select_with_user)
-                                return eq2_mock
-
-                            eq_mock.execute = AsyncMock(side_effect=execute_select)
-                            eq_mock.eq.side_effect = eq_user_handler
-                        # For user_id filtering (used in list_sessions)
-                        elif field == "user_id":
-                            filter_state["user_id"] = value
-
-                            def order_handler_with_filter(field, desc=False):
-                                order_mock = MagicMock()
-
-                                def execute_list_filtered():
-                                    result = MagicMock()
-                                    # Filter by user_id
-                                    filtered_sessions = [
-                                        s for s in sessions_db.values()
-                                        if s.get("user_id") == filter_state["user_id"]
-                                    ]
-                                    result.data = filtered_sessions
-                                    return result
-
-                                order_mock.execute = AsyncMock(side_effect=execute_list_filtered)
-                                return order_mock
-
-                            eq_mock.order = order_handler_with_filter
-
-                        return eq_mock
-
-                    def order_handler(field, desc=False):
-                        order_mock = MagicMock()
-
-                        def execute_list():
+                    if field == "id":
+                        async def execute_select():
                             result = MagicMock()
-                            result.data = list(sessions_db.values())
-                            return result
-
-                        order_mock.execute = AsyncMock(side_effect=execute_list)
-                        return order_mock
-
-                    select_mock.eq.side_effect = eq_handler
-                    select_mock.order.side_effect = order_handler
-                    return select_mock
-
-                # INSERT 핸들러
-                def insert_handler(data):
-                    insert_mock = MagicMock()
-
-                    def execute_insert():
-                        sessions_db[data["id"]] = data
-                        result = MagicMock()
-                        result.data = [data]
-                        return result
-
-                    insert_mock.execute = AsyncMock(side_effect=execute_insert)
-                    return insert_mock
-
-                # UPDATE 핸들러
-                def update_handler(data):
-                    update_mock = MagicMock()
-
-                    def eq_handler(field, value):
-                        eq_mock = MagicMock()
-
-                        def execute_update():
                             if value in sessions_db:
-                                sessions_db[value].update(data)
-                            result = MagicMock()
-                            return result
-
-                        eq_mock.execute = AsyncMock(side_effect=execute_update)
-                        return eq_mock
-
-                    update_mock.eq.side_effect = eq_handler
-                    return update_mock
-
-                # DELETE 핸들러
-                def delete_handler():
-                    delete_mock = MagicMock()
-
-                    def eq_handler(field, value):
-                        eq_mock = MagicMock()
-
-                        def execute_delete():
-                            if value in sessions_db:
-                                del sessions_db[value]
-                            # 관련 메시지도 삭제 (cascade)
-                            nonlocal messages_db
-                            messages_db = [m for m in messages_db if m.get("session_id") != value]
-                            result = MagicMock()
+                                result.data = [sessions_db[value]]
+                            else:
+                                result.data = []
                             return result
 
                         def eq_user_handler(field2, value2):
                             eq2_mock = MagicMock()
 
-                            def execute_delete_with_user():
-                                if value in sessions_db and sessions_db[value].get("user_id") == value2:
-                                    del sessions_db[value]
-                                    # 관련 메시지도 삭제
-                                    nonlocal messages_db
-                                    messages_db = [m for m in messages_db if m.get("session_id") != value]
+                            async def execute_select_with_user():
                                 result = MagicMock()
+                                if value in sessions_db and sessions_db[value].get("user_id") == value2:
+                                    result.data = [sessions_db[value]]
+                                else:
+                                    result.data = []
                                 return result
 
-                            eq2_mock.execute = AsyncMock(side_effect=execute_delete_with_user)
+                            eq2_mock.execute = execute_select_with_user
                             return eq2_mock
 
-                        eq_mock.execute = AsyncMock(side_effect=execute_delete)
+                        eq_mock.execute = execute_select
                         eq_mock.eq.side_effect = eq_user_handler
-                        return eq_mock
 
-                    delete_mock.eq.side_effect = eq_handler
-                    return delete_mock
+                    elif field == "user_id":
+                        filter_state["user_id"] = value
 
-                table_mock.select.side_effect = select_handler
-                table_mock.insert.side_effect = insert_handler
-                table_mock.update.side_effect = update_handler
-                table_mock.delete.side_effect = delete_handler
-
-            elif table_name == "chat_messages":
-                # SELECT 핸들러
-                def select_handler(fields, count=None):
-                    select_mock = MagicMock()
-
-                    def eq_handler(field, value):
-                        eq_mock = MagicMock()
-
-                        def order_handler(field, desc=False):
+                        def order_handler_with_filter(field, desc=False):
                             order_mock = MagicMock()
 
-                            def execute_messages():
+                            async def execute_list_filtered():
                                 result = MagicMock()
-                                result.data = [m for m in messages_db if m.get("session_id") == value]
+                                filtered_sessions = [
+                                    s for s in sessions_db.values()
+                                    if s.get("user_id") == filter_state["user_id"]
+                                ]
+                                result.data = filtered_sessions
                                 return result
 
-                            order_mock.execute = AsyncMock(side_effect=execute_messages)
+                            order_mock.execute = execute_list_filtered
                             return order_mock
 
-                        def execute_count():
-                            result = MagicMock()
-                            result.count = len([m for m in messages_db if m.get("session_id") == value])
-                            return result
+                        eq_mock.order = order_handler_with_filter
 
-                        eq_mock.order.side_effect = order_handler
-                        eq_mock.execute = AsyncMock(side_effect=execute_count)
-                        return eq_mock
+                    return eq_mock
 
-                    select_mock.eq.side_effect = eq_handler
-                    return select_mock
+                def order_handler(field, desc=False):
+                    order_mock = MagicMock()
 
-                # INSERT 핸들러
-                def insert_handler(data):
-                    insert_mock = MagicMock()
-
-                    def execute_insert():
-                        messages_db.append(data)
+                    async def execute_list():
                         result = MagicMock()
-                        result.data = [data]
+                        result.data = list(sessions_db.values())
                         return result
 
-                    insert_mock.execute = AsyncMock(side_effect=execute_insert)
-                    return insert_mock
+                    order_mock.execute = execute_list
+                    return order_mock
 
-                # DELETE 핸들러
-                def delete_handler():
-                    delete_mock = MagicMock()
+                select_mock.eq.side_effect = eq_handler
+                select_mock.order.side_effect = order_handler
+                return select_mock
 
-                    def eq_handler(field, value):
-                        eq_mock = MagicMock()
+            def insert_handler(data):
+                insert_mock = MagicMock()
 
-                        def execute_delete():
-                            nonlocal messages_db
-                            messages_db = [m for m in messages_db if m.get("session_id") != value]
+                async def execute_insert():
+                    sessions_db[data["id"]] = data
+                    result = MagicMock()
+                    result.data = [data]
+                    return result
+
+                insert_mock.execute = execute_insert
+                return insert_mock
+
+            def update_handler(data):
+                update_mock = MagicMock()
+
+                def eq_handler(field, value):
+                    eq_mock = MagicMock()
+
+                    async def execute_update():
+                        if value in sessions_db:
+                            sessions_db[value].update(data)
+                        result = MagicMock()
+                        return result
+
+                    eq_mock.execute = execute_update
+                    return eq_mock
+
+                update_mock.eq.side_effect = eq_handler
+                return update_mock
+
+            def delete_handler():
+                delete_mock = MagicMock()
+
+                def eq_handler(field, value):
+                    eq_mock = MagicMock()
+
+                    async def execute_delete():
+                        if value in sessions_db:
+                            del sessions_db[value]
+                        nonlocal messages_db
+                        messages_db = [m for m in messages_db if m.get("session_id") != value]
+                        result = MagicMock()
+                        return result
+
+                    def eq_user_handler(field2, value2):
+                        eq2_mock = MagicMock()
+
+                        async def execute_delete_with_user():
+                            if value in sessions_db and sessions_db[value].get("user_id") == value2:
+                                del sessions_db[value]
+                                nonlocal messages_db
+                                messages_db = [m for m in messages_db if m.get("session_id") != value]
                             result = MagicMock()
                             return result
 
-                        eq_mock.execute = AsyncMock(side_effect=execute_delete)
-                        return eq_mock
+                        eq2_mock.execute = execute_delete_with_user
+                        return eq2_mock
 
-                    delete_mock.eq.side_effect = eq_handler
-                    return delete_mock
+                    eq_mock.execute = execute_delete
+                    eq_mock.eq.side_effect = eq_user_handler
+                    return eq_mock
 
-                table_mock.select.side_effect = select_handler
-                table_mock.insert.side_effect = insert_handler
-                table_mock.delete.side_effect = delete_handler
+                delete_mock.eq.side_effect = eq_handler
+                return delete_mock
 
-            return table_mock
+            table_mock.select.side_effect = select_handler
+            table_mock.insert.side_effect = insert_handler
+            table_mock.update.side_effect = update_handler
+            table_mock.delete.side_effect = delete_handler
 
-        mock_client.table.side_effect = table_handler
-        mock_create.return_value = mock_client
-        yield mock_client
+        elif table_name == "chat_messages":
+            def select_handler(fields, count=None):
+                select_mock = MagicMock()
+
+                def eq_handler(field, value):
+                    eq_mock = MagicMock()
+
+                    def order_handler(field, desc=False):
+                        order_mock = MagicMock()
+
+                        async def execute_messages():
+                            result = MagicMock()
+                            result.data = [m for m in messages_db if m.get("session_id") == value]
+                            return result
+
+                        order_mock.execute = execute_messages
+                        return order_mock
+
+                    async def execute_count():
+                        result = MagicMock()
+                        result.count = len([m for m in messages_db if m.get("session_id") == value])
+                        return result
+
+                    eq_mock.order.side_effect = order_handler
+                    eq_mock.execute = execute_count
+                    return eq_mock
+
+                select_mock.eq.side_effect = eq_handler
+                return select_mock
+
+            def insert_handler(data):
+                insert_mock = MagicMock()
+
+                async def execute_insert():
+                    messages_db.append(data)
+                    result = MagicMock()
+                    result.data = [data]
+                    return result
+
+                insert_mock.execute = execute_insert
+                return insert_mock
+
+            def delete_handler():
+                delete_mock = MagicMock()
+
+                def eq_handler(field, value):
+                    eq_mock = MagicMock()
+
+                    async def execute_delete():
+                        nonlocal messages_db
+                        messages_db = [m for m in messages_db if m.get("session_id") != value]
+                        result = MagicMock()
+                        return result
+
+                    eq_mock.execute = execute_delete
+                    return eq_mock
+
+                delete_mock.eq.side_effect = eq_handler
+                return delete_mock
+
+            table_mock.select.side_effect = select_handler
+            table_mock.insert.side_effect = insert_handler
+            table_mock.delete.side_effect = delete_handler
+
+        return table_mock
+
+    mock_client.table.side_effect = table_handler
+    yield mock_client
 
 
 class TestSupabaseSessionManagement:

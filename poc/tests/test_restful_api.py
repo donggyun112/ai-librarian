@@ -59,7 +59,7 @@ class TestSessionCreation:
         mock_memory = MagicMock()
         mock_memory.__class__ = InMemoryChatMemory
         mock_memory.spec = InMemoryChatMemory
-        mock_memory.init_session = MagicMock()
+        mock_memory.init_session_async = AsyncMock()
         app.state.memory = mock_memory
 
         response = client.post("/sessions", headers={"Authorization": "Bearer user-1"})
@@ -82,11 +82,11 @@ class TestSessionCreation:
             pytest.fail("created_at is not a valid ISO 8601 timestamp")
 
     def test_create_session_calls_init_session_for_inmemory(self, client, auth_overrides, app):
-        """InMemory 백엔드: 세션 생성 시 init_session 호출 검증"""
+        """InMemory 백엔드: 세션 생성 시 init_session_async 호출 검증"""
         mock_memory = MagicMock()
         mock_memory.__class__ = InMemoryChatMemory
         mock_memory.spec = InMemoryChatMemory
-        mock_memory.init_session = MagicMock()
+        mock_memory.init_session_async = AsyncMock()
         app.state.memory = mock_memory
 
         response = client.post("/sessions", headers={"Authorization": "Bearer user-1"})
@@ -94,9 +94,9 @@ class TestSessionCreation:
         assert response.status_code == 200
         data = response.json()
 
-        # init_session이 생성된 session_id로 호출되었는지 검증
-        mock_memory.init_session.assert_called_once()
-        call_args = mock_memory.init_session.call_args
+        # init_session_async가 생성된 session_id로 호출되었는지 검증
+        mock_memory.init_session_async.assert_called_once()
+        call_args = mock_memory.init_session_async.call_args
         assert call_args[0][0] == data["session_id"]
 
     def test_create_session_calls_init_session_async_for_supabase(self, client, auth_overrides, app):
@@ -233,9 +233,9 @@ class TestSessionDetail:
         app.state.memory = mock_memory
 
         session_id = "test-session"
-        mock_memory.list_sessions.return_value = [session_id]
-        mock_memory.get_message_count.return_value = 2
-        mock_memory.get_messages.return_value = [
+        mock_memory.list_sessions_async = AsyncMock(return_value=[session_id])
+        mock_memory.get_message_count_async = AsyncMock(return_value=2)
+        mock_memory.get_messages_async = AsyncMock(return_value=[
             HumanMessage(
                 content="Hi",
                 additional_kwargs={"timestamp": "2024-01-01T12:00:00Z"}
@@ -244,7 +244,7 @@ class TestSessionDetail:
                 content="Hello",
                 additional_kwargs={"timestamp": "2024-01-01T12:00:05Z"}
             ),
-        ]
+        ])
 
         response = client.get(f"/sessions/{session_id}", headers={"Authorization": "Bearer user-1"})
 

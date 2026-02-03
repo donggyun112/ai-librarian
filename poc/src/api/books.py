@@ -53,7 +53,7 @@ async def get_books(
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         # 🔒 Security: Log full error with stack trace internally, but hide details from user
         logger.exception(f"Failed to retrieve books for user {current_user.id}")
         raise HTTPException(
@@ -106,7 +106,7 @@ async def create_book(
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         # 🔒 Security: Log full error with stack trace internally, but hide details from user
         logger.exception(f"Failed to create book for user {current_user.id}")
         raise HTTPException(

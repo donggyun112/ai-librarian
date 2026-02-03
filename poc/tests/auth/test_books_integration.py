@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 from src.api.app import app
-from src.auth.dependencies import get_user_scoped_client
 
 client = TestClient(app)
 
