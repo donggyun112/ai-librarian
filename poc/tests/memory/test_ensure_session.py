@@ -1,7 +1,6 @@
 """Tests for SupabaseChatMemory._ensure_session() RLS race condition handling"""
 from unittest.mock import AsyncMock, MagicMock
 import pytest
-from postgrest.exceptions import APIError
 
 from src.memory.supabase_memory import (
     SupabaseChatMemory,
@@ -22,37 +21,29 @@ def memory() -> SupabaseChatMemory:
 
 @pytest.mark.asyncio
 async def test_ensure_session_rls_hidden_duplicate_raises_access_denied(memory: SupabaseChatMemory):
-    """Test that duplicate key error (23505) from RLS raises SessionAccessDenied"""
+    """Test that existing session hidden by RLS raises SessionAccessDenied"""
     mock_client = MagicMock()
     session_id = "test-session-123"
     user_id = "user-456"
 
-    # Mock SELECT returns empty (RLS hides existing session)
-    select_mock = MagicMock()
-    eq_mock = MagicMock()
+    # Mock INSERT with on_conflict do-nothing
+    insert_mock = MagicMock()
+    insert_mock.on_conflict.return_value = insert_mock
 
-    async def mock_select_execute():
+    async def mock_insert_execute():
         result = MagicMock()
         result.data = []
         return result
 
-    eq_mock.execute = mock_select_execute
-    select_mock.eq.return_value = eq_mock
-
-    # Mock table().select() chain
-    table_mock = MagicMock()
-    table_mock.select.return_value = select_mock
-
-    # Mock INSERT raises APIError with code 23505 (unique constraint violation)
-    insert_mock = MagicMock()
-
-    async def mock_insert_execute():
-        raise APIError({"code": "23505", "message": "duplicate key value violates unique constraint"})
-
     insert_mock.execute = mock_insert_execute
-    table_mock.insert.return_value = insert_mock
 
+    table_mock = MagicMock()
+    table_mock.insert.return_value = insert_mock
     mock_client.table.return_value = table_mock
+
+    memory._check_session_ownership_async = AsyncMock(
+        side_effect=SessionAccessDenied("not accessible")
+    )
 
     with pytest.raises(SessionAccessDenied, match="not accessible"):
         await memory._ensure_session(session_id, user_id, client=mock_client)
@@ -65,24 +56,9 @@ async def test_ensure_session_insert_success(memory: SupabaseChatMemory):
     session_id = "test-session-789"
     user_id = "user-101"
 
-    # Mock SELECT returns empty (session does not exist)
-    select_mock = MagicMock()
-    eq_mock = MagicMock()
-
-    async def mock_select_execute():
-        result = MagicMock()
-        result.data = []
-        return result
-
-    eq_mock.execute = mock_select_execute
-    select_mock.eq.return_value = eq_mock
-
-    # Mock table().select() chain
-    table_mock = MagicMock()
-    table_mock.select.return_value = select_mock
-
-    # Mock INSERT succeeds
+    # Mock INSERT succeeds with on_conflict do-nothing
     insert_mock = MagicMock()
+    insert_mock.on_conflict.return_value = insert_mock
 
     async def mock_insert_execute():
         result = MagicMock()
@@ -90,47 +66,65 @@ async def test_ensure_session_insert_success(memory: SupabaseChatMemory):
         return result
 
     insert_mock.execute = mock_insert_execute
-    table_mock.insert.return_value = insert_mock
 
+    table_mock = MagicMock()
+    table_mock.insert.return_value = insert_mock
     mock_client.table.return_value = table_mock
+    memory._check_session_ownership_async = AsyncMock()
 
     result = await memory._ensure_session(session_id, user_id, client=mock_client)
 
     assert result is True
+    memory._check_session_ownership_async.assert_called_once_with(session_id, user_id, mock_client)
 
 
 @pytest.mark.asyncio
-async def test_ensure_session_other_db_error_raises_operation_error(memory: SupabaseChatMemory):
-    """Test that non-23505 APIError raises SupabaseOperationError"""
+async def test_ensure_session_on_conflict_same_user_succeeds(memory: SupabaseChatMemory):
+    """Test that on_conflict no-op still succeeds for same user after ownership check"""
     mock_client = MagicMock()
-    session_id = "test-session-999"
-    user_id = "user-202"
+    session_id = "test-session-duplicate"
+    user_id = "user-222"
 
-    # Mock SELECT returns empty
-    select_mock = MagicMock()
-    eq_mock = MagicMock()
+    insert_mock = MagicMock()
+    insert_mock.on_conflict.return_value = insert_mock
 
-    async def mock_select_execute():
+    async def mock_insert_execute():
         result = MagicMock()
         result.data = []
         return result
 
-    eq_mock.execute = mock_select_execute
-    select_mock.eq.return_value = eq_mock
+    insert_mock.execute = mock_insert_execute
 
-    # Mock table().select() chain
     table_mock = MagicMock()
-    table_mock.select.return_value = select_mock
+    table_mock.insert.return_value = insert_mock
+    mock_client.table.return_value = table_mock
 
-    # Mock INSERT raises APIError with different code (e.g., 42P01 - table not found)
+    memory._check_session_ownership_async = AsyncMock()
+
+    result = await memory._ensure_session(session_id, user_id, client=mock_client)
+
+    assert result is True
+    memory._check_session_ownership_async.assert_called_once_with(session_id, user_id, mock_client)
+
+
+@pytest.mark.asyncio
+async def test_ensure_session_other_db_error_raises_operation_error(memory: SupabaseChatMemory):
+    """Test that insert exceptions raise SupabaseOperationError"""
+    mock_client = MagicMock()
+    session_id = "test-session-999"
+    user_id = "user-202"
+
+    # Mock INSERT raises error
     insert_mock = MagicMock()
+    insert_mock.on_conflict.return_value = insert_mock
 
     async def mock_insert_execute():
-        raise APIError({"code": "42P01", "message": "relation does not exist"})
+        raise RuntimeError("relation does not exist")
 
     insert_mock.execute = mock_insert_execute
-    table_mock.insert.return_value = insert_mock
 
+    table_mock = MagicMock()
+    table_mock.insert.return_value = insert_mock
     mock_client.table.return_value = table_mock
 
     with pytest.raises(SupabaseOperationError, match="Failed to create session"):
@@ -139,26 +133,24 @@ async def test_ensure_session_other_db_error_raises_operation_error(memory: Supa
 
 @pytest.mark.asyncio
 async def test_ensure_session_existing_session_checks_ownership(memory: SupabaseChatMemory):
-    """Test that existing session triggers ownership check when user_id provided"""
+    """Test that session creation path checks ownership when user_id provided"""
     mock_client = MagicMock()
     session_id = "test-session-existing"
     user_id = "user-303"
 
-    # Mock SELECT returns data (session exists)
-    select_mock = MagicMock()
-    eq_mock = MagicMock()
+    # Mock INSERT with on_conflict do-nothing
+    insert_mock = MagicMock()
+    insert_mock.on_conflict.return_value = insert_mock
 
-    async def mock_select_execute():
+    async def mock_insert_execute():
         result = MagicMock()
-        result.data = [{"id": session_id}]
+        result.data = []
         return result
 
-    eq_mock.execute = mock_select_execute
-    select_mock.eq.return_value = eq_mock
+    insert_mock.execute = mock_insert_execute
 
-    # Mock table().select() chain
     table_mock = MagicMock()
-    table_mock.select.return_value = select_mock
+    table_mock.insert.return_value = insert_mock
     mock_client.table.return_value = table_mock
 
     # Mock _check_session_ownership_async to verify it's called

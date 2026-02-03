@@ -91,9 +91,11 @@ def mock_supabase_client():
 
             def insert_handler(data):
                 insert_mock = MagicMock()
+                insert_mock.on_conflict.return_value = insert_mock
 
                 async def execute_insert():
-                    sessions_db[data["id"]] = data
+                    if data["id"] not in sessions_db:
+                        sessions_db[data["id"]] = data
                     result = MagicMock()
                     result.data = [data]
                     return result
@@ -191,6 +193,7 @@ def mock_supabase_client():
 
             def insert_handler(data):
                 insert_mock = MagicMock()
+                insert_mock.on_conflict.return_value = insert_mock
 
                 async def execute_insert():
                     messages_db.append(data)
