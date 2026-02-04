@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
 from supabase import AsyncClient
+from postgrest.exceptions import APIError
 from loguru import logger
 
 from .base import ChatMemory
@@ -93,15 +94,33 @@ class SupabaseChatMemory(ChatMemory):
                 return True
             raise ValueError("user_id is required for new sessions")
 
+        # Check if session already exists (with ownership verification)
+        res = await client.table(self.sessions_table) \
+            .select("id") \
+            .eq("id", session_id) \
+            .eq("user_id", user_id) \
+            .execute()
+
+        if res.data:
+            return True
+
+        # Session not found for this user — try to create it
         try:
             await client.table(self.sessions_table) \
                 .insert({"id": session_id, "user_id": user_id}) \
-                .on_conflict("id") \
                 .execute()
-            await self._check_session_ownership_async(session_id, user_id, client)
             return True
-        except SessionAccessDenied:
-            raise
+        except APIError as e:
+            if e.code == "23505":
+                # Unique constraint violation: session exists but belongs to another user
+                # (RLS hid it from the SELECT above)
+                logger.warning(
+                    f"Session {session_id} exists but is not accessible to user {user_id}"
+                )
+                raise SessionAccessDenied(
+                    f"Session {session_id} is not accessible"
+                )
+            raise SupabaseOperationError(f"Failed to create session: {e}", e)
         except Exception as e:
             raise SupabaseOperationError(f"Failed to create session: {e}", e)
 
@@ -245,7 +264,7 @@ class SupabaseChatMemory(ChatMemory):
             ai_message: AI 응답
             **kwargs: 추가 메타데이터 (예: user_id)
         """
-        metadata = {k: v for k, v in kwargs.items() if k != 'user_id'}
+        metadata = {k: v for k, v in kwargs.items() if k not in ('user_id', 'client', '_ownership_verified')}
         user_msg = HumanMessage(content=user_message, additional_kwargs=metadata)
         ai_msg = AIMessage(content=ai_message, additional_kwargs=metadata)
 
@@ -254,13 +273,13 @@ class SupabaseChatMemory(ChatMemory):
 
     async def add_user_message_async(self, session_id: str, content: str, **kwargs) -> None:
         """사용자 메시지 단건 추가 (비동기)"""
-        metadata = {k: v for k, v in kwargs.items() if k != "user_id"}
+        metadata = {k: v for k, v in kwargs.items() if k not in ("user_id", "client", "_ownership_verified")}
         message = HumanMessage(content=content, additional_kwargs=metadata)
         await self._add_message_async(session_id, message, **kwargs)
 
     async def add_ai_message_async(self, session_id: str, content: str, **kwargs) -> None:
         """AI 메시지 단건 추가 (비동기)"""
-        metadata = {k: v for k, v in kwargs.items() if k != "user_id"}
+        metadata = {k: v for k, v in kwargs.items() if k not in ("user_id", "client", "_ownership_verified")}
         message = AIMessage(content=content, additional_kwargs=metadata)
         await self._add_message_async(session_id, message, **kwargs)
 
