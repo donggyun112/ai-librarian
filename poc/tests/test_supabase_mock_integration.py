@@ -2,6 +2,7 @@
 import pytest
 from unittest.mock import MagicMock
 from langchain_core.messages import HumanMessage, AIMessage
+from postgrest.exceptions import APIError
 
 from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
 
@@ -91,11 +92,19 @@ def mock_supabase_client():
 
             def insert_handler(data):
                 insert_mock = MagicMock()
-                insert_mock.on_conflict.return_value = insert_mock
 
                 async def execute_insert():
-                    if data["id"] not in sessions_db:
-                        sessions_db[data["id"]] = data
+                    if data["id"] in sessions_db:
+                        # Session already exists
+                        existing_session = sessions_db[data["id"]]
+                        if existing_session.get("user_id") != data.get("user_id"):
+                            # Different user - raise 23505 (unique constraint violation)
+                            raise APIError({"message": "duplicate key value violates unique constraint", "code": "23505", "details": None, "hint": None})
+                        # Same user - idempotent operation, return existing
+                        result = MagicMock()
+                        result.data = [existing_session]
+                        return result
+                    sessions_db[data["id"]] = data
                     result = MagicMock()
                     result.data = [data]
                     return result
@@ -193,7 +202,6 @@ def mock_supabase_client():
 
             def insert_handler(data):
                 insert_mock = MagicMock()
-                insert_mock.on_conflict.return_value = insert_mock
 
                 async def execute_insert():
                     messages_db.append(data)
