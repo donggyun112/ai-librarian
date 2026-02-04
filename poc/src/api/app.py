@@ -71,6 +71,6 @@ if static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     @app.get("/")
-    async def serve_ui():
+    async def serve_ui() -> FileResponse:
         """메인 UI 페이지"""
         return FileResponse(static_dir / "index.html")

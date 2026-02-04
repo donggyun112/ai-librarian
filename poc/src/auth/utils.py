@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 from collections import defaultdict, deque
 import asyncio
+from typing import AsyncIterator
 from fastapi import FastAPI
 from supabase import create_async_client, AsyncClient, ClientOptions
 from loguru import logger
@@ -32,7 +33,7 @@ async def create_supabase_client() -> AsyncClient:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """
     FastAPI Lifespan Context Manager
     애플리케이션 시작/종료 시 리소스를 관리합니다.
