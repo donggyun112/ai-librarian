@@ -1,11 +1,13 @@
 """FastAPI 애플리케이션"""
 import time
+from typing import Awaitable, Callable
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.responses import Response
 from pathlib import Path
-from fastapi.responses import JSONResponse
 
 from config import config
 from .routes import router
@@ -31,7 +33,10 @@ app.add_middleware(
 )
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
+async def rate_limit_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
     if not config.RATE_LIMIT_ENABLED:
         return await call_next(request)
 

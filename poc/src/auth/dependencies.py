@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import AsyncGenerator
+
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AsyncClient, create_async_client
@@ -24,7 +26,7 @@ def get_supabase_client(request: Request) -> AsyncClient:
 
 async def get_user_scoped_client(
     token: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
-) -> AsyncClient:
+) -> AsyncGenerator[AsyncClient, None]:
     """
     Create a per-request Supabase client with the caller's JWT for RLS.
 
@@ -95,7 +97,7 @@ async def verify_current_user(
         raise
     except Exception as e:
         # Security: log error type only, not full message (may contain sensitive info)
-        logger.exception(f"Token verification failed: {type(e).__name__}")
+        logger.error(f"Token verification failed: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",

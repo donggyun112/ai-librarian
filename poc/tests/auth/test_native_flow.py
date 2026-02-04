@@ -3,7 +3,6 @@ from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 from src.api.app import app
 from src.auth.dependencies import get_supabase_client
-from src.auth.schemas import User
 
 client = TestClient(app)
 
