@@ -15,7 +15,7 @@ if __name__ == "__main__":
     parser.add_argument("--server-port", dest="server_port", type=int, default=int(os.getenv("PORT", 8080)), help="Port to run the server on")
     parser.add_argument("--server-address", dest="server_address", type=str, default=os.getenv("HOST", "0.0.0.0"), help="Host to run the server on")
     
-    args, unknown = parser.parse_known_args()
+    args = parser.parse_args()
 
     uvicorn.run(
         "src.api:app",
