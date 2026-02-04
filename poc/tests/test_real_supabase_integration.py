@@ -116,7 +116,7 @@ class TestRealSupabaseIntegration:
     def test_user_isolation(self, memory, test_user_id):
         """사용자 간 데이터 격리 테스트"""
         user1_id = test_user_id
-        user2_id = str(uuid.uuid4())
+        user2_id = os.getenv("TEST_USER_ID_2") or str(uuid.uuid4())
         session1_id = str(uuid.uuid4())
         session2_id = str(uuid.uuid4())
 
