@@ -1,6 +1,4 @@
 from contextlib import asynccontextmanager
-from collections import defaultdict, deque
-import asyncio
 from typing import AsyncIterator
 from fastapi import FastAPI
 from supabase import create_async_client, AsyncClient, ClientOptions
@@ -51,10 +49,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
 
         app.state.supervisor = Supervisor(memory=app.state.memory)
-        app.state.rate_limiter = {
-            "lock": asyncio.Lock(),
-            "hits": defaultdict(deque),
-        }
     except RuntimeError as e:
         logger.error(
             f"Startup failed: {e} | "
