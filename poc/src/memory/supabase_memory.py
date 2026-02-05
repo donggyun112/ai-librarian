@@ -172,7 +172,6 @@ class SupabaseChatMemory(ChatMemory):
             .execute()
 
         if not session_check.data:
-            # logger.warning(f"Session access denied: {session_id} for user {user_id}")
             raise SessionAccessDenied(f"User does not own session {session_id}")
 
 
