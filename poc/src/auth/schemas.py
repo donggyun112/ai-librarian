@@ -10,10 +10,6 @@ class UserIdentity(BaseModel):
     last_sign_in_at: str
     updated_at: Optional[str] = None
 
-class UserAppMetadata(BaseModel):
-    provider: Optional[str] = None
-    providers: List[str] = Field(default_factory=list)
-
 class User(BaseModel):
     """Supabase User Model Mirror"""
     id: str
@@ -24,7 +20,7 @@ class User(BaseModel):
     phone: Optional[str] = None
     confirmed_at: Optional[str] = None
     last_sign_in_at: Optional[str] = None
-    app_metadata: UserAppMetadata = Field(default_factory=UserAppMetadata)
+    app_metadata: Dict[str, Any] = Field(default_factory=dict)
     user_metadata: Dict[str, Any] = Field(default_factory=dict)
     identities: List[UserIdentity] = Field(default_factory=list)
     created_at: str
