@@ -28,6 +28,7 @@ class Config:
     # Supabase (New)
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
     # Supervisor 설정
     MAX_RETRIES = 2
@@ -46,5 +47,9 @@ class Config:
         "ALLOWED_ORIGINS",
         "http://localhost:8000,http://localhost:3000"
     ).split(",")
+
+    # History 저장 재시도 설정
+    HISTORY_SAVE_RETRIES = int(os.getenv("HISTORY_SAVE_RETRIES", "3"))
+    HISTORY_SAVE_RETRY_DELAY_SECONDS = float(os.getenv("HISTORY_SAVE_RETRY_DELAY_SECONDS", "0.2"))
 
 config = Config()
