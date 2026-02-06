@@ -112,8 +112,17 @@ class SupabaseChatMemory(ChatMemory):
             return True
         except APIError as e:
             if e.code == "23505":
-                # Unique constraint violation: session exists but belongs to another user
-                # (RLS hid it from the SELECT above)
+                # Unique constraint violation — could be:
+                # 1. Concurrent request from the SAME user (race condition, OK)
+                # 2. Session belongs to a DIFFERENT user (access denied)
+                # Re-check ownership to distinguish these cases
+                existing = await client.table(self.sessions_table) \
+                    .select("id") \
+                    .eq("id", session_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+                if existing.data:
+                    return True  # Same user's concurrent request - OK
                 logger.warning(
                     f"Session {session_id} exists but is not accessible to user {user_id}"
                 )
