@@ -2,6 +2,8 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi.testclient import TestClient
 from src.api.app import app
+from src.auth.dependencies import verify_current_user
+from src.auth.schemas import User
 
 client = TestClient(app)
 
@@ -28,9 +30,6 @@ def mock_supabase_dependency():
 @pytest.fixture
 def override_auth_verification():
     """Bypass verify_current_user for books tests"""
-    from src.auth.dependencies import verify_current_user
-    from src.auth.schemas import User
-    
     mock_user = User(
         id="user-123",
         aud="authenticated",
