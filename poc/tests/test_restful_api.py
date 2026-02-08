@@ -3,11 +3,13 @@ import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, patch, AsyncMock
-from datetime import datetime, timezone
+from unittest.mock import MagicMock, AsyncMock
+from datetime import datetime
 
 from src.api.routes import router
-from src.memory.supabase_memory import SupabaseChatMemory
+from src.auth.dependencies import get_user_scoped_client, verify_current_user
+from src.auth.schemas import User
+from src.memory.supabase_memory import SupabaseChatMemory, SessionAccessDenied
 from src.memory import InMemoryChatMemory
 from src.schemas.models import SupervisorResponse
 from fastapi import FastAPI
@@ -19,6 +21,8 @@ def app():
     """FastAPI 앱 인스턴스"""
     app = FastAPI()
     app.include_router(router)
+    app.state.memory = InMemoryChatMemory()
+    app.state.supervisor = MagicMock()
     return app
 
 
@@ -28,12 +32,37 @@ def client(app):
     return TestClient(app)
 
 
+@pytest.fixture
+def auth_overrides(app):
+    """인증/클라이언트 의존성 오버라이드"""
+    mock_client = AsyncMock()
+    mock_client.postgrest = MagicMock()
+
+    app.dependency_overrides[verify_current_user] = lambda: User(
+        id="user-1",
+        aud="authenticated",
+        role="authenticated",
+        email="test@example.com",
+        created_at="2024-01-01T00:00:00Z",
+        updated_at="2024-01-01T00:00:00Z",
+    )
+    app.dependency_overrides[get_user_scoped_client] = lambda: mock_client
+    yield mock_client
+    app.dependency_overrides = {}
+
+
 class TestSessionCreation:
     """POST /sessions - 세션 생성 테스트"""
 
-    def test_create_session_returns_session_id_and_timestamp(self, client):
+    def test_create_session_returns_session_id_and_timestamp(self, client, auth_overrides, app):
         """세션 생성 시 session_id와 created_at 반환"""
-        response = client.post("/sessions")
+        mock_memory = MagicMock()
+        mock_memory.__class__ = InMemoryChatMemory
+        mock_memory.spec = InMemoryChatMemory
+        mock_memory.init_session_async = AsyncMock()
+        app.state.memory = mock_memory
+
+        response = client.post("/sessions", headers={"Authorization": "Bearer user-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -52,84 +81,88 @@ class TestSessionCreation:
         except ValueError:
             pytest.fail("created_at is not a valid ISO 8601 timestamp")
 
-    def test_create_session_calls_init_session_for_inmemory(self, client):
-        """InMemory 백엔드: 세션 생성 시 init_session 호출 검증"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = InMemoryChatMemory
-            mock_memory.spec = InMemoryChatMemory
-            mock_memory.init_session = MagicMock()
+    def test_create_session_calls_init_session_for_inmemory(self, client, auth_overrides, app):
+        """InMemory 백엔드: 세션 생성 시 init_session_async 호출 검증"""
+        mock_memory = MagicMock()
+        mock_memory.__class__ = InMemoryChatMemory
+        mock_memory.spec = InMemoryChatMemory
+        mock_memory.init_session_async = AsyncMock()
+        app.state.memory = mock_memory
 
-            response = client.post("/sessions")
+        response = client.post("/sessions", headers={"Authorization": "Bearer user-1"})
 
-            assert response.status_code == 200
-            data = response.json()
+        assert response.status_code == 200
+        data = response.json()
 
-            # init_session이 생성된 session_id로 호출되었는지 검증
-            mock_memory.init_session.assert_called_once()
-            call_args = mock_memory.init_session.call_args
-            assert call_args[0][0] == data["session_id"]
+        # init_session_async가 생성된 session_id로 호출되었는지 검증
+        mock_memory.init_session_async.assert_called_once()
+        call_args = mock_memory.init_session_async.call_args
+        assert call_args[0][0] == data["session_id"]
 
-    def test_create_session_calls_init_session_async_for_supabase(self, client):
+    def test_create_session_calls_init_session_async_for_supabase(self, client, auth_overrides, app):
         """Supabase 백엔드: 세션 생성 시 init_session_async 호출 검증"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = SupabaseChatMemory
-            mock_memory.spec = SupabaseChatMemory
-            mock_memory.init_session_async = AsyncMock(return_value=True)
+        mock_memory = MagicMock()
+        mock_memory.__class__ = SupabaseChatMemory
+        mock_memory.spec = SupabaseChatMemory
+        mock_memory.init_session_async = AsyncMock(return_value=True)
+        app.state.memory = mock_memory
 
-            response = client.post(
-                "/sessions",
-                headers={"Authorization": "Bearer user-1"}
-            )
+        response = client.post(
+            "/sessions",
+            headers={"Authorization": "Bearer user-1"}
+        )
 
-            assert response.status_code == 200
-            data = response.json()
+        assert response.status_code == 200
+        data = response.json()
 
-            # init_session_async가 session_id와 user_id로 호출되었는지 검증
-            mock_memory.init_session_async.assert_called_once()
-            call_args = mock_memory.init_session_async.call_args
-            assert call_args[0][0] == data["session_id"]
-            assert call_args[0][1] == "user-1"
+        # init_session_async가 session_id와 user_id로 호출되었는지 검증
+        mock_memory.init_session_async.assert_called_once()
+        call_args = mock_memory.init_session_async.call_args
+        assert call_args[0][0] == data["session_id"]
+        assert call_args[0][1] == "user-1"
+        assert call_args.kwargs["client"] is not None
 
-    def test_create_session_fails_when_supabase_init_fails(self, client):
+    def test_create_session_fails_when_supabase_init_fails(self, client, auth_overrides, app):
         """Supabase 백엔드: 세션 초기화 실패 시 500 에러"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = SupabaseChatMemory
-            mock_memory.spec = SupabaseChatMemory
-            mock_memory.init_session_async = AsyncMock(return_value=False)
+        mock_memory = MagicMock()
+        mock_memory.__class__ = SupabaseChatMemory
+        mock_memory.spec = SupabaseChatMemory
+        mock_memory.init_session_async = AsyncMock(return_value=False)
+        app.state.memory = mock_memory
 
-            response = client.post(
-                "/sessions",
-                headers={"Authorization": "Bearer user-1"}
-            )
+        response = client.post(
+            "/sessions",
+            headers={"Authorization": "Bearer user-1"}
+        )
 
-            assert response.status_code == 500
-            data = response.json()
-            assert "Failed to create session" in data["detail"]
+        assert response.status_code == 500
+        data = response.json()
+        assert "Failed to create session" in data["detail"]
 
 
 class TestSessionDetail:
     """GET /sessions/{session_id} - 세션 상세 조회 테스트"""
 
     @pytest.fixture
-    def mock_supabase_memory(self):
+    def mock_supabase_memory(self, app):
         """Mock SupabaseChatMemory"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = SupabaseChatMemory
-            mock_memory.spec = SupabaseChatMemory
+        mock_memory = MagicMock()
+        mock_memory.__class__ = SupabaseChatMemory
+        mock_memory.spec = SupabaseChatMemory
 
-            # Configure async methods
-            mock_memory.list_sessions_async = AsyncMock()
-            mock_memory.get_message_count_async = AsyncMock()
-            mock_memory.get_messages_async = AsyncMock()
+        # Configure async methods
+        mock_memory.list_sessions_async = AsyncMock()
+        mock_memory.get_message_count_async = AsyncMock()
+        mock_memory.get_messages_async = AsyncMock()
 
-            yield mock_memory
+        app.state.memory = mock_memory
+        yield mock_memory
 
-    def test_get_session_detail_with_messages(self, client, mock_supabase_memory):
+    def test_get_session_detail_with_messages(self, client, mock_supabase_memory, auth_overrides):
         """메시지가 있는 세션 상세 조회"""
         session_id = "test-session-123"
 
         # Mock 데이터 설정
-        mock_supabase_memory.list_sessions_async.return_value = [session_id]
         mock_supabase_memory.get_message_count_async.return_value = 4
 
         # 타임스탬프가 있는 메시지 목록
@@ -175,13 +208,13 @@ class TestSessionDetail:
 
         assert response.status_code == 401
         data = response.json()
-        assert "Authorization header required" in data["detail"]
+        assert data["detail"] == "Not authenticated"
 
-    def test_get_session_detail_not_found(self, client, mock_supabase_memory):
+    def test_get_session_detail_not_found(self, client, mock_supabase_memory, auth_overrides):
         """존재하지 않는 세션 조회"""
         session_id = "nonexistent-session"
 
-        mock_supabase_memory.list_sessions_async.return_value = []
+        mock_supabase_memory.get_message_count_async.side_effect = SessionAccessDenied("denied")
 
         response = client.get(
             f"/sessions/{session_id}",
@@ -192,54 +225,57 @@ class TestSessionDetail:
         data = response.json()
         assert "not found" in data["detail"].lower() or "denied" in data["detail"].lower()
 
-    def test_get_session_detail_with_inmemory(self, client):
+    def test_get_session_detail_with_inmemory(self, client, auth_overrides, app):
         """InMemory 백엔드로 세션 상세 조회"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = InMemoryChatMemory
-            mock_memory.spec = InMemoryChatMemory
+        mock_memory = MagicMock()
+        mock_memory.__class__ = InMemoryChatMemory
+        mock_memory.spec = InMemoryChatMemory
+        app.state.memory = mock_memory
 
-            session_id = "test-session"
-            mock_memory.list_sessions.return_value = [session_id]
-            mock_memory.get_message_count.return_value = 2
-            mock_memory.get_messages.return_value = [
-                HumanMessage(
-                    content="Hi",
-                    additional_kwargs={"timestamp": "2024-01-01T12:00:00Z"}
-                ),
-                AIMessage(
-                    content="Hello",
-                    additional_kwargs={"timestamp": "2024-01-01T12:00:05Z"}
-                ),
-            ]
+        session_id = "test-session"
+        mock_memory.list_sessions_async = AsyncMock(return_value=[session_id])
+        mock_memory.get_message_count_async = AsyncMock(return_value=2)
+        mock_memory.get_messages_async = AsyncMock(return_value=[
+            HumanMessage(
+                content="Hi",
+                additional_kwargs={"timestamp": "2024-01-01T12:00:00Z"}
+            ),
+            AIMessage(
+                content="Hello",
+                additional_kwargs={"timestamp": "2024-01-01T12:00:05Z"}
+            ),
+        ])
 
-            response = client.get(f"/sessions/{session_id}")
+        response = client.get(f"/sessions/{session_id}", headers={"Authorization": "Bearer user-1"})
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["session_id"] == session_id
-            assert data["message_count"] == 2
-            assert data["created_at"] == "2024-01-01T12:00:00Z"
-            assert data["last_activity"] == "2024-01-01T12:00:05Z"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["session_id"] == session_id
+        assert data["message_count"] == 2
+        assert data["created_at"] == "2024-01-01T12:00:00Z"
+        assert data["last_activity"] == "2024-01-01T12:00:05Z"
 
 
 class TestSendMessage:
     """POST /sessions/{session_id}/messages - stream 파라미터 기반 응답"""
 
     @pytest.fixture
-    def mock_supervisor(self):
+    def mock_supervisor(self, app):
         """Mock Supervisor"""
-        with patch('src.api.routes.supervisor') as mock_sup:
-            yield mock_sup
+        mock_sup = MagicMock()
+        app.state.supervisor = mock_sup
+        yield mock_sup
 
     @pytest.fixture
-    def mock_supabase_memory(self):
+    def mock_supabase_memory(self, app):
         """Mock SupabaseChatMemory"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = SupabaseChatMemory
-            mock_memory.spec = SupabaseChatMemory
-            yield mock_memory
+        mock_memory = MagicMock()
+        mock_memory.__class__ = SupabaseChatMemory
+        mock_memory.spec = SupabaseChatMemory
+        app.state.memory = mock_memory
+        yield mock_memory
 
-    def test_send_message_json_response(self, client, mock_supervisor, mock_supabase_memory):
+    def test_send_message_json_response(self, client, mock_supervisor, mock_supabase_memory, auth_overrides):
         """stream: false → JSON 응답"""
         session_id = "test-session"
 
@@ -270,7 +306,7 @@ class TestSendMessage:
         assert call_kwargs["session_id"] == session_id
         assert call_kwargs["user_id"] == "user-1"
 
-    def test_send_message_streaming_response(self, client, mock_supervisor, mock_supabase_memory):
+    def test_send_message_streaming_response(self, client, mock_supervisor, mock_supabase_memory, auth_overrides):
         """stream: true → SSE 스트리밍"""
         session_id = "test-session"
 
@@ -302,7 +338,7 @@ class TestSendMessage:
         assert "event: done" in content
 
     def test_send_message_defaults_to_json(
-        self, client, mock_supervisor, mock_supabase_memory
+        self, client, mock_supervisor, mock_supabase_memory, auth_overrides
     ):
         """stream 미지정 시 JSON 응답 (기본값)"""
         session_id = "test-session"
@@ -336,33 +372,35 @@ class TestSendMessage:
 
         assert response.status_code == 401
         data = response.json()
-        assert "Authorization header required" in data["detail"]
+        assert data["detail"] == "Not authenticated"
 
-    def test_send_message_works_without_auth_for_inmemory(self, client, mock_supervisor):
+    def test_send_message_works_without_auth_for_inmemory(self, client, mock_supervisor, auth_overrides, app):
         """InMemory 백엔드는 Authorization 헤더 불필요"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = InMemoryChatMemory
-            mock_memory.spec = InMemoryChatMemory
+        mock_memory = MagicMock()
+        mock_memory.__class__ = InMemoryChatMemory
+        mock_memory.spec = InMemoryChatMemory
+        app.state.memory = mock_memory
 
-            session_id = "test-session"
+        session_id = "test-session"
 
-            mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
-                answer="Response without auth",
-                sources=[],
-                execution_log=[],
-                total_confidence=1.0
-            ))
+        mock_supervisor.process = AsyncMock(return_value=SupervisorResponse(
+            answer="Response without auth",
+            sources=[],
+            execution_log=[],
+            total_confidence=1.0
+        ))
 
-            response = client.post(
-                f"/sessions/{session_id}/messages",
-                json={"message": "Hello"}
-            )
+        response = client.post(
+            f"/sessions/{session_id}/messages",
+            json={"message": "Hello"},
+            headers={"Authorization": "Bearer user-1"}
+        )
 
-            assert response.status_code == 200
-            data = response.json()
-            assert data["answer"] == "Response without auth"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["answer"] == "Response without auth"
 
-    def test_send_message_streaming_handles_error(self, client, mock_supervisor, mock_supabase_memory):
+    def test_send_message_streaming_handles_error(self, client, mock_supervisor, mock_supabase_memory, auth_overrides):
         """스트리밍 중 에러 발생 시 error 이벤트"""
         session_id = "test-session"
 
@@ -384,7 +422,7 @@ class TestSendMessage:
         assert "event: error" in content
 
     def test_send_message_json_handles_validation_error(
-        self, client, mock_supervisor, mock_supabase_memory
+        self, client, mock_supervisor, mock_supabase_memory, auth_overrides
     ):
         """JSON 모드에서 ValidationError 처리"""
         session_id = "test-session"
@@ -399,7 +437,7 @@ class TestSendMessage:
 
         assert response.status_code == 400
         data = response.json()
-        assert "Validation failed" in data["detail"]
+        assert data["detail"] == "잘못된 요청입니다."
 
 
 class TestAPIDocumentation:
