@@ -141,7 +141,7 @@ async def get_session_detail(
     except SessionAccessDenied:
         raise HTTPException(
             status_code=404,
-            detail="Session not found or access denied"
+            detail="Session not found"
         )
 
     created_at, last_activity = _extract_timestamps(messages)
@@ -232,7 +232,7 @@ async def send_message(
             except SessionAccessDenied:
                 yield {
                     "event": "error",
-                    "data": json.dumps({"error": "Session not found or access denied"})
+                    "data": json.dumps({"error": "Session not found"})
                 }
 
             except ValueError:
@@ -271,7 +271,7 @@ async def send_message(
         except SessionAccessDenied:
             raise HTTPException(
                 status_code=404,
-                detail="Session not found or access denied"
+                detail="Session not found"
             )
         except ValueError:
             logger.warning("Validation error in chat processing")
@@ -334,7 +334,7 @@ async def get_session_messages(
     try:
         messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
-        raise HTTPException(status_code=404, detail="Session not found or access denied")
+        raise HTTPException(status_code=404, detail="Session not found")
 
     message_list = []
     for msg in messages:
@@ -370,6 +370,6 @@ async def delete_session(
     try:
         await memory.delete_session_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
-        raise HTTPException(status_code=404, detail="Session not found or access denied")
+        raise HTTPException(status_code=404, detail="Session not found")
 
     return {"message": "Session deleted", "session_id": session_id}
