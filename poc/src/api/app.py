@@ -27,6 +27,11 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
+# Health check endpoint for CI/CD verification
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
 # API 라우트 등록
 app.include_router(router, prefix="/v1")
 app.include_router(auth_router)
