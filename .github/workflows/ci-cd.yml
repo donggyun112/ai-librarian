@@ -97,4 +97,5 @@ jobs:
             OPENAI_API_KEY=openai-api-key:latest
             SUPABASE_URL=supabase-url:latest
             SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest
+            SUPABASE_ANON_KEY=supabase-anon-key:latest
             POSTGRES_PASSWORD=postgres-password:latest
