@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Literal, Union
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.tools import BaseTool
 
 
 # Tool choice 타입 정의
