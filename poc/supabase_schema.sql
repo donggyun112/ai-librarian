@@ -13,49 +13,7 @@
 -- ============================================================================
 
 -- ============================================================================
--- 1. BOOKS TABLE (Protected Resource Example)
--- ============================================================================
--- Example table demonstrating Supabase RLS with auth.uid()
--- Used for testing JWT authentication and RLS integration
-
-CREATE TABLE IF NOT EXISTS public.books (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    title TEXT NOT NULL CHECK (char_length(title) > 0 AND char_length(title) <= 500),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now()),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc', now())
-);
-
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_books_user_id ON public.books(user_id);
-CREATE INDEX IF NOT EXISTS idx_books_created_at ON public.books(created_at DESC);
-
--- Enable RLS
-ALTER TABLE public.books ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies (users can only access their own books)
-CREATE POLICY "books_select_own" ON public.books FOR SELECT
-    USING (auth.uid() = user_id);
-
-CREATE POLICY "books_insert_own" ON public.books FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "books_update_own" ON public.books FOR UPDATE
-    USING (auth.uid() = user_id)
-    WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "books_delete_own" ON public.books FOR DELETE
-    USING (auth.uid() = user_id);
-
--- Service role access (backend admin operations)
-CREATE POLICY "service_role_books_all" ON public.books
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
-
-
--- ============================================================================
--- 2. CHAT SESSIONS TABLE (Conversation Management)
+-- 1. CHAT SESSIONS TABLE (Conversation Management)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.chat_sessions (
@@ -96,7 +54,7 @@ CREATE POLICY "service_role_sessions_all" ON public.chat_sessions
 
 
 -- ============================================================================
--- 3. CHAT MESSAGES TABLE (Conversation History)
+-- 2. CHAT MESSAGES TABLE (Conversation History)
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS public.chat_messages (
@@ -144,7 +102,7 @@ CREATE POLICY "service_role_messages_all" ON public.chat_messages
 
 
 -- ============================================================================
--- 4. UTILITY FUNCTIONS
+-- 3. UTILITY FUNCTIONS
 -- ============================================================================
 
 -- Auto-update updated_at column (with secure search_path)
@@ -160,13 +118,6 @@ BEGIN
 END;
 $$;
 
--- Apply trigger to books table
-DROP TRIGGER IF EXISTS update_books_updated_at ON public.books;
-CREATE TRIGGER update_books_updated_at
-    BEFORE UPDATE ON public.books
-    FOR EACH ROW
-    EXECUTE FUNCTION public.update_updated_at_column();
-
 -- Apply trigger to chat_sessions table
 DROP TRIGGER IF EXISTS update_chat_sessions_updated_at ON public.chat_sessions;
 CREATE TRIGGER update_chat_sessions_updated_at
@@ -176,14 +127,13 @@ CREATE TRIGGER update_chat_sessions_updated_at
 
 
 -- ============================================================================
--- 5. FUTURE EXTENSIONS (Commented Out)
+-- 4. FUTURE EXTENSIONS (Commented Out)
 -- ============================================================================
 
 -- Documents Table (RAG document storage)
 -- CREATE TABLE IF NOT EXISTS public.documents (
 --     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 --     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
---     book_id UUID REFERENCES public.books(id) ON DELETE CASCADE,
 --     title TEXT NOT NULL,
 --     content TEXT NOT NULL,
 --     metadata JSONB DEFAULT '{}'::jsonb,
