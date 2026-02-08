@@ -2,7 +2,7 @@
 
 이 파일은 LangChain에 제안할 StreamEventName 타입을 테스트합니다.
 """
-from typing import Literal, TYPE_CHECKING
+from typing import Literal
 from typing_extensions import TypedDict, NotRequired
 
 # 제안하는 StreamEventName Literal 타입

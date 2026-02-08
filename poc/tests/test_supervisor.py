@@ -1,6 +1,6 @@
 """supervisor.py 테스트"""
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from src.supervisor.supervisor import (
@@ -196,6 +196,32 @@ class TestSupervisorProcessStream:
         assert StreamEventType.TOKEN in event_types
         assert StreamEventType.ACT in event_types
         assert StreamEventType.OBSERVE in event_types
+
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
+    async def test_process_stream_passes_client_to_build_messages(self, mock_chat):
+        """process_stream이 client를 _build_messages로 전달하는지 확인"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor(provider="openai")
+        supervisor._build_messages = AsyncMock(return_value=[])
+
+        async def mock_stream_events(*args, **kwargs):
+            if False:
+                yield {}
+
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.astream_events = mock_stream_events
+
+        client = object()
+        async for _ in supervisor.process_stream("질문", session_id="session-1", user_id="user-1", client=client):
+            pass
+
+        supervisor._build_messages.assert_called_once_with(
+            "session-1", "질문", user_id="user-1", client=client
+        )
 
     @pytest.mark.asyncio
     @patch("src.adapters.openai.ChatOpenAI")
@@ -399,6 +425,27 @@ class TestSupervisorProcess:
 
         assert isinstance(result, SupervisorResponse)
         assert result.answer == "답변입니다"
+
+    @pytest.mark.asyncio
+    @patch("src.adapters.openai.ChatOpenAI")
+    async def test_process_passes_client_to_build_messages(self, mock_chat):
+        """process가 client를 _build_messages로 전달하는지 확인"""
+        mock_llm = MagicMock()
+        mock_chat.return_value = mock_llm
+        mock_llm.bind_tools = MagicMock(return_value=mock_llm)
+
+        supervisor = Supervisor(provider="openai")
+        supervisor._build_messages = AsyncMock(return_value=[])
+
+        supervisor._cached_graph = MagicMock()
+        supervisor._cached_graph.ainvoke = AsyncMock(return_value={"messages": [AIMessage(content="ok")]})
+
+        client = object()
+        await supervisor.process("질문", session_id="session-1", user_id="user-1", client=client)
+
+        supervisor._build_messages.assert_called_once_with(
+            "session-1", "질문", user_id="user-1", client=client
+        )
 
     @pytest.mark.asyncio
     @patch("src.adapters.openai.ChatOpenAI")
