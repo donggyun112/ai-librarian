@@ -13,7 +13,9 @@ Adapter 패턴:
     - Supervisor는 Adapter 인터페이스만 사용
 """
 
-from typing import Any, List, Literal, TypedDict, Annotated, AsyncIterator, Optional
+from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
+
+from supabase import AsyncClient
 
 import anyio
 from langchain_core.messages import (
@@ -176,7 +178,7 @@ class Supervisor:
         session_id: str,
         question: str,
         user_id: Optional[str] = None,
-        client: Optional[Any] = None,
+        client: Optional[AsyncClient] = None,
     ) -> List[BaseMessage]:
         """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성
 

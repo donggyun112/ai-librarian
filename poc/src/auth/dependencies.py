@@ -33,25 +33,23 @@ async def get_user_scoped_client(
     Per-request creation is intentional: concurrent requests must not
     share auth headers, so each request gets its own client instance.
     """
-    client: AsyncClient | None = None
     try:
-        client = await create_async_client(
+        client: AsyncClient = await create_async_client(
             config.SUPABASE_URL,
             config.SUPABASE_ANON_KEY
         )
-        client.postgrest.auth(token.credentials)
-
-        yield client
-
     except Exception as e:
         logger.error(f"Failed to create user-scoped Supabase client: {type(e).__name__}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to initialize database connection"
         )
+
+    try:
+        client.postgrest.auth(token.credentials)
+        yield client
     finally:
-        if client is not None:
-            await client.aclose()
+        await client.aclose()
 
 async def verify_current_user(
     token: HTTPAuthorizationCredentials = Depends(oauth2_scheme),
