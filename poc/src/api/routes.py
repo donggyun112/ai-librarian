@@ -7,6 +7,7 @@ from typing import AsyncGenerator, Dict, List, Optional, Union
 from langchain_core.messages import BaseMessage
 
 from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from sse_starlette.sse import EventSourceResponse
 from loguru import logger
@@ -27,6 +28,7 @@ from .schemas import (
     SessionHistoryResponse,
     MessageInfo,
     HealthResponse,
+    AIChatRequest,
 )
 
 
@@ -373,3 +375,75 @@ async def delete_session(
         raise HTTPException(status_code=404, detail="Session not found or access denied")
 
     return {"message": "Session deleted", "session_id": session_id}
+
+
+@router.post("/chat")
+async def ai_chat(request: AIChatRequest):
+    """AI SDK UI Message Stream 호환 채팅 엔드포인트
+
+    Vercel AI SDK의 toUIMessageStreamResponse() 형식과 호환되는
+    SSE 스트리밍 응답을 반환합니다.
+
+    Protocol: https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
+    """
+    # 마지막 user 메시지 추출
+    user_text = None
+    for msg in reversed(request.messages):
+        if msg.role == "user":
+            user_text = msg.get_text()
+            break
+
+    if not user_text:
+        raise HTTPException(status_code=400, detail="No user message")
+
+    # 임시 세션 생성
+    session_id = str(uuid.uuid4())
+    if isinstance(memory, SupabaseChatMemory):
+        await memory.init_session_async(session_id)
+    else:
+        memory.init_session(session_id)
+
+    async def ui_message_stream() -> AsyncGenerator[str, None]:
+        """UI Message Stream 프로토콜 형식으로 스트리밍"""
+        message_id = f"msg_{uuid.uuid4().hex}"
+        text_id = f"text_{uuid.uuid4().hex}"
+
+        try:
+            # 1. message-start
+            yield f"data: {json.dumps({'type': 'start', 'messageId': message_id})}\n\n"
+
+            # 2. text-start
+            yield f"data: {json.dumps({'type': 'text-start', 'id': text_id})}\n\n"
+
+            # 3. LangGraph supervisor 호출 및 text-delta 스트리밍
+            async for event in supervisor.process_stream(
+                question=user_text,
+                session_id=session_id,
+            ):
+                if event.get("type") == "token":
+                    content = event.get("content", "")
+                    if content:
+                        yield f"data: {json.dumps({'type': 'text-delta', 'id': text_id, 'delta': content})}\n\n"
+
+            # 4. text-end
+            yield f"data: {json.dumps({'type': 'text-end', 'id': text_id})}\n\n"
+
+            # 5. finish
+            yield f"data: {json.dumps({'type': 'finish'})}\n\n"
+
+            # 6. stream termination
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.exception("Chat stream failed")
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        ui_message_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Vercel-AI-UI-Message-Stream": "v1",
+        }
+    )

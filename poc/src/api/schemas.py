@@ -58,3 +58,86 @@ class HealthResponse(BaseModel):
     """헬스 체크 응답"""
     status: str = "ok"
     provider: str
+
+
+# AI SDK 호환 스키마
+class AIChatPart(BaseModel):
+    """AI SDK 메시지 파트"""
+    type: str
+    text: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class AIChatMessage(BaseModel):
+    """AI SDK 메시지"""
+    role: str
+    parts: Optional[List[AIChatPart]] = None
+
+    model_config = {"extra": "allow"}
+
+    def get_text(self) -> str:
+        """텍스트 추출"""
+        if self.parts:
+            for part in self.parts:
+                if part.type == "text" and part.text:
+                    return part.text
+        return ""
+
+
+class AIChatRequest(BaseModel):
+    """AI SDK useChat() 요청"""
+    messages: List[AIChatMessage]
+
+    model_config = {"extra": "allow"}
+
+
+# Assistant Transport Protocol 스키마
+class AssistantMessagePart(BaseModel):
+    """메시지 파트"""
+    type: str
+    text: Optional[str] = None
+
+    model_config = {"extra": "allow"}
+
+
+class AssistantMessage(BaseModel):
+    """Assistant Transport 메시지"""
+    role: str
+    parts: Optional[List[AssistantMessagePart]] = None
+
+    model_config = {"extra": "allow"}
+
+    def get_text(self) -> str:
+        """텍스트 추출"""
+        if self.parts:
+            for part in self.parts:
+                if part.type == "text" and part.text:
+                    return part.text
+        return ""
+
+
+class AssistantCommand(BaseModel):
+    """Assistant Transport 커맨드"""
+    type: str
+    message: Optional[AssistantMessage] = None
+
+    model_config = {"extra": "allow"}
+
+
+class AssistantTransportRequest(BaseModel):
+    """Assistant Transport Protocol 요청"""
+    commands: List[AssistantCommand] = Field(default_factory=list)
+    system: Optional[str] = None
+    tools: Optional[dict] = None
+    state: Optional[dict] = None
+
+    model_config = {"extra": "allow"}
+
+    def get_last_user_message(self) -> Optional[str]:
+        """마지막 사용자 메시지 텍스트 추출"""
+        for command in reversed(self.commands):
+            if command.type == "add-message" and command.message:
+                if command.message.role == "user":
+                    return command.message.get_text()
+        return None
