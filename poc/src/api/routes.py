@@ -273,11 +273,7 @@ async def send_message(
         except SessionAccessDenied:
             raise HTTPException(
                 status_code=404,
-<<<<<<< HEAD
                 detail="Session not found or access denied"
-=======
-                detail="Session not found"
->>>>>>> origin/main
             )
         except ValueError:
             logger.warning("Validation error in chat processing")
@@ -340,11 +336,7 @@ async def get_session_messages(
     try:
         messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
-<<<<<<< HEAD
         raise HTTPException(status_code=404, detail="Session not found or access denied")
-=======
-        raise HTTPException(status_code=404, detail="Session not found")
->>>>>>> origin/main
 
     message_list = []
     for msg in messages:
@@ -380,11 +372,7 @@ async def delete_session(
     try:
         await memory.delete_session_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
-<<<<<<< HEAD
         raise HTTPException(status_code=404, detail="Session not found or access denied")
-=======
-        raise HTTPException(status_code=404, detail="Session not found")
->>>>>>> origin/main
 
     return {"message": "Session deleted", "session_id": session_id}
 
