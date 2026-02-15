@@ -5,6 +5,7 @@ import {
   useChatRuntime,
   AssistantChatTransport,
 } from "@assistant-ui/react-ai-sdk";
+
 import { Thread } from "@/components/assistant-ui/thread";
 import {
   SidebarInset,

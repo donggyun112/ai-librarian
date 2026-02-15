@@ -21,6 +21,7 @@ from src.auth.schemas import User
 from .schemas import (
     MessageRequest,
     ChatResponse,
+    ChatPromptRequest,
     SessionCreateResponse,
     SessionDetailResponse,
     SessionInfo,
@@ -28,7 +29,6 @@ from .schemas import (
     SessionHistoryResponse,
     MessageInfo,
     HealthResponse,
-    AIChatRequest,
 )
 
 
@@ -378,60 +378,56 @@ async def delete_session(
 
 
 @router.post("/chat")
-async def ai_chat(request: AIChatRequest):
-    """AI SDK UI Message Stream 호환 채팅 엔드포인트
+async def ai_chat(
+    request: ChatPromptRequest,
+    supervisor: Supervisor = Depends(get_supervisor),
+):
+    """Claude 방식 채팅 엔드포인트
 
-    Vercel AI SDK의 toUIMessageStreamResponse() 형식과 호환되는
-    SSE 스트리밍 응답을 반환합니다.
+    클라이언트는 prompt + session_id만 전송.
+    서버가 히스토리를 관리합니다.
 
-    Protocol: https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol
+    Protocol: UI Message Stream (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
     """
-    # 마지막 user 메시지 추출
-    user_text = None
-    for msg in reversed(request.messages):
-        if msg.role == "user":
-            user_text = msg.get_text()
-            break
-
-    if not user_text:
-        raise HTTPException(status_code=400, detail="No user message")
-
-    # 임시 세션 생성
-    session_id = str(uuid.uuid4())
-    if isinstance(memory, SupabaseChatMemory):
-        await memory.init_session_async(session_id)
-    else:
-        memory.init_session(session_id)
+    user_text = request.prompt
 
     async def ui_message_stream() -> AsyncGenerator[str, None]:
-        """UI Message Stream 프로토콜 형식으로 스트리밍"""
+        """UI Message Stream v1 프로토콜 형식으로 스트리밍"""
         message_id = f"msg_{uuid.uuid4().hex}"
         text_id = f"text_{uuid.uuid4().hex}"
+        reasoning_id = f"rsn_{uuid.uuid4().hex}"
+        reasoning_started = False
+        text_started = False
 
         try:
-            # 1. message-start
             yield f"data: {json.dumps({'type': 'start', 'messageId': message_id})}\n\n"
 
-            # 2. text-start
-            yield f"data: {json.dumps({'type': 'text-start', 'id': text_id})}\n\n"
-
-            # 3. LangGraph supervisor 호출 및 text-delta 스트리밍
             async for event in supervisor.process_stream(
                 question=user_text,
-                session_id=session_id,
             ):
-                if event.get("type") == "token":
-                    content = event.get("content", "")
-                    if content:
-                        yield f"data: {json.dumps({'type': 'text-delta', 'id': text_id, 'delta': content})}\n\n"
+                event_type = event.get("type")
+                content = event.get("content", "")
 
-            # 4. text-end
-            yield f"data: {json.dumps({'type': 'text-end', 'id': text_id})}\n\n"
+                if event_type == "think" and content:
+                    if not reasoning_started:
+                        yield f"data: {json.dumps({'type': 'reasoning-start', 'id': reasoning_id})}\n\n"
+                        reasoning_started = True
+                    yield f"data: {json.dumps({'type': 'reasoning-delta', 'id': reasoning_id, 'delta': content})}\n\n"
+                elif event_type == "token" and content:
+                    if reasoning_started:
+                        yield f"data: {json.dumps({'type': 'reasoning-end', 'id': reasoning_id})}\n\n"
+                        reasoning_started = False
+                    if not text_started:
+                        yield f"data: {json.dumps({'type': 'text-start', 'id': text_id})}\n\n"
+                        text_started = True
+                    yield f"data: {json.dumps({'type': 'text-delta', 'id': text_id, 'delta': content})}\n\n"
 
-            # 5. finish
+            if reasoning_started:
+                yield f"data: {json.dumps({'type': 'reasoning-end', 'id': reasoning_id})}\n\n"
+            if text_started:
+                yield f"data: {json.dumps({'type': 'text-end', 'id': text_id})}\n\n"
+
             yield f"data: {json.dumps({'type': 'finish'})}\n\n"
-
-            # 6. stream termination
             yield "data: [DONE]\n\n"
 
         except Exception as e:
