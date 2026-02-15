@@ -92,6 +92,16 @@ class AIChatRequest(BaseModel):
     model_config = {"extra": "allow"}
 
 
+class ChatPromptRequest(BaseModel):
+    """Claude 방식 채팅 요청 — 프롬프트 + 세션 참조만 전송
+
+    서버가 히스토리를 관리하며, 클라이언트는 새 메시지만 보냅니다.
+    session_id가 없으면 새 세션을 생성합니다.
+    """
+    prompt: str = Field(..., min_length=1, description="사용자 메시지")
+    session_id: Optional[str] = Field(None, description="기존 세션 ID (없으면 새 세션 생성)")
+
+
 # Assistant Transport Protocol 스키마
 class AssistantMessagePart(BaseModel):
     """메시지 파트"""

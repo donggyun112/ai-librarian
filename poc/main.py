@@ -12,7 +12,7 @@ import uvicorn
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Run the FastAPI server")
-    parser.add_argument("--server-port", dest="server_port", type=int, default=int(os.getenv("PORT", 8080)), help="Port to run the server on")
+    parser.add_argument("--server-port", dest="server_port", type=int, default=int(os.getenv("PORT", 8000)), help="Port to run the server on")
     parser.add_argument("--server-address", dest="server_address", type=str, default=os.getenv("HOST", "0.0.0.0"), help="Host to run the server on")
     
     args = parser.parse_args()
