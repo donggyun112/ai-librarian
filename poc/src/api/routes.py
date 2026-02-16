@@ -398,7 +398,7 @@ async def ai_chat(
         reasoning_id = f"rsn_{uuid.uuid4().hex}"
         reasoning_started = False
         text_started = False
-
+        current_tool_call_id = ""
         try:
             yield f"data: {json.dumps({'type': 'start', 'messageId': message_id})}\n\n"
 
@@ -413,6 +413,27 @@ async def ai_chat(
                         yield f"data: {json.dumps({'type': 'reasoning-start', 'id': reasoning_id})}\n\n"
                         reasoning_started = True
                     yield f"data: {json.dumps({'type': 'reasoning-delta', 'id': reasoning_id, 'delta': content})}\n\n"
+
+                elif event_type == "act":
+                    if reasoning_started:
+                        yield f"data: {json.dumps({'type': 'reasoning-end', 'id': reasoning_id})}\n\n"
+                        reasoning_started = False
+                    if text_started:
+                        yield f"data: {json.dumps({'type': 'text-end', 'id': text_id})}\n\n"
+                        text_started = False
+                        text_id = f"text_{uuid.uuid4().hex}"
+
+                    tool_name = event.get("tool", "")
+                    tool_args = event.get("args", {})
+                    current_tool_call_id = f"call_{uuid.uuid4().hex}"
+                    yield f"data: {json.dumps({'type': 'tool-input-start', 'toolCallId': current_tool_call_id, 'toolName': tool_name})}\n\n"
+                    yield f"data: {json.dumps({'type': 'tool-input-available', 'toolCallId': current_tool_call_id, 'toolName': tool_name, 'input': tool_args})}\n\n"
+
+                elif event_type == "observe":
+                    if current_tool_call_id:
+                        yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': current_tool_call_id, 'output': content})}\n\n"
+                        current_tool_call_id = ""
+
                 elif event_type == "token" and content:
                     if reasoning_started:
                         yield f"data: {json.dumps({'type': 'reasoning-end', 'id': reasoning_id})}\n\n"
@@ -432,7 +453,7 @@ async def ai_chat(
 
         except Exception as e:
             logger.exception("Chat stream failed")
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'errorText': str(e)})}\n\n"
 
     return StreamingResponse(
         ui_message_stream(),

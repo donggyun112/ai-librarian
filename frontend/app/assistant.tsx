@@ -7,6 +7,7 @@ import {
 } from "@assistant-ui/react-ai-sdk";
 
 import { Thread } from "@/components/assistant-ui/thread";
+import { WebSearchToolUI } from "@/components/assistant-ui/web-search-tool";
 import {
   SidebarInset,
   SidebarProvider,
@@ -59,6 +60,7 @@ export const Assistant = () => {
             </header>
             <div className="flex-1 overflow-hidden">
               <Thread />
+              <WebSearchToolUI />
             </div>
           </SidebarInset>
         </div>
