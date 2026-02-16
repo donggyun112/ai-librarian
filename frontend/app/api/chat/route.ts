@@ -1,6 +1,5 @@
 import type { UIMessage } from "ai";
-
-const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:8000";
+import { backendFetch } from "@/lib/api/backend";
 
 export async function POST(req: Request) {
   const { messages }: { messages: UIMessage[] } = await req.json();
@@ -19,11 +18,17 @@ export async function POST(req: Request) {
     });
   }
 
-  const response = await fetch(`${BACKEND_URL}/v1/chat`, {
+  const response = await backendFetch("/v1/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   });
+
+  if (response.status === 401) {
+    return new Response(
+      JSON.stringify({ error: "Unauthorized" }),
+      { status: 401 },
+    );
+  }
 
   if (!response.ok) {
     return new Response(
