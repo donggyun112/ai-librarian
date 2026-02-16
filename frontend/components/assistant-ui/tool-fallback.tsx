@@ -212,7 +212,13 @@ function ToolFallbackResult({
 }: React.ComponentProps<"div"> & {
   result?: unknown;
 }) {
-  if (result === undefined) return null;
+  if (
+    result === undefined ||
+    result === null ||
+    (typeof result === "object" && Object.keys(result as object).length === 0) ||
+    result === ""
+  )
+    return null;
 
   return (
     <div
