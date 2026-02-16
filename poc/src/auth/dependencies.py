@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from supabase import AsyncClient, create_async_client
 from loguru import logger
 from config import config
-from .schemas import User
+from .schemas import User, UserIdentity
 
 # Bearer Token Scheme mainly for Swagger UI
 oauth2_scheme = HTTPBearer(auto_error=False)
@@ -40,20 +40,37 @@ async def verify_current_user(request: Request) -> User:
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    def _to_str(val: Any) -> Optional[str]:
+        if val is None:
+            return None
+        return val.isoformat() if hasattr(val, "isoformat") else str(val)
+
+    identities = []
+    for ident in supabase_user.identities or []:
+        identities.append(UserIdentity(
+            id=ident.id,
+            user_id=ident.user_id,
+            identity_data=getattr(ident, "identity_data", {}),
+            provider=ident.provider,
+            created_at=_to_str(getattr(ident, "created_at", None)),
+            last_sign_in_at=_to_str(getattr(ident, "last_sign_in_at", None)),
+            updated_at=_to_str(getattr(ident, "updated_at", None)),
+        ))
+
     return User(
         id=supabase_user.id,
         aud=supabase_user.aud,
         role=supabase_user.role or "authenticated",
         email=supabase_user.email,
-        email_confirmed_at=supabase_user.email_confirmed_at,
+        email_confirmed_at=_to_str(supabase_user.email_confirmed_at),
         phone=supabase_user.phone,
-        confirmed_at=supabase_user.confirmed_at,
-        last_sign_in_at=supabase_user.last_sign_in_at,
+        confirmed_at=_to_str(supabase_user.confirmed_at),
+        last_sign_in_at=_to_str(supabase_user.last_sign_in_at),
         app_metadata=supabase_user.app_metadata or {},
         user_metadata=supabase_user.user_metadata or {},
-        identities=supabase_user.identities or [],
-        created_at=supabase_user.created_at,
-        updated_at=supabase_user.updated_at,
+        identities=identities,
+        created_at=_to_str(supabase_user.created_at),
+        updated_at=_to_str(supabase_user.updated_at),
     )
 
 
