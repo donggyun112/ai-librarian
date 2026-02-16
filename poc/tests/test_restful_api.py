@@ -457,6 +457,7 @@ class TestAPIDocumentation:
         assert "/sessions/{session_id}/messages" in paths
         assert "/health" in paths
 
-        # 기존 엔드포인트는 제거됨
-        assert "/chat" not in paths
+        # /chat 엔드포인트 존재 확인
+        assert "/chat" in paths
+        # 제거된 엔드포인트
         assert "/chat/stream" not in paths

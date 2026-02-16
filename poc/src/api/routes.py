@@ -379,17 +379,20 @@ async def delete_session(
 
 @router.post("/chat")
 async def ai_chat(
-    request: ChatPromptRequest,
+    body: ChatPromptRequest,
+    current_user: User = Depends(verify_current_user),
     supervisor: Supervisor = Depends(get_supervisor),
 ):
     """Claude 방식 채팅 엔드포인트
 
     클라이언트는 prompt + session_id만 전송.
     서버가 히스토리를 관리합니다.
+    인증은 AuthMiddleware → verify_current_user 의존성으로 처리됩니다.
 
     Protocol: UI Message Stream (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
     """
-    user_text = request.prompt
+    user_text = body.prompt
+    user_id = current_user.id
 
     async def ui_message_stream() -> AsyncGenerator[str, None]:
         """UI Message Stream v1 프로토콜 형식으로 스트리밍"""
@@ -402,8 +405,13 @@ async def ai_chat(
         try:
             yield f"data: {json.dumps({'type': 'start', 'messageId': message_id})}\n\n"
 
+            kwargs = {}
+            if user_id:
+                kwargs["user_id"] = user_id
+
             async for event in supervisor.process_stream(
                 question=user_text,
+                **kwargs,
             ):
                 event_type = event.get("type")
                 content = event.get("content", "")

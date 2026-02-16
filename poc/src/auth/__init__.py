@@ -2,6 +2,7 @@ from .routes import router as router
 from .utils import create_supabase_client, lifespan
 from .dependencies import verify_current_user, get_supabase_client
 from .schemas import User
+from .middleware import AuthMiddleware
 
 __all__ = [
     "router",
@@ -9,5 +10,6 @@ __all__ = [
     "get_supabase_client",
     "lifespan",
     "verify_current_user",
+    "AuthMiddleware",
     "User",
 ]
