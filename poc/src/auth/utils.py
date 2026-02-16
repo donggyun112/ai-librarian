@@ -62,4 +62,5 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Shutdown
     logger.info("Closing Supabase Client...")
     if hasattr(app.state, "supabase") and app.state.supabase:
-        await app.state.supabase.aclose()
+        await app.state.supabase.postgrest.session.aclose()
+        logger.info("Supabase Client closed successfully")
