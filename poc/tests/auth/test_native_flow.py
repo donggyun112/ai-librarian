@@ -2,36 +2,38 @@ import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
 from src.api.app import app
-from src.auth.dependencies import get_supabase_client
 
 client = TestClient(app)
 
+
 @pytest.fixture
-def mock_supabase_client():
+def mock_supabase_on_app():
+    """app.state.supabase를 mock으로 설정 (미들웨어가 사용)"""
     mock = AsyncMock()
-    # auth.get_user returning a Response-like object
     mock.auth = AsyncMock()
-    return mock
+    original = getattr(app.state, "supabase", None)
+    app.state.supabase = mock
+    yield mock
+    if original is not None:
+        app.state.supabase = original
+
 
 def test_get_me_without_token():
+    """토큰 없으면 미들웨어에서 401"""
     response = client.get("/v1/auth/me")
-    assert response.status_code == 401  # HTTPBearer auto_error returns 401 for missing credentials
+    assert response.status_code == 401
 
-def test_get_me_with_invalid_token(mock_supabase_client):
-    app.dependency_overrides[get_supabase_client] = lambda: mock_supabase_client
-    
-    # Setup mock to raise error or return invalid
-    mock_supabase_client.auth.get_user.side_effect = Exception("Invalid Token")
-    
+
+def test_get_me_with_invalid_token(mock_supabase_on_app):
+    """유효하지 않은 토큰이면 미들웨어에서 401"""
+    mock_supabase_on_app.auth.get_user.side_effect = Exception("Invalid Token")
+
     response = client.get("/v1/auth/me", headers={"Authorization": "Bearer invalid_token"})
     assert response.status_code == 401
-    
-    app.dependency_overrides = {}
 
-def test_get_me_success(mock_supabase_client):
-    app.dependency_overrides[get_supabase_client] = lambda: mock_supabase_client
 
-    # Setup mock user with actual attributes (not model_dump)
+def test_get_me_success(mock_supabase_on_app):
+    """유효한 토큰이면 미들웨어 통과 후 /me 응답"""
     mock_user = MagicMock()
     mock_user.id = "user-123"
     mock_user.aud = "authenticated"
@@ -49,7 +51,7 @@ def test_get_me_success(mock_supabase_client):
 
     mock_response = MagicMock()
     mock_response.user = mock_user
-    mock_supabase_client.auth.get_user.return_value = mock_response
+    mock_supabase_on_app.auth.get_user.return_value = mock_response
 
     response = client.get("/v1/auth/me", headers={"Authorization": "Bearer valid_token"})
 
@@ -57,5 +59,3 @@ def test_get_me_success(mock_supabase_client):
     data = response.json()
     assert data["id"] == "user-123"
     assert data["email"] == "test@example.com"
-
-    app.dependency_overrides = {}

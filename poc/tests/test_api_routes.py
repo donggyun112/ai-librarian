@@ -1,7 +1,7 @@
 """API Routes 테스트"""
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, AsyncMock
 
 from src.api.routes import router
 from src.auth.dependencies import get_user_scoped_client, verify_current_user
@@ -241,134 +241,55 @@ class TestSessionEndpointsWithInMemory:
 
 
 class TestAIChatEndpoint:
-    """AI SDK /chat 엔드포인트 테스트"""
+    """AI SDK /chat 엔드포인트 테스트
+
+    현재 /chat은 ChatPromptRequest(prompt)를 받고,
+    verify_current_user 의존성으로 인증을 처리합니다.
+    """
 
     @pytest.fixture
-    def mock_supervisor(self):
-        """Mock Supervisor"""
-        with patch('src.api.routes.supervisor') as mock_sup:
-            # Mock process_stream to return async generator
-            async def mock_stream(*args, **kwargs):
-                yield {"type": "token", "content": "Hello"}
-                yield {"type": "token", "content": " world"}
-                yield {"type": "think", "content": "Thinking..."}
-                yield {"type": "act", "tool": "search", "args": {"query": "test"}}
-                yield {"type": "observe", "content": "Search results"}
+    def mock_supervisor_for_chat(self, app):
+        """Mock Supervisor via app.state"""
+        mock_sup = MagicMock()
 
-            mock_sup.process_stream = AsyncMock(side_effect=mock_stream)
-            yield mock_sup
+        async def mock_stream(*args, **kwargs):
+            yield {"type": "token", "content": "Hello"}
+            yield {"type": "token", "content": " world"}
 
-    @pytest.fixture
-    def mock_inmemory_for_chat(self):
-        """Mock InMemoryChatMemory for /chat endpoint"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = InMemoryChatMemory
-            mock_memory.spec = InMemoryChatMemory
-            mock_memory.init_session = MagicMock()
-            yield mock_memory
+        mock_sup.process_stream = MagicMock(side_effect=mock_stream)
+        app.state.supervisor = mock_sup
+        return mock_sup
 
-    @pytest.fixture
-    def mock_supabase_for_chat(self):
-        """Mock SupabaseChatMemory for /chat endpoint"""
-        with patch('src.api.routes.memory') as mock_memory:
-            mock_memory.__class__ = SupabaseChatMemory
-            mock_memory.spec = SupabaseChatMemory
-            mock_memory.init_session_async = AsyncMock(return_value=True)
-            yield mock_memory
-
-    def test_ai_chat_with_user_messages(self, client, mock_supervisor, mock_inmemory_for_chat):
-        """AI SDK 포맷으로 채팅 요청"""
-        request_data = {
-            "messages": [
-                {"role": "user", "content": "Hello"},
-                {"role": "assistant", "content": "Hi there!"},
-                {"role": "user", "content": "How are you?"}
-            ]
-        }
+    def test_ai_chat_streaming(self, client, auth_overrides, mock_supervisor_for_chat):
+        """인증된 사용자가 /chat으로 스트리밍 요청"""
+        request_data = {"prompt": "Hello, how are you?"}
 
         response = client.post("/chat", json=request_data)
 
         assert response.status_code == 200
         assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
-        # Check that last user message was used
-        mock_supervisor.process_stream.assert_called_once()
-        call_kwargs = mock_supervisor.process_stream.call_args.kwargs
-        assert call_kwargs["question"] == "How are you?"
+        mock_supervisor_for_chat.process_stream.assert_called_once()
+        call_kwargs = mock_supervisor_for_chat.process_stream.call_args.kwargs
+        assert call_kwargs["question"] == "Hello, how are you?"
 
-    def test_ai_chat_with_no_user_messages(self, client, mock_supervisor, mock_inmemory_for_chat):
-        """user 메시지가 없으면 400 에러"""
-        request_data = {
-            "messages": [
-                {"role": "assistant", "content": "Hi there!"}
-            ]
-        }
+    def test_ai_chat_without_auth(self, client, app):
+        """/chat 인증 없이 요청 시 401"""
+        # dependency_overrides 없이 요청
+        app.dependency_overrides = {}
+        request_data = {"prompt": "Test"}
 
-        response = client.post("/chat", json=request_data)
-
-        assert response.status_code == 400
-        assert "No user message found" in response.json()["detail"]
-
-    def test_ai_chat_with_supabase_requires_auth(self, client, mock_supervisor, mock_supabase_for_chat):
-        """Supabase 사용 시 Authorization 필수"""
-        request_data = {
-            "messages": [
-                {"role": "user", "content": "Hello"}
-            ]
-        }
-
-        # Authorization 헤더 없이 요청
         response = client.post("/chat", json=request_data)
 
         assert response.status_code == 401
-        assert "Authorization header required" in response.json()["detail"]
 
-    def test_ai_chat_creates_temp_session(self, client, mock_supervisor, mock_inmemory_for_chat):
-        """임시 세션이 생성되는지 확인"""
-        request_data = {
-            "messages": [
-                {"role": "user", "content": "Test"}
-            ]
-        }
+    def test_ai_chat_passes_user_id(self, client, auth_overrides, mock_supervisor_for_chat):
+        """인증된 사용자의 user_id가 supervisor에 전달되는지 확인"""
+        request_data = {"prompt": "Test with user"}
 
         response = client.post("/chat", json=request_data)
 
         assert response.status_code == 200
-
-        # init_session이 호출되었는지 확인
-        mock_inmemory_for_chat.init_session.assert_called_once()
-
-        # supervisor.process_stream이 session_id와 함께 호출되었는지 확인
-        mock_supervisor.process_stream.assert_called_once()
-        call_kwargs = mock_supervisor.process_stream.call_args.kwargs
-        assert "session_id" in call_kwargs
-        assert call_kwargs["session_id"] is not None
-
-    def test_ai_chat_with_auth_header(self, client, mock_supervisor, mock_supabase_for_chat):
-        """Authorization 헤더와 함께 요청"""
-        request_data = {
-            "messages": [
-                {"role": "user", "content": "Test with auth"}
-            ]
-        }
-
-        response = client.post(
-            "/chat",
-            json=request_data,
-            headers={"Authorization": "Bearer user-123"}
-        )
-
-        assert response.status_code == 200
-
-        # Supabase init_session_async가 user_id와 함께 호출되었는지 확인
-        mock_supabase_for_chat.init_session_async.assert_called_once()
-        # call_args는 (args, kwargs) 튜플
-        call_args, call_kwargs = mock_supabase_for_chat.init_session_async.call_args
-        # 첫 번째 인자는 session_id (UUID), 두 번째 인자가 user_id
-        assert len(call_args) == 2
-        assert call_args[1] == "user-123"  # user_id 파라미터
-
-        # supervisor.process_stream이 user_id와 함께 호출되었는지 확인
-        mock_supervisor.process_stream.assert_called_once()
-        call_kwargs = mock_supervisor.process_stream.call_args.kwargs
-        assert call_kwargs.get("user_id") == "user-123"
+        mock_supervisor_for_chat.process_stream.assert_called_once()
+        call_kwargs = mock_supervisor_for_chat.process_stream.call_args.kwargs
+        assert call_kwargs.get("user_id") == "user-1"

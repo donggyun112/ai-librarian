@@ -9,6 +9,7 @@ from config import config
 from .routes import router
 from src.auth import router as auth_router
 from src.auth.utils import lifespan
+from src.auth.middleware import AuthMiddleware
 
 # 앱 생성
 app = FastAPI(
@@ -26,6 +27,9 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+# 인증 미들웨어 (CORS 다음에 등록 → CORS가 먼저 실행됨)
+app.add_middleware(AuthMiddleware)
 
 # Health check endpoint for CI/CD verification
 @app.get("/health")
