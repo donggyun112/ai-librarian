@@ -3,7 +3,6 @@ import {
   UserMessageAttachments,
 } from "@/components/assistant-ui/attachment";
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
-import { Reasoning, ReasoningGroup } from "@/components/assistant-ui/reasoning";
 import { ToolFallback } from "@/components/assistant-ui/tool-fallback";
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { Button } from "@/components/ui/button";
@@ -13,6 +12,7 @@ import {
   ActionBarPrimitive,
   AuiIf,
   BranchPickerPrimitive,
+  ChainOfThoughtPrimitive,
   ComposerPrimitive,
   ErrorPrimitive,
   MessagePrimitive,
@@ -28,6 +28,7 @@ import {
 } from "@radix-ui/react-icons";
 import {
   ArrowDownIcon,
+  BrainIcon,
   CheckIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -39,6 +40,7 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import type { FC } from "react";
+import { useState } from "react";
 
 export const Thread: FC = () => {
   return (
@@ -172,6 +174,44 @@ const MessageError: FC = () => {
   );
 };
 
+const ChainOfThought: FC = () => {
+  const [collapsed, setCollapsed] = useState(true);
+
+  return (
+    <ChainOfThoughtPrimitive.Root className="my-2 rounded-lg border border-[#e5e5e5] dark:border-[#2a2a2a]">
+      <button
+        type="button"
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex w-full cursor-pointer items-center gap-2 px-4 py-2 text-sm font-medium text-[#6b6b6b] transition-colors hover:bg-[#f0f0f0]/50 dark:text-[#9a9a9a] dark:hover:bg-[#212121]/50"
+      >
+        {collapsed ? (
+          <ChevronRightIcon className="size-4 shrink-0" />
+        ) : (
+          <ChevronDownIcon className="size-4 shrink-0" />
+        )}
+        <BrainIcon className="size-4 shrink-0" />
+        Thinking
+      </button>
+      {!collapsed && (
+        <ChainOfThoughtPrimitive.Parts
+          components={{
+            Reasoning: ThinkingText,
+            tools: { Fallback: ToolFallback },
+          }}
+        />
+      )}
+    </ChainOfThoughtPrimitive.Root>
+  );
+};
+
+const ThinkingText: FC<{ text: string }> = ({ text }) => {
+  return (
+    <div className="border-t border-[#e5e5e5] px-4 py-3 text-sm text-[#6b6b6b] dark:border-[#2a2a2a] dark:text-[#9a9a9a]">
+      <p className="whitespace-pre-wrap italic">{text}</p>
+    </div>
+  );
+};
+
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root
@@ -182,9 +222,7 @@ const AssistantMessage: FC = () => {
         <MessagePrimitive.Parts
           components={{
             Text: MarkdownText,
-            Reasoning: Reasoning,
-            ReasoningGroup: ReasoningGroup,
-            tools: { Fallback: ToolFallback },
+            ChainOfThought: ChainOfThought,
           }}
         />
         <MessageError />
