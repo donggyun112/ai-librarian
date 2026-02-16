@@ -57,12 +57,6 @@ export const Thread: FC = () => {
         <AuiIf condition={(s) => s.thread.isEmpty}>
           <div className="flex grow flex-col items-center justify-center">
             <GrokIcon className="mb-6 h-10 text-[#0d0d0d] dark:text-white" />
-            <h1 className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both font-semibold text-2xl text-[#0d0d0d] dark:text-white duration-200">
-              How can I help you today?
-            </h1>
-            <p className="fade-in slide-in-from-bottom-1 animate-in fill-mode-both text-[#9a9a9a] text-lg delay-75 duration-200">
-              AI Librarian is ready to assist you.
-            </p>
             <div className="mt-8 w-full max-w-(--thread-max-width)">
               <Composer />
             </div>
