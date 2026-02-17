@@ -29,6 +29,7 @@ from .schemas import (
     SessionHistoryResponse,
     MessageInfo,
     HealthResponse,
+    SessionUpdateRequest,
 )
 
 
@@ -302,15 +303,17 @@ async def list_sessions(
     """
     user_id = current_user.id
 
-    session_ids = await memory.list_sessions_async(user_id=user_id, client=client)
+    session_rows = await memory.list_sessions_async(user_id=user_id, client=client)
     sessions = [
         SessionInfo(
-            session_id=sid,
+            session_id=row["id"],
+            title=row.get("title"),
             message_count=await memory.get_message_count_async(
-                sid, user_id=user_id, client=client
-            )
+                row["id"], user_id=user_id, client=client
+            ),
+            last_message_at=row.get("last_message_at"),
         )
-        for sid in session_ids
+        for row in session_rows
     ]
 
     return SessionListResponse(sessions=sessions)
@@ -352,6 +355,35 @@ async def get_session_messages(
     )
 
 
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    body: SessionUpdateRequest,
+    current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
+    memory: ChatMemory = Depends(get_memory),
+) -> Dict[str, str]:
+    """세션 정보 업데이트 (제목 등)
+
+    Args:
+        session_id: 세션 ID
+
+    Headers:
+        Authorization: Bearer <token> (JWT required)
+    """
+    user_id = current_user.id
+
+    try:
+        if body.title is not None:
+            await memory.update_session_title_async(
+                session_id, body.title, user_id=user_id, client=client
+            )
+    except SessionAccessDenied:
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
+
+    return {"message": "Session updated", "session_id": session_id}
+
 @router.delete("/sessions/{session_id}")
 async def delete_session(
     session_id: str,
@@ -381,7 +413,9 @@ async def delete_session(
 async def ai_chat(
     body: ChatPromptRequest,
     current_user: User = Depends(verify_current_user),
+    client: AsyncClient = Depends(get_user_scoped_client),
     supervisor: Supervisor = Depends(get_supervisor),
+    memory: ChatMemory = Depends(get_memory),
 ):
     """Claude 방식 채팅 엔드포인트
 
@@ -393,6 +427,11 @@ async def ai_chat(
     """
     user_text = body.prompt
     user_id = current_user.id
+    session_id = body.session_id
+
+    # session_id가 제공되면 세션 초기화 (없으면 생성)
+    if session_id:
+        await memory.init_session_async(session_id, user_id, client=client)
 
     async def ui_message_stream() -> AsyncGenerator[str, None]:
         """UI Message Stream v1 프로토콜 형식으로 스트리밍"""
@@ -408,9 +447,12 @@ async def ai_chat(
             kwargs = {}
             if user_id:
                 kwargs["user_id"] = user_id
+            if client:
+                kwargs["client"] = client
 
             async for event in supervisor.process_stream(
                 question=user_text,
+                session_id=session_id,
                 **kwargs,
             ):
                 event_type = event.get("type")

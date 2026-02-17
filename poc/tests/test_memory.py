@@ -352,7 +352,10 @@ class TestSupabaseChatMemory:
     async def test_list_sessions_async_filters_by_user_id(self, memory, mock_async_client):
         """user_id가 제공되면 해당 사용자의 세션만 조회"""
         mock_response = MagicMock()
-        mock_response.data = [{"id": "session-1"}, {"id": "session-2"}]
+        mock_response.data = [
+            {"id": "session-1", "title": None, "last_message_at": None},
+            {"id": "session-2", "title": None, "last_message_at": None},
+        ]
 
         mock_table = mock_async_client.table.return_value
         mock_select = mock_table.select.return_value
@@ -363,7 +366,9 @@ class TestSupabaseChatMemory:
         sessions = await memory.list_sessions_async(user_id="user-1")
 
         mock_select.eq.assert_called_once_with("user_id", "user-1")
-        assert sessions == ["session-1", "session-2"]
+        assert len(sessions) == 2
+        assert sessions[0]["id"] == "session-1"
+        assert sessions[1]["id"] == "session-2"
 
     @pytest.mark.asyncio
     async def test_delete_session_async_with_ownership(self, memory, mock_async_client):

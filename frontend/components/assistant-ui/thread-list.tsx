@@ -1,3 +1,5 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -5,8 +7,11 @@ import {
   ThreadListItemMorePrimitive,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
+  useAssistantRuntime,
+  useThreadListItem,
 } from "@assistant-ui/react";
 import { ArchiveIcon, MoreHorizontalIcon, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { FC } from "react";
 
 export const ThreadList: FC = () => {
@@ -24,16 +29,21 @@ export const ThreadList: FC = () => {
 };
 
 const ThreadListNew: FC = () => {
+  const router = useRouter();
+  const runtime = useAssistantRuntime();
+
   return (
-    <ThreadListPrimitive.New asChild>
-      <Button
-        variant="outline"
-        className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg px-3 text-sm hover:bg-muted data-active:bg-muted"
-      >
-        <PlusIcon className="size-4" />
-        New Thread
-      </Button>
-    </ThreadListPrimitive.New>
+    <Button
+      variant="outline"
+      className="aui-thread-list-new h-9 justify-start gap-2 rounded-lg px-3 text-sm hover:bg-muted data-active:bg-muted"
+      onClick={() => {
+        runtime.threadList.switchToNewThread();
+        router.push("/");
+      }}
+    >
+      <PlusIcon className="size-4" />
+      New Thread
+    </Button>
   );
 };
 
@@ -55,11 +65,22 @@ const ThreadListSkeleton: FC = () => {
 };
 
 const ThreadListItem: FC = () => {
+  const router = useRouter();
+  const item = useThreadListItem();
+
   return (
     <ThreadListItemPrimitive.Root className="aui-thread-list-item group flex h-9 items-center gap-2 rounded-lg transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:outline-none data-active:bg-muted">
-      <ThreadListItemPrimitive.Trigger className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center truncate px-3 text-start text-sm">
+      <button
+        type="button"
+        onClick={() => {
+          if (item.remoteId) {
+            router.push(`/chat/${item.remoteId}`);
+          }
+        }}
+        className="aui-thread-list-item-trigger flex h-full min-w-0 flex-1 items-center truncate px-3 text-start text-sm"
+      >
         <ThreadListItemPrimitive.Title fallback="New Chat" />
-      </ThreadListItemPrimitive.Trigger>
+      </button>
       <ThreadListItemMore />
     </ThreadListItemPrimitive.Root>
   );

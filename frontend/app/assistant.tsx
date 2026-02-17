@@ -1,11 +1,19 @@
 "use client";
 
-import { AssistantRuntimeProvider } from "@assistant-ui/react";
+import type { AssistantRuntime } from "@assistant-ui/react";
 import {
-  useChatRuntime,
+  AssistantRuntimeProvider,
+  unstable_useRemoteThreadListRuntime,
+  useThreadListItem,
+} from "@assistant-ui/react";
+import {
   AssistantChatTransport,
+  useAISDKRuntime,
 } from "@assistant-ui/react-ai-sdk";
+import { useChat, type UIMessage } from "@ai-sdk/react";
 import { useTheme } from "next-themes";
+import { useMemo, useEffect, useRef } from "react";
+import { useRouter, usePathname } from "next/navigation";
 
 import { Thread } from "@/components/assistant-ui/thread";
 import { WebSearchToolUI } from "@/components/assistant-ui/web-search-tool";
@@ -17,15 +25,148 @@ import {
 import { ThreadListSidebar } from "@/components/assistant-ui/threadlist-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Sun, Moon } from "lucide-react";
+import { BackendThreadListAdapter } from "@/lib/chat/thread-list-adapter";
+
+// top-level runtime을 스레드 간 공유하기 위한 모듈 레벨 ref
+const topLevelRuntimeRef: { current: AssistantRuntime | null } = {
+  current: null,
+};
+
+const useDynamicChatTransport = (
+  transport: AssistantChatTransport<UIMessage>
+) => {
+  const transportRef = useRef(transport);
+  useEffect(() => {
+    transportRef.current = transport;
+  });
+  return useMemo(
+    () =>
+      new Proxy(transportRef.current, {
+        get(_, prop) {
+          const res = (
+            transportRef.current as unknown as Record<string, unknown>
+          )[prop as string];
+          return typeof res === "function"
+            ? (res as (...args: unknown[]) => unknown).bind(
+                transportRef.current
+              )
+            : res;
+        },
+      }),
+    []
+  );
+};
+
+function useChatThreadRuntime() {
+  const router = useRouter();
+  const transport = useDynamicChatTransport(
+    new AssistantChatTransport({ api: "/api/chat" })
+  );
+
+  const chat = useChat({ transport });
+  const runtime = useAISDKRuntime(chat, {});
+
+  // 현재 스레드 메타데이터 조회 (ThreadListItemRuntimeProvider 내부에서 실행)
+  const threadItem = useThreadListItem({ optional: true });
+  const remoteId = threadItem?.remoteId;
+  const isExistingThread = threadItem?.status === "regular";
+
+  // 기존 스레드 전환 시 백엔드에서 메시지 로드
+  const loadedRef = useRef<string | null>(null);
+  const setMessagesRef = useRef(chat.setMessages);
+  setMessagesRef.current = chat.setMessages;
+
+  useEffect(() => {
+    if (!remoteId || !isExistingThread) return;
+    if (loadedRef.current === remoteId) return;
+    loadedRef.current = remoteId;
+
+    fetch(`/api/sessions/${remoteId}`)
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (!data?.messages?.length) return;
+        const uiMessages: UIMessage[] = data.messages.map(
+          (msg: { role: string; content: string }, i: number) => ({
+            id: `history-${remoteId}-${i}`,
+            role:
+              msg.role === "human"
+                ? "user"
+                : msg.role === "ai"
+                  ? "assistant"
+                  : ("system" as const),
+            parts: [{ type: "text" as const, text: msg.content }],
+          })
+        );
+        setMessagesRef.current(uiMessages);
+      })
+      .catch(console.error);
+  }, [remoteId, isExistingThread]);
+
+  // 첫 메시지 전송 후 스레드가 초기화되면 URL을 /chat/[id]로 업데이트
+  useEffect(() => {
+    if (isExistingThread && remoteId) {
+      const currentPath = window.location.pathname;
+      if (currentPath === "/") {
+        router.replace(`/chat/${remoteId}`, { scroll: false });
+      }
+    }
+  }, [isExistingThread, remoteId, router]);
+
+  // top-level runtime 주입 (threads.mainItem.initialize() 접근 가능)
+  if (topLevelRuntimeRef.current) {
+    transport.setRuntime(topLevelRuntimeRef.current);
+  }
+
+  return runtime;
+}
 
 export const Assistant = () => {
-  const runtime = useChatRuntime({
-    transport: new AssistantChatTransport({
-      api: "/api/chat",
-    }),
+  const adapter = useMemo(() => new BackendThreadListAdapter(), []);
+
+  const runtime = unstable_useRemoteThreadListRuntime({
+    runtimeHook: useChatThreadRuntime,
+    adapter,
   });
 
+  // top-level runtime ref 업데이트
+  topLevelRuntimeRef.current = runtime;
+  useEffect(() => {
+    topLevelRuntimeRef.current = runtime;
+  }, [runtime]);
+
   const { theme, setTheme } = useTheme();
+  const pathname = usePathname();
+
+  // URL→thread: URL이 유일한 source of truth
+  // 리스트 로딩 완료 후 switchToThread 호출 (로딩 중 호출 시 사이드바가 비는 문제 방지)
+  useEffect(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)$/);
+    if (!match) return;
+
+    const sessionId = match[1];
+
+    const trySwitch = () => {
+      const state = runtime.threadList.getState();
+      if (!state.isLoading) {
+        runtime.threadList.switchToThread(sessionId);
+        return true;
+      }
+      return false;
+    };
+
+    if (trySwitch()) return;
+
+    const unsubscribe = runtime.threadList.subscribe(() => {
+      if (trySwitch()) {
+        unsubscribe();
+      }
+    });
+
+    return () => unsubscribe();
+  }, [pathname, runtime.threadList]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

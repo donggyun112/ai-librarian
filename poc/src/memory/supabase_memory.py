@@ -1,5 +1,5 @@
 """Supabase 기반 대화 히스토리 저장소"""
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, messages_from_dict, message_to_dict
@@ -361,26 +361,60 @@ class SupabaseChatMemory(ChatMemory):
         self,
         user_id: Optional[str] = None,
         client: Optional[AsyncClient] = None,
-    ) -> List[str]:
-        """모든 세션 ID 조회 (비동기)
+    ) -> List[Dict[str, Any]]:
+        """모든 세션 조회 (비동기)
 
         Args:
             user_id: 사용자 ID (제공 시 해당 사용자의 세션만 조회)
+
+        Returns:
+            세션 정보 리스트 (id, title, last_message_at)
         """
         self._ensure_user_scoped_client(user_id, client)
         client = self._get_async_client(client)
 
-        query = client.table(self.sessions_table).select("id")
+        query = client.table(self.sessions_table).select("id, title, last_message_at")
 
         if user_id:
             query = query.eq("user_id", user_id)
 
         try:
             response = await query.order("last_message_at", desc=True).execute()
-            return [item["id"] for item in response.data]
+            return response.data or []
         except Exception as e:
             logger.error(f"Failed to list sessions: {e}")
             raise SupabaseOperationError(f"Failed to list sessions: {e}", e)
+
+    async def update_session_title_async(
+        self,
+        session_id: str,
+        title: str,
+        user_id: Optional[str] = None,
+        client: Optional[AsyncClient] = None,
+    ) -> None:
+        """세션 제목 업데이트 (비동기)
+
+        Args:
+            session_id: 세션 ID
+            title: 새 제목
+            user_id: 사용자 ID (제공 시 소유권 검증)
+        """
+        self._ensure_user_scoped_client(user_id, client)
+        client = self._get_async_client(client)
+
+        try:
+            if user_id:
+                await self._check_session_ownership_async(session_id, user_id, client)
+
+            await client.table(self.sessions_table) \
+                .update({"title": title}) \
+                .eq("id", session_id) \
+                .execute()
+        except SessionAccessDenied:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to update session title {session_id}: {e}")
+            raise SupabaseOperationError(f"Failed to update session title: {e}", e)
 
 
     async def get_message_count_async(

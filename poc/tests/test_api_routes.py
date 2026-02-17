@@ -79,7 +79,10 @@ class TestSessionEndpointsWithUserID:
     def test_list_sessions_with_user_id(self, client, mock_supabase_memory, auth_overrides, app):
         """Authorization 헤더로 세션 목록 조회"""
         app.state.memory = mock_supabase_memory
-        mock_supabase_memory.list_sessions_async.return_value = ["session-1", "session-2"]
+        mock_supabase_memory.list_sessions_async.return_value = [
+            {"id": "session-1", "title": None, "last_message_at": None},
+            {"id": "session-2", "title": None, "last_message_at": None},
+        ]
 
         response = client.get("/sessions", headers={"Authorization": "Bearer user-1"})
 
@@ -200,7 +203,9 @@ class TestSessionEndpointsWithInMemory:
     def mock_inmemory(self):
         """Mock InMemoryChatMemory (async 메서드)"""
         mock_memory = MagicMock()
-        mock_memory.list_sessions_async = AsyncMock(return_value=["session-1"])
+        mock_memory.list_sessions_async = AsyncMock(return_value=[
+            {"id": "session-1", "title": None, "last_message_at": None},
+        ])
         mock_memory.get_message_count_async = AsyncMock(return_value=3)
         mock_memory.delete_session_async = AsyncMock()
         mock_memory.get_messages_async = AsyncMock(return_value=[])
