@@ -193,7 +193,7 @@ export const Assistant = () => {
               </button>
             </header>
             <div className="flex-1 overflow-hidden bg-[#fdfdfd] dark:bg-[#141414]">
-              <Thread />
+              <Thread variant={pathname.startsWith("/chat/") ? "chat" : "home"} />
               <WebSearchToolUI />
             </div>
           </SidebarInset>
