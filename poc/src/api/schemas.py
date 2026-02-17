@@ -25,7 +25,9 @@ class SessionCreateResponse(BaseModel):
 class SessionInfo(BaseModel):
     """세션 정보"""
     session_id: str
+    title: Optional[str] = None
     message_count: int
+    last_message_at: Optional[str] = None
 
 
 class SessionDetailResponse(BaseModel):
@@ -100,6 +102,11 @@ class ChatPromptRequest(BaseModel):
     """
     prompt: str = Field(..., min_length=1, description="사용자 메시지")
     session_id: Optional[str] = Field(None, description="기존 세션 ID (없으면 새 세션 생성)")
+
+
+class SessionUpdateRequest(BaseModel):
+    """세션 업데이트 요청"""
+    title: Optional[str] = Field(None, description="세션 제목")
 
 
 # Assistant Transport Protocol 스키마

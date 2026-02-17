@@ -101,8 +101,5 @@ async def get_user_scoped_client(
             detail="Failed to initialize database connection"
         )
 
-    try:
-        client.postgrest.auth(token)
-        yield client
-    finally:
-        await client.aclose()
+    client.postgrest.auth(token)
+    yield client

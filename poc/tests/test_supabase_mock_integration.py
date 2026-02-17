@@ -258,7 +258,8 @@ class TestSupabaseSessionManagement:
 
         # 2. 세션 목록에 표시되는지 확인
         sessions = await memory.list_sessions_async(user_id="user-1")
-        assert "session-1" in sessions
+        session_ids = [s["id"] for s in sessions]
+        assert "session-1" in session_ids
 
         # 3. 메시지 개수 확인
         count = await memory.get_message_count_async("session-1", user_id="user-1")
@@ -293,13 +294,15 @@ class TestSupabaseSessionManagement:
 
         # User 1은 자신의 세션만 볼 수 있음
         user1_sessions = await memory.list_sessions_async(user_id="user-1")
-        assert "session-user1" in user1_sessions
-        assert "session-user2" not in user1_sessions
+        user1_ids = [s["id"] for s in user1_sessions]
+        assert "session-user1" in user1_ids
+        assert "session-user2" not in user1_ids
 
         # User 2는 자신의 세션만 볼 수 있음
         user2_sessions = await memory.list_sessions_async(user_id="user-2")
-        assert "session-user2" in user2_sessions
-        assert "session-user1" not in user2_sessions
+        user2_ids = [s["id"] for s in user2_sessions]
+        assert "session-user2" in user2_ids
+        assert "session-user1" not in user2_ids
 
         # User 1은 User 2의 메시지를 볼 수 없음
         with pytest.raises(SessionAccessDenied):
@@ -415,7 +418,8 @@ class TestSupabaseSessionManagement:
 
         # 삭제 후 조회 불가
         sessions = await memory.list_sessions_async(user_id="user-1")
-        assert "session-del" not in sessions
+        session_ids = [s["id"] for s in sessions]
+        assert "session-del" not in session_ids
 
     @pytest.mark.asyncio
     async def test_cannot_write_to_other_users_session(self, mock_supabase_client):  # noqa: ARG002
