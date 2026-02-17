@@ -42,7 +42,9 @@ import {
 import type { FC } from "react";
 import { useState } from "react";
 
-export const Thread: FC = () => {
+export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
+  const isSession = variant === "chat";
+
   return (
     <ThreadPrimitive.Root
       className="aui-root aui-thread-root @container flex h-full flex-col bg-[#fdfdfd] dark:bg-[#141414]"
@@ -50,11 +52,8 @@ export const Thread: FC = () => {
         ["--thread-max-width" as string]: "44rem",
       }}
     >
-      <ThreadPrimitive.Viewport
-        turnAnchor="top"
-        className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
-      >
-        <AuiIf condition={(s) => s.thread.isEmpty}>
+      <ThreadPrimitive.Viewport autoScroll turnAnchor="top" className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4">
+        <AuiIf key="home" condition={(s) => !isSession && s.thread.isEmpty}>
           <div className="flex grow flex-col items-center justify-center">
             <GrokIcon className="mb-6 h-10 text-[#0d0d0d] dark:text-white" />
             <div className="mt-8 w-full max-w-(--thread-max-width)">
@@ -64,6 +63,7 @@ export const Thread: FC = () => {
         </AuiIf>
 
         <ThreadPrimitive.Messages
+          key="messages"
           components={{
             UserMessage,
             EditComposer,
@@ -71,7 +71,7 @@ export const Thread: FC = () => {
           }}
         />
 
-        <AuiIf condition={(s) => !s.thread.isEmpty}>
+        <AuiIf key="footer" condition={(s) => isSession || !s.thread.isEmpty}>
           <ThreadPrimitive.ViewportFooter className="aui-thread-viewport-footer sticky bottom-0 mx-auto mt-auto flex w-full max-w-(--thread-max-width) flex-col gap-4 overflow-visible pb-4 md:pb-6">
             <ThreadScrollToBottom />
             <Composer />
@@ -209,7 +209,7 @@ const ThinkingText: FC<{ text: string }> = ({ text }) => {
 const AssistantMessage: FC = () => {
   return (
     <MessagePrimitive.Root
-      className="aui-assistant-message-root fade-in slide-in-from-bottom-1 relative mx-auto w-full max-w-(--thread-max-width) animate-in py-3 duration-150"
+      className="group/message aui-assistant-message-root fade-in slide-in-from-bottom-1 relative mx-auto w-full max-w-(--thread-max-width) animate-in py-3 duration-150"
       data-role="assistant"
     >
       <div className="aui-assistant-message-content wrap-break-word px-2 text-[#0d0d0d] leading-relaxed dark:text-[#e5e5e5]">
@@ -222,7 +222,7 @@ const AssistantMessage: FC = () => {
         <MessageError />
       </div>
 
-      <div className="aui-assistant-message-footer mt-1 ml-2 flex">
+      <div className="aui-assistant-message-footer mt-1 ml-2 flex h-8 items-center">
         <BranchPicker />
         <AssistantActionBar />
       </div>
@@ -282,16 +282,16 @@ const AssistantActionBar: FC = () => {
 const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root
-      className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto flex w-full max-w-(--thread-max-width) animate-in flex-col items-end gap-y-2 px-2 py-3 duration-150"
+      className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto flex w-full max-w-(--thread-max-width) animate-in flex-col items-end gap-y-2 px-2 p-3 duration-150"
       data-role="user"
     >
       <UserMessageAttachments />
 
-      <div className="aui-user-message-content-wrapper relative max-w-[90%] min-w-0">
+      <div className="group/message aui-user-message-content-wrapper relative max-w-[90%] min-w-0 pb-9">
         <div className="aui-user-message-content wrap-break-word rounded-3xl rounded-br-lg border border-[#e5e5e5] bg-[#f0f0f0] px-4 py-3 text-[#0d0d0d] dark:border-[#2a2a2a] dark:bg-[#1a1a1a] dark:text-white">
           <MessagePrimitive.Parts />
         </div>
-        <div className="aui-user-action-bar-wrapper mt-1 flex justify-end">
+        <div className="aui-user-action-bar-wrapper absolute right-0 bottom-0 flex h-8 items-center justify-end opacity-0 transition-opacity group-focus-within/message:opacity-100 group-hover/message:opacity-100">
           <UserActionBar />
         </div>
       </div>
