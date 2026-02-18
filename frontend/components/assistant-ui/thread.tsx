@@ -42,19 +42,25 @@ import {
 import type { FC } from "react";
 import { useEffect, useRef, useState } from "react";
 
-const escapeSelectorValue = (value: string): string => {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/["\\]/g, "\\$&");
+const findTargetUserMessage = (
+  viewport: HTMLElement,
+  messageId: string,
+): HTMLElement | null => {
+  const messages = Array.from(
+    viewport.querySelectorAll<HTMLElement>(".aui-user-message-root"),
+  );
+  return (
+    messages.find((message) => message.dataset.messageId === messageId) ??
+    messages.at(-1) ??
+    null
+  );
 };
 
-const alignUserMessageByIdToViewportTop = (messageId: string): boolean => {
-  const viewport = document.querySelector<HTMLElement>(".aui-thread-viewport");
-  if (!viewport) return false;
-
-  const selector = `.aui-user-message-root[data-message-id="${escapeSelectorValue(messageId)}"]`;
-  const target = viewport.querySelector<HTMLElement>(selector);
+const alignUserMessageByIdToViewportTop = (
+  viewport: HTMLElement,
+  messageId: string,
+): boolean => {
+  const target = findTargetUserMessage(viewport, messageId);
   if (!target) return false;
 
   target.scrollIntoView({
@@ -72,59 +78,63 @@ const alignUserMessageByIdToViewportTop = (messageId: string): boolean => {
   return true;
 };
 
-const scheduleAlignUserMessageByIdToTop = (messageId: string) => {
-  let tries = 0;
-
-  const tick = () => {
-    alignUserMessageByIdToViewportTop(messageId);
-    tries += 1;
-    if (tries < 28) {
-      requestAnimationFrame(tick);
-    }
-  };
-
-  requestAnimationFrame(tick);
-  window.setTimeout(() => {
-    alignUserMessageByIdToViewportTop(messageId);
-  }, 180);
-  window.setTimeout(() => {
-    alignUserMessageByIdToViewportTop(messageId);
-  }, 420);
-};
-
 export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
   const isSession = variant === "chat";
-  const userMessageCount = useAuiState(
-    (s) =>
-      s.thread.messages.filter((message) => message.role === "user").length,
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const messageCount = useAuiState((s) => s.thread.messages.length);
+  const lastMessageRole = useAuiState(
+    (s) => s.thread.messages.at(-1)?.role ?? null,
   );
-  const anchorUserMessageId = useAuiState((s) => {
-    const last = s.thread.messages.at(-1);
-    if (!last) return null;
-
-    if (last.role === "assistant") {
-      const previous = s.thread.messages.at(-2);
-      return previous?.role === "user" ? previous.id : null;
+  const latestUserMessageId = useAuiState((s) => {
+    for (let i = s.thread.messages.length - 1; i >= 0; i -= 1) {
+      const message = s.thread.messages[i];
+      if (message?.role === "user") return message.id;
     }
-
-    if (last.role === "user") {
-      return last.id;
-    }
-
     return null;
   });
-  const previousUserMessageCountRef = useRef(userMessageCount);
+  const isThreadRunning = useAuiState((s) => s.thread.isRunning);
 
   useEffect(() => {
-    const prevCount = previousUserMessageCountRef.current;
-    const hasNewUserMessage = userMessageCount > prevCount;
-    previousUserMessageCountRef.current = userMessageCount;
+    if (!isSession || !latestUserMessageId) {
+      return;
+    }
 
-    if (!isSession || !anchorUserMessageId) return;
-    if (!hasNewUserMessage) return;
+    let cancelled = false;
+    let rafId = 0;
+    const timeoutIds: number[] = [];
+    const stopAt = performance.now() + 2000;
 
-    scheduleAlignUserMessageByIdToTop(anchorUserMessageId);
-  }, [anchorUserMessageId, isSession, userMessageCount]);
+    const align = () => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      alignUserMessageByIdToViewportTop(viewport, latestUserMessageId);
+    };
+
+    const tick = () => {
+      if (cancelled) return;
+      if (performance.now() >= stopAt) return;
+      align();
+      rafId = requestAnimationFrame(tick);
+    };
+
+    align();
+    rafId = requestAnimationFrame(tick);
+    for (const delay of [80, 140, 220, 320, 460, 680, 980, 1400, 1800]) {
+      timeoutIds.push(window.setTimeout(align, delay));
+    }
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(rafId);
+      for (const timeoutId of timeoutIds) clearTimeout(timeoutId);
+    };
+  }, [
+    isSession,
+    latestUserMessageId,
+    isThreadRunning,
+    messageCount,
+    lastMessageRole,
+  ]);
 
   return (
     <ThreadPrimitive.Root
@@ -134,11 +144,12 @@ export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
       }}
     >
       <ThreadPrimitive.Viewport
-        autoScroll={false}
+        ref={viewportRef}
+        autoScroll
         turnAnchor="top"
-        scrollToBottomOnRunStart={false}
-        scrollToBottomOnInitialize={false}
-        scrollToBottomOnThreadSwitch={false}
+        scrollToBottomOnRunStart
+        scrollToBottomOnInitialize
+        scrollToBottomOnThreadSwitch
         className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll px-4 pt-4"
       >
         <AuiIf key="home" condition={(s) => !isSession && s.thread.isEmpty}>
