@@ -15,13 +15,9 @@ Adapter 패턴:
 
 from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
-from supabase import AsyncClient
-
-import anyio
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
-    ToolMessage,
     AIMessage,
     BaseMessage
 )
@@ -91,12 +87,14 @@ class Supervisor:
         max_steps: int = DEFAULT_MAX_STEPS,
         max_tokens: int = DEFAULT_MAX_TOKENS,
         memory: ChatMemory = None,
-        provider: str = None
+        provider: str = None,
+        checkpointer=None,
     ):
         self.model = model
         self.max_steps = max_steps
         self.max_tokens = max_tokens
         self.memory = memory or InMemoryChatMemory()
+        self.checkpointer = checkpointer
 
         # Adapter 초기화
         provider_name = provider or config.LLM_PROVIDER
@@ -117,6 +115,10 @@ class Supervisor:
         Native Thinking:
             - Gemini 2.5+에서 thinking_budget으로 자동 활성화
             - think 도구 강제 호출 불필요
+
+        Checkpointer:
+            - self.checkpointer가 주입되면 LangGraph가 state를 자동으로 persist/restore
+            - thread_id는 process_stream/process 호출 시 config로 전달
         """
         # Adapter를 통해 LLM 생성 (Native Thinking 포함)
         llm = self.adapter.create_llm(
@@ -132,11 +134,11 @@ class Supervisor:
         async def supervisor_node(state: AgentState) -> dict:
             """Supervisor 노드: LLM 호출
 
-            Native Thinking 전략:
-            - LLM이 내부적으로 thinking 수행 (thinking_budget으로 제어)
-            - 별도의 think 도구 강제 불필요
+            시스템 프롬프트를 매 호출마다 동적으로 주입합니다.
+            시스템 메시지는 checkpointer state에 저장되지 않아
+            항상 최신 프롬프트가 사용됩니다.
             """
-            messages = state["messages"]
+            messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))] + state["messages"]
             response = await llm_with_tools.ainvoke(messages)
             return {"messages": [response]}
 
@@ -155,13 +157,16 @@ class Supervisor:
         )
         workflow.add_edge("tools", "supervisor")
 
-        return workflow.compile()
+        return workflow.compile(checkpointer=self.checkpointer)
 
     def _get_graph(self):
-        """Graph 반환 (캐싱)"""
         if self._cached_graph is None:
             self._cached_graph = self._build_graph()
         return self._cached_graph
+
+    def get_graph(self):
+        """컴파일된 그래프를 반환 (API 레이어에서 aget_state 호출용)"""
+        return self._get_graph()
 
     def _should_continue(self, state: AgentState) -> Literal["continue", "end"]:
         """도구 호출 여부에 따라 분기"""
@@ -169,48 +174,6 @@ class Supervisor:
         if last_message.tool_calls:
             return "continue"
         return "end"
-
-    # ============================================================
-    # 히스토리 관리
-    # ============================================================
-    async def _build_messages(
-        self,
-        session_id: str,
-        question: str,
-        user_id: Optional[str] = None,
-        client: Optional[AsyncClient] = None,
-    ) -> List[BaseMessage]:
-        """시스템 프롬프트 + 히스토리 + 새 질문으로 메시지 구성
-
-        Args:
-            session_id: 세션 ID
-            question: 사용자 질문
-            user_id: 사용자 ID (SupabaseChatMemory 사용 시 필수)
-            client: user-scoped Supabase client
-        """
-        messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))]
-        messages.extend(await self.memory.get_messages_async(session_id, user_id=user_id, client=client))
-        messages.append(HumanMessage(content=question))
-        return messages
-
-    async def _save_to_history_async(self, session_id: str, question: str, answer: str, **kwargs) -> None:
-        """대화 히스토리에 비동기 저장"""
-        retries = max(1, config.HISTORY_SAVE_RETRIES)
-        delay = max(0.0, config.HISTORY_SAVE_RETRY_DELAY_SECONDS)
-
-        for attempt in range(1, retries + 1):
-            try:
-                await self.memory.save_conversation_async(session_id, question, answer, **kwargs)
-                return
-            except Exception as e:
-                if attempt >= retries:
-                    logger.error(f"History save failed after {retries} attempts: {type(e).__name__}")
-                    raise
-                logger.warning(
-                    f"History save failed (attempt {attempt}/{retries}): {type(e).__name__}"
-                )
-                if delay:
-                    await anyio.sleep(delay)
 
     # ============================================================
     # 비스트리밍 처리
@@ -225,23 +188,16 @@ class Supervisor:
 
         Args:
             question: 사용자 질문
-            session_id: 세션 ID (None이면 히스토리 없이 처리)
-            **kwargs: 추가 메타데이터 (예: user_id)
+            session_id: 세션 ID (checkpointer가 히스토리 자동 복원)
+            **kwargs: 추가 메타데이터
         """
+        run_config: dict = {"recursion_limit": self.max_steps * 2}
         if session_id:
-            user_id = kwargs.get("user_id")
-            client = kwargs.get("client")
-            messages = await self._build_messages(session_id, question, user_id=user_id, client=client)
-        else:
-            # 도구 정보를 동적으로 주입하여 프롬프트 생성
-            messages = [
-                SystemMessage(content=get_system_prompt(tools=TOOLS)),
-                HumanMessage(content=question)
-            ]
+            run_config["configurable"] = {"thread_id": session_id}
 
         final_state = await self._get_graph().ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": self.max_steps * 2}
+            {"messages": [HumanMessage(content=question)]},
+            config=run_config,
         )
 
         result_messages = final_state["messages"]
@@ -253,10 +209,6 @@ class Supervisor:
             answer = normalized.text
         else:
             answer = ""
-
-        # 히스토리에 저장
-        if session_id:
-            await self._save_to_history_async(session_id, question, answer, **kwargs)
 
         return SupervisorResponse(
             answer=answer,
@@ -277,32 +229,21 @@ class Supervisor:
         """
         스트리밍 처리 - 토큰 단위 실시간 출력
 
-        Args:
-            question: 사용자 질문
-            session_id: 세션 ID (None이면 히스토리 없이 처리)
+        checkpointer가 설정된 경우 thread_id를 통해 LangGraph가
+        히스토리를 자동으로 persist/restore합니다.
 
         Yields:
             {"type": "token", "content": str}   - LLM 토큰
             {"type": "act", "tool": str, "args": dict} - 도구 호출
             {"type": "observe", "content": str} - 도구 결과
         """
+        run_config: dict = {"recursion_limit": self.max_steps * 2}
         if session_id:
-            user_id = kwargs.get("user_id")
-            client = kwargs.get("client")
-            messages = await self._build_messages(session_id, question, user_id=user_id, client=client)
-        else:
-            # 도구 정보를 동적으로 주입하여 프롬프트 생성
-            messages = [
-                SystemMessage(content=get_system_prompt(tools=TOOLS)),
-                HumanMessage(content=question)
-            ]
-
-        # 답변 수집용 (히스토리 저장을 위해)
-        collected_answer = []
+            run_config["configurable"] = {"thread_id": session_id}
 
         async for event in self._get_graph().astream_events(
-            {"messages": messages},
-            config={"recursion_limit": self.max_steps * 2},
+            {"messages": [HumanMessage(content=question)]},
+            config=run_config,
             version="v2"
         ):
             event_type = event["event"]
@@ -314,16 +255,12 @@ class Supervisor:
                 # DeepSeek thinking: content="" but additional_kwargs.reasoning_content 있음
                 has_content = chunk and (chunk.content or chunk.additional_kwargs)
                 if has_content:
-                    # Adapter로 청크 정규화
                     normalized = self.adapter.normalize_chunk(chunk)
 
-                    # Native Thinking 청크 처리 (Gemini 2.5+)
                     if normalized.thinking:
                         yield {"type": StreamEventType.THINK, "content": normalized.thinking}
 
-                    # 일반 텍스트 청크 처리
                     if normalized.text:
-                        collected_answer.append(normalized.text)
                         yield {"type": StreamEventType.TOKEN, "content": normalized.text}
 
             # 2. 도구 호출 시작
@@ -331,7 +268,6 @@ class Supervisor:
                 tool_name = event.get("name", "")
                 tool_input = data.get("input", {})
 
-                # 검색 도구 → 액션 표시
                 if tool_name in SEARCH_TOOLS:
                     yield {
                         "type": StreamEventType.ACT,
@@ -339,19 +275,16 @@ class Supervisor:
                         "args": tool_input
                     }
 
-            # 3. 도구 결과 반환 (검색 도구만)
+            # 3. 도구 결과 반환
             elif event_type == EVENT_TOOL_END:
                 tool_name = event.get("name", "")
+                tool_output = str(data.get("output", ""))
+
                 if tool_name in SEARCH_TOOLS:
                     yield {
                         "type": StreamEventType.OBSERVE,
-                        "content": str(data.get("output", ""))
+                        "content": tool_output
                     }
-
-        # 스트리밍 완료 후 히스토리에 저장
-        if session_id and collected_answer:
-            full_answer = "".join(collected_answer)
-            await self._save_to_history_async(session_id, question, full_answer, **kwargs)
 
     # ============================================================
     # 유틸리티 메서드

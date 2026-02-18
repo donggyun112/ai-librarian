@@ -59,9 +59,14 @@ const useDynamicChatTransport = (
 
 function useChatThreadRuntime() {
   const router = useRouter();
-  const transport = useDynamicChatTransport(
-    new AssistantChatTransport({ api: "/api/chat" })
+
+  // 매 렌더마다 새 인스턴스가 생성되면 transport identity가 불안정해짐
+  // useMemo로 인스턴스를 고정하여 viewport anchor 안정화
+  const baseTransport = useMemo(
+    () => new AssistantChatTransport({ api: "/api/chat" }),
+    []
   );
+  const transport = useDynamicChatTransport(baseTransport);
 
   const chat = useChat({ transport });
   const runtime = useAISDKRuntime(chat, {});
@@ -88,18 +93,72 @@ function useChatThreadRuntime() {
       })
       .then((data) => {
         if (!data?.messages?.length) return;
-        const uiMessages: UIMessage[] = data.messages.map(
-          (msg: { role: string; content: string }, i: number) => ({
-            id: `history-${remoteId}-${i}`,
-            role:
-              msg.role === "human"
-                ? "user"
-                : msg.role === "ai"
-                  ? "assistant"
-                  : ("system" as const),
-            parts: [{ type: "text" as const, text: msg.content }],
-          })
-        );
+
+        interface HistoryMsg {
+          role: string;
+          content: string;
+          reasoning?: string;
+          tool_calls?: { id: string; name: string; args: Record<string, unknown> }[];
+          tool_call_id?: string;
+        }
+
+        const uiMessages: UIMessage[] = [];
+        let currentAssistant: UIMessage | null = null;
+        let msgIndex = 0;
+
+        for (const msg of data.messages as HistoryMsg[]) {
+          if (msg.role === "human") {
+            if (currentAssistant) {
+              uiMessages.push(currentAssistant);
+              currentAssistant = null;
+            }
+            uiMessages.push({
+              id: `history-${remoteId}-${msgIndex++}`,
+              role: "user",
+              parts: [{ type: "text" as const, text: msg.content }],
+            });
+          } else if (msg.role === "ai") {
+            if (currentAssistant) uiMessages.push(currentAssistant);
+            const parts: UIMessage["parts"] = [];
+            if (msg.reasoning) {
+              parts.push({ type: "reasoning" as const, text: msg.reasoning, state: "done" as const });
+            }
+            if (msg.content) {
+              parts.push({ type: "text" as const, text: msg.content });
+            }
+            if (msg.tool_calls?.length) {
+              for (const tc of msg.tool_calls) {
+                parts.push({
+                  type: "dynamic-tool" as const,
+                  toolCallId: tc.id,
+                  toolName: tc.name,
+                  input: tc.args,
+                  state: "output-available" as const,
+                  output: undefined as unknown,
+                });
+              }
+            }
+            if (parts.length === 0) parts.push({ type: "text" as const, text: "" });
+            currentAssistant = {
+              id: `history-${remoteId}-${msgIndex++}`,
+              role: "assistant",
+              parts,
+            };
+          } else if (msg.role === "tool" && currentAssistant) {
+            const matchingPart = currentAssistant.parts.find(
+              (p): p is Extract<UIMessage["parts"][number], { type: "dynamic-tool" }> =>
+                p.type === "dynamic-tool" && p.toolCallId === msg.tool_call_id
+            );
+            if (matchingPart) {
+              (matchingPart as { output: unknown }).output = msg.content;
+            }
+            msgIndex++;
+          } else {
+            msgIndex++;
+          }
+        }
+        if (currentAssistant) uiMessages.push(currentAssistant);
+
         setMessagesRef.current(uiMessages);
       })
       .catch(console.error);
@@ -115,10 +174,13 @@ function useChatThreadRuntime() {
     }
   }, [isExistingThread, remoteId, router]);
 
-  // top-level runtime 주입 (threads.mainItem.initialize() 접근 가능)
-  if (topLevelRuntimeRef.current) {
-    transport.setRuntime(topLevelRuntimeRef.current);
-  }
+  // top-level runtime 주입: 렌더 중 side effect는 viewport anchor를 불안정하게 만들므로
+  // useEffect로 이동하여 렌더 순수성 보장
+  const topLevelRuntime = topLevelRuntimeRef.current;
+  useEffect(() => {
+    if (!topLevelRuntime) return;
+    transport.setRuntime(topLevelRuntime);
+  }, [transport, topLevelRuntime]);
 
   return runtime;
 }

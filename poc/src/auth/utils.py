@@ -2,6 +2,8 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 from fastapi import FastAPI
 from supabase import create_async_client, AsyncClient, ClientOptions
+from psycopg_pool import AsyncConnectionPool
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from loguru import logger
 from config import config
 from src.memory import SupabaseChatMemory
@@ -36,7 +38,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     FastAPI Lifespan Context Manager
     애플리케이션 시작/종료 시 리소스를 관리합니다.
     """
-    # Startup
+    if not config.DATABASE_URL:
+        raise RuntimeError(
+            "DATABASE_URL is required for LangGraph checkpointer. "
+            "Set it to the Supabase Postgres direct connection string."
+        )
+
     try:
         logger.info("Initializing Supabase Client...")
         app.state.supabase = await create_supabase_client()
@@ -48,19 +55,42 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             require_user_scoped_client=True,
         )
 
-        app.state.supervisor = Supervisor(memory=app.state.memory)
+        logger.info("Initializing LangGraph checkpointer (Postgres)...")
+        async with AsyncConnectionPool(
+            config.DATABASE_URL,
+            max_size=10,
+            kwargs={
+                "autocommit": True,
+                # None = prepared statement 완전 비활성화
+                # Supabase 세션 풀러는 커넥션을 재사용하므로
+                # 이전 세션의 prepared statement가 남아 DuplicatePreparedStatement 발생
+                "prepare_threshold": None,
+                "options": "-c search_path=public",
+            },
+        ) as pool:
+            checkpointer = AsyncPostgresSaver(pool)
+            # checkpointer 테이블 자동 생성 (idempotent)
+            await checkpointer.setup()
+
+            app.state.supervisor = Supervisor(
+                memory=app.state.memory,
+                checkpointer=checkpointer,
+            )
+            logger.info("LangGraph checkpointer initialized")
+
+            yield
+
     except RuntimeError as e:
         logger.error(
             f"Startup failed: {e} | "
             f"SUPABASE_URL={'set' if config.SUPABASE_URL else 'MISSING'}, "
-            f"SUPABASE_ANON_KEY={'set' if config.SUPABASE_ANON_KEY else 'MISSING'}"
+            f"SUPABASE_ANON_KEY={'set' if config.SUPABASE_ANON_KEY else 'MISSING'}, "
+            f"DATABASE_URL={'set' if config.DATABASE_URL else 'MISSING'}"
         )
         raise
-
-    yield
-
-    # Shutdown
-    logger.info("Closing Supabase Client...")
-    if hasattr(app.state, "supabase") and app.state.supabase:
-        await app.state.supabase.postgrest.session.aclose()
-        logger.info("Supabase Client closed successfully")
+    finally:
+        # Shutdown
+        logger.info("Closing Supabase Client...")
+        if hasattr(app.state, "supabase") and app.state.supabase:
+            await app.state.supabase.postgrest.session.aclose()
+            logger.info("Supabase Client closed successfully")
