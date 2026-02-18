@@ -12,6 +12,13 @@ from fastapi import FastAPI
 from langchain_core.messages import HumanMessage, AIMessage
 
 
+def _make_mock_supervisor(messages):
+    """get_session_messages()를 모킹하는 supervisor 생성"""
+    mock_supervisor = MagicMock()
+    mock_supervisor.get_session_messages = AsyncMock(return_value=messages)
+    return mock_supervisor
+
+
 @pytest.fixture
 def app():
     """FastAPI 앱 인스턴스"""
@@ -145,35 +152,36 @@ class TestSessionEndpointsWithUserID:
         assert "not found" in data["detail"].lower() or "denied" in data["detail"].lower()
 
     def test_get_session_messages_with_auth(self, client, mock_supabase_memory, auth_overrides, app):
-        """Authorization 헤더로 세션 메시지 조회"""
+        """Authorization 헤더로 세션 메시지 조회 — Claude.ai 포맷 반환 확인"""
         app.state.memory = mock_supabase_memory
-        # Mock messages
         mock_messages = [
-            HumanMessage(content="Hello", additional_kwargs={"timestamp": "2024-01-01T00:00:00Z"}),
-            AIMessage(content="Hi there!", additional_kwargs={"timestamp": "2024-01-01T00:00:01Z"})
+            HumanMessage(content="Hello", additional_kwargs={"created_at": "2024-01-01T00:00:00Z"}),
+            AIMessage(content="Hi there!", additional_kwargs={"created_at": "2024-01-01T00:00:01Z"}),
         ]
-        mock_supabase_memory.get_messages_async.return_value = mock_messages
+        mock_supabase_memory._check_session_ownership_async = AsyncMock()
+        app.state.supervisor = _make_mock_supervisor(mock_messages)
 
         response = client.get("/sessions/session-1/messages", headers={"Authorization": "Bearer user-1"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["session_id"] == "session-1"
+        # Claude.ai 포맷: sender + content 배열
         assert len(data["messages"]) == 2
-        assert data["messages"][0]["role"] == "human"
-        assert data["messages"][0]["content"] == "Hello"
-        assert data["messages"][1]["role"] == "ai"
-        assert data["messages"][1]["content"] == "Hi there!"
-
-        # user_id로 메시지 조회가 호출되었는지 확인
-        mock_supabase_memory.get_messages_async.assert_called_once_with(
-            "session-1", user_id="user-1", client=auth_overrides
-        )
+        assert data["messages"][0]["sender"] == "human"
+        assert data["messages"][0]["content"][0]["type"] == "text"
+        assert data["messages"][0]["content"][0]["text"] == "Hello"
+        assert data["messages"][1]["sender"] == "assistant"
+        assert data["messages"][1]["content"][0]["type"] == "text"
+        assert data["messages"][1]["content"][0]["text"] == "Hi there!"
 
     def test_get_session_messages_denies_access_for_wrong_user(self, client, mock_supabase_memory, auth_overrides, app):
         """잘못된 user_id로는 세션 메시지 조회 불가"""
         app.state.memory = mock_supabase_memory
-        mock_supabase_memory.get_messages_async.side_effect = SessionAccessDenied("denied")
+        mock_supabase_memory._check_session_ownership_async = AsyncMock(
+            side_effect=SessionAccessDenied("denied")
+        )
+        app.state.supervisor = _make_mock_supervisor([])
 
         response = client.get("/sessions/session-1/messages", headers={"Authorization": "Bearer wrong-user"})
 
@@ -230,11 +238,12 @@ class TestSessionEndpointsWithInMemory:
     def test_get_session_messages_with_inmemory(self, client, mock_inmemory, auth_overrides, app):
         """InMemory 백엔드로 메시지 조회"""
         app.state.memory = mock_inmemory
+        mock_inmemory._check_session_ownership_async = AsyncMock()
         mock_messages = [
             HumanMessage(content="Test message"),
-            AIMessage(content="Test response")
+            AIMessage(content="Test response"),
         ]
-        mock_inmemory.get_messages_async = AsyncMock(return_value=mock_messages)
+        app.state.supervisor = _make_mock_supervisor(mock_messages)
 
         response = client.get("/sessions/session-1/messages", headers={"Authorization": "Bearer user-1"})
 
@@ -242,7 +251,8 @@ class TestSessionEndpointsWithInMemory:
         data = response.json()
         assert data["session_id"] == "session-1"
         assert len(data["messages"]) == 2
-        mock_inmemory.get_messages_async.assert_called_once()
+        assert data["messages"][0]["sender"] == "human"
+        assert data["messages"][1]["sender"] == "assistant"
 
 
 class TestAIChatEndpoint:
