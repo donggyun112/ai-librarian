@@ -13,6 +13,7 @@ Adapter 패턴:
     - Supervisor는 Adapter 인터페이스만 사용
 """
 
+from datetime import datetime, timezone
 from typing import List, Literal, TypedDict, Annotated, AsyncIterator, Optional
 
 from langchain_core.messages import (
@@ -140,6 +141,7 @@ class Supervisor:
             """
             messages = [SystemMessage(content=get_system_prompt(tools=TOOLS))] + state["messages"]
             response = await llm_with_tools.ainvoke(messages)
+            response.additional_kwargs["created_at"] = datetime.now(timezone.utc).isoformat()
             return {"messages": [response]}
 
         workflow = StateGraph(AgentState)
@@ -167,6 +169,19 @@ class Supervisor:
     def get_graph(self):
         """컴파일된 그래프를 반환 (API 레이어에서 aget_state 호출용)"""
         return self._get_graph()
+
+    async def get_session_messages(self, session_id: str) -> list:
+        """세션의 전체 메시지 목록 반환 (tool_calls 포함)
+
+        checkpointer state에서 LangGraph 메시지를 읽어 반환한다.
+        routes.py가 checkpointer 내부 구조를 직접 알지 않도록 캡슐화.
+        """
+        state = await self._get_graph().aget_state(
+            {"configurable": {"thread_id": session_id}}
+        )
+        if not state or not state.values:
+            return []
+        return state.values.get("messages", [])
 
     def _should_continue(self, state: AgentState) -> Literal["continue", "end"]:
         """도구 호출 여부에 따라 분기"""
@@ -196,7 +211,7 @@ class Supervisor:
             run_config["configurable"] = {"thread_id": session_id}
 
         final_state = await self._get_graph().ainvoke(
-            {"messages": [HumanMessage(content=question)]},
+            {"messages": [HumanMessage(content=question, additional_kwargs={"created_at": datetime.now(timezone.utc).isoformat()})]},
             config=run_config,
         )
 
@@ -234,15 +249,21 @@ class Supervisor:
 
         Yields:
             {"type": "token", "content": str}   - LLM 토큰
-            {"type": "act", "tool": str, "args": dict} - 도구 호출
-            {"type": "observe", "content": str} - 도구 결과
+            {"type": "think", "content": str}   - 생각 과정
+            {"type": "act", "tool": str, "args": dict, "tool_call_id": str} - 도구 호출
+            {"type": "observe", "content": str, "tool_call_id": str, "is_error": bool} - 도구 결과
         """
         run_config: dict = {"recursion_limit": self.max_steps * 2}
         if session_id:
             run_config["configurable"] = {"thread_id": session_id}
 
+        # tool_call_id 트래킹: on_chat_model_end에서 tool_calls 누적, on_tool_start에서 소비
+        tool_calls_buffer: list[dict] = []
+        # run_id → tool_call_id 매핑 (on_tool_start 후 on_tool_end까지 유지)
+        active_tool_runs: dict[str, str] = {}
+
         async for event in self._get_graph().astream_events(
-            {"messages": [HumanMessage(content=question)]},
+            {"messages": [HumanMessage(content=question, additional_kwargs={"created_at": datetime.now(timezone.utc).isoformat()})]},
             config=run_config,
             version="v2"
         ):
@@ -263,27 +284,53 @@ class Supervisor:
                     if normalized.text:
                         yield {"type": StreamEventType.TOKEN, "content": normalized.text}
 
+            # 1b. LLM 완료 이벤트 — tool_calls 버퍼 갱신
+            elif event_type == "on_chat_model_end":
+                output_msg = data.get("output")
+                if hasattr(output_msg, "tool_calls") and output_msg.tool_calls:
+                    tool_calls_buffer.extend(output_msg.tool_calls)
+
             # 2. 도구 호출 시작
             elif event_type == EVENT_TOOL_START:
                 tool_name = event.get("name", "")
                 tool_input = data.get("input", {})
 
                 if tool_name in SEARCH_TOOLS:
+                    # 버퍼에서 동일한 tool name의 tool_call_id 매칭
+                    tool_call_id: Optional[str] = None
+                    for idx, tc in enumerate(tool_calls_buffer):
+                        if tc.get("name") == tool_name:
+                            tool_call_id = tc.get("id")
+                            tool_calls_buffer.pop(idx)
+                            break
+                    # run_id → tool_call_id 매핑 저장
+                    run_id = event.get("run_id", "")
+                    if tool_call_id and run_id:
+                        active_tool_runs[run_id] = tool_call_id
+
                     yield {
                         "type": StreamEventType.ACT,
                         "tool": tool_name,
-                        "args": tool_input
+                        "args": tool_input,
+                        "tool_call_id": tool_call_id,
                     }
 
             # 3. 도구 결과 반환
             elif event_type == EVENT_TOOL_END:
                 tool_name = event.get("name", "")
-                tool_output = str(data.get("output", ""))
 
                 if tool_name in SEARCH_TOOLS:
+                    run_id = event.get("run_id", "")
+                    tool_call_id = active_tool_runs.pop(run_id, None)
+                    tool_output_raw = data.get("output", "")
+                    is_error = isinstance(tool_output_raw, Exception)
+                    tool_output = str(tool_output_raw)
+
                     yield {
                         "type": StreamEventType.OBSERVE,
-                        "content": tool_output
+                        "content": tool_output,
+                        "tool_call_id": tool_call_id,
+                        "is_error": is_error,
                     }
 
     # ============================================================

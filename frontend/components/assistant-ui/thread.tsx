@@ -113,7 +113,6 @@ export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
 
     return null;
   });
-  const isThreadRunning = useAuiState((s) => s.thread.isRunning);
   const previousUserMessageCountRef = useRef(userMessageCount);
 
   useEffect(() => {
@@ -122,10 +121,10 @@ export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
     previousUserMessageCountRef.current = userMessageCount;
 
     if (!isSession || !anchorUserMessageId) return;
-    if (!hasNewUserMessage && !isThreadRunning) return;
+    if (!hasNewUserMessage) return;
 
     scheduleAlignUserMessageByIdToTop(anchorUserMessageId);
-  }, [anchorUserMessageId, isSession, isThreadRunning, userMessageCount]);
+  }, [anchorUserMessageId, isSession, userMessageCount]);
 
   return (
     <ThreadPrimitive.Root
@@ -135,9 +134,12 @@ export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
       }}
     >
       <ThreadPrimitive.Viewport
-        autoScroll
+        autoScroll={false}
         turnAnchor="top"
-        className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
+        scrollToBottomOnRunStart={false}
+        scrollToBottomOnInitialize={false}
+        scrollToBottomOnThreadSwitch={false}
+        className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll px-4 pt-4"
       >
         <AuiIf key="home" condition={(s) => !isSession && s.thread.isEmpty}>
           <div className="flex grow flex-col items-center justify-center">

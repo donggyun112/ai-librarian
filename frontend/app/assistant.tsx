@@ -94,70 +94,65 @@ function useChatThreadRuntime() {
       .then((data) => {
         if (!data?.messages?.length) return;
 
-        interface HistoryMsg {
-          role: string;
-          content: string;
+        // Claude.ai 포맷: sender + content 배열
+        type TextItem = { type: "text"; text: string };
+        type ToolUseItem = { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; message?: string; is_error: boolean };
+        type ToolResultItem = { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean };
+        type ContentItem = TextItem | ToolUseItem | ToolResultItem;
+        interface BackendChatMessage {
+          sender: "human" | "assistant";
+          content: ContentItem[];
           reasoning?: string;
-          tool_calls?: { id: string; name: string; args: Record<string, unknown> }[];
-          tool_call_id?: string;
+          created_at?: string;
         }
 
         const uiMessages: UIMessage[] = [];
-        let currentAssistant: UIMessage | null = null;
         let msgIndex = 0;
 
-        for (const msg of data.messages as HistoryMsg[]) {
-          if (msg.role === "human") {
-            if (currentAssistant) {
-              uiMessages.push(currentAssistant);
-              currentAssistant = null;
-            }
+        for (const msg of data.messages as BackendChatMessage[]) {
+          if (msg.sender === "human") {
+            const textItem = msg.content.find((c): c is TextItem => c.type === "text");
+            const text = textItem?.text ?? "";
             uiMessages.push({
               id: `history-${remoteId}-${msgIndex++}`,
               role: "user",
-              parts: [{ type: "text" as const, text: msg.content }],
+              parts: [{ type: "text" as const, text }],
             });
-          } else if (msg.role === "ai") {
-            if (currentAssistant) uiMessages.push(currentAssistant);
+          } else if (msg.sender === "assistant") {
             const parts: UIMessage["parts"] = [];
             if (msg.reasoning) {
               parts.push({ type: "reasoning" as const, text: msg.reasoning, state: "done" as const });
             }
-            if (msg.content) {
-              parts.push({ type: "text" as const, text: msg.content });
-            }
-            if (msg.tool_calls?.length) {
-              for (const tc of msg.tool_calls) {
+            for (const item of msg.content) {
+              if (item.type === "text") {
+                if (item.text) parts.push({ type: "text" as const, text: item.text });
+              } else if (item.type === "tool_use") {
                 parts.push({
                   type: "dynamic-tool" as const,
-                  toolCallId: tc.id,
-                  toolName: tc.name,
-                  input: tc.args,
+                  toolCallId: item.id,
+                  toolName: item.name,
+                  input: item.input,
                   state: "output-available" as const,
                   output: undefined as unknown,
                 });
+              } else if (item.type === "tool_result") {
+                const toolPart = parts.find(
+                  (p): p is Extract<UIMessage["parts"][number], { type: "dynamic-tool" }> =>
+                    p.type === "dynamic-tool" && (p as { toolCallId: string }).toolCallId === item.tool_use_id
+                );
+                if (toolPart) {
+                  (toolPart as { output: unknown }).output = item.content;
+                }
               }
             }
             if (parts.length === 0) parts.push({ type: "text" as const, text: "" });
-            currentAssistant = {
+            uiMessages.push({
               id: `history-${remoteId}-${msgIndex++}`,
               role: "assistant",
               parts,
-            };
-          } else if (msg.role === "tool" && currentAssistant) {
-            const matchingPart = currentAssistant.parts.find(
-              (p): p is Extract<UIMessage["parts"][number], { type: "dynamic-tool" }> =>
-                p.type === "dynamic-tool" && p.toolCallId === msg.tool_call_id
-            );
-            if (matchingPart) {
-              (matchingPart as { output: unknown }).output = msg.content;
-            }
-            msgIndex++;
-          } else {
-            msgIndex++;
+            });
           }
         }
-        if (currentAssistant) uiMessages.push(currentAssistant);
 
         setMessagesRef.current(uiMessages);
       })

@@ -27,33 +27,165 @@ from .schemas import (
     SessionInfo,
     SessionListResponse,
     SessionHistoryResponse,
-    MessageInfo,
-    ToolCallInfo,
+    ChatMessage,
+    TextContentItem,
+    ToolUseContentItem,
+    ToolResultContentItem,
     HealthResponse,
     SessionUpdateRequest,
 )
 
 
-def _extract_timestamps(messages: List[BaseMessage]) -> tuple[Optional[str], Optional[str]]:
-    """메시지 목록에서 생성 시간과 마지막 활동 시간 추출
+# ──────────────────────────────────────────────
+# 히스토리 그룹핑 헬퍼
+# ──────────────────────────────────────────────
 
-    Args:
-        messages: BaseMessage 목록
+_TOOL_DISPLAY_MESSAGES: dict[str, str] = {
+    "aweb_search": "Searching the web",
+    "rag_retrieval": "Searching knowledge base",
+}
 
-    Returns:
-        (created_at, last_activity) 튜플
+
+def _tool_display_message(name: str) -> str:
+    return _TOOL_DISPLAY_MESSAGES.get(name, f"Running {name}")
+
+
+def _extract_text_and_reasoning(msg: BaseMessage) -> tuple[str, Optional[str]]:
+    """BaseMessage에서 텍스트와 reasoning 분리.
+
+    Gemini: content = [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}]
+    DeepSeek: additional_kwargs.reasoning_content
+    Others: content = str
     """
+    text = ""
+    reasoning: Optional[str] = None
+
+    if isinstance(msg.content, str):
+        text = msg.content
+    elif isinstance(msg.content, list):
+        texts: list[str] = []
+        thinkings: list[str] = []
+        for item in msg.content:
+            if isinstance(item, dict):
+                if item.get("type") == "thinking":
+                    thinkings.append(item.get("thinking", ""))
+                else:
+                    texts.append(item.get("text", ""))
+            elif isinstance(item, str):
+                texts.append(item)
+        text = "".join(texts)
+        if thinkings:
+            reasoning = "".join(thinkings)
+    else:
+        text = str(msg.content) if msg.content else ""
+
+    # DeepSeek: additional_kwargs.reasoning_content
+    if not reasoning and isinstance(msg, AIMessage):
+        reasoning = msg.additional_kwargs.get("reasoning_content")
+
+    return text, reasoning
+
+
+def _group_to_chat_messages(messages: list[BaseMessage]) -> list[ChatMessage]:
+    """LangGraph flat 메시지 목록 → Claude.ai 포맷 ChatMessage 리스트.
+
+    AIMessage(tool_calls) + ToolMessage(s) + AIMessage(final) 를
+    하나의 assistant ChatMessage로 묶는다.
+    """
+    result: list[ChatMessage] = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+
+        if isinstance(msg, HumanMessage):
+            text, _ = _extract_text_and_reasoning(msg)
+            result.append(ChatMessage(
+                uuid=msg.id,
+                sender="human",
+                content=[TextContentItem(text=text)],
+                created_at=msg.additional_kwargs.get("created_at"),
+            ))
+            i += 1
+
+        elif isinstance(msg, AIMessage):
+            content_items: list = []
+            reasoning: Optional[str] = None
+
+            text, reasoning = _extract_text_and_reasoning(msg)
+            if text:
+                content_items.append(TextContentItem(text=text))
+
+            for tc in (msg.tool_calls or []):
+                content_items.append(ToolUseContentItem(
+                    id=tc["id"],
+                    name=tc["name"],
+                    input=tc.get("args", {}),
+                    message=_tool_display_message(tc["name"]),
+                ))
+
+            # 연속된 ToolMessage 소비
+            j = i + 1
+            while j < len(messages) and messages[j].type == "tool":
+                tm = messages[j]
+                is_error = bool(tm.additional_kwargs.get("is_error", False))
+                content_items.append(ToolResultContentItem(
+                    tool_use_id=getattr(tm, "tool_call_id", "") or "",
+                    name=getattr(tm, "name", "") or "",
+                    content=str(tm.content),
+                    is_error=is_error,
+                ))
+                j += 1
+
+            # 다음이 tool_calls 없는 최종 AIMessage이면 같은 블록에 합산
+            if (
+                j < len(messages)
+                and isinstance(messages[j], AIMessage)
+                and not messages[j].tool_calls
+            ):
+                final = messages[j]
+                final_text, final_reasoning = _extract_text_and_reasoning(final)
+                if final_reasoning:
+                    reasoning = (reasoning or "") + final_reasoning
+                if final_text:
+                    content_items.append(TextContentItem(text=final_text))
+                j += 1
+
+            if not content_items:
+                content_items.append(TextContentItem(text=""))
+
+            result.append(ChatMessage(
+                uuid=msg.id,
+                sender="assistant",
+                content=content_items,
+                reasoning=reasoning,
+                created_at=msg.additional_kwargs.get("created_at"),
+            ))
+            i = j
+
+        else:
+            # ToolMessage가 AIMessage 없이 단독으로 오는 경우 (예외 처리)
+            i += 1
+
+    return result
+
+
+# ──────────────────────────────────────────────
+# 유틸리티
+# ──────────────────────────────────────────────
+
+def _extract_timestamps(messages: List[BaseMessage]) -> tuple[Optional[str], Optional[str]]:
+    """메시지 목록에서 생성 시간과 마지막 활동 시간 추출"""
     if not messages:
         return None, None
-
     first_msg = messages[0]
     created_at = first_msg.additional_kwargs.get("timestamp")
     last_msg = messages[-1]
     last_activity = last_msg.additional_kwargs.get("timestamp")
-
     return created_at, last_activity
 
+
 router = APIRouter()
+
 
 def get_memory(request: Request) -> ChatMemory:
     if not hasattr(request.app.state, "memory") or request.app.state.memory is None:
@@ -63,6 +195,7 @@ def get_memory(request: Request) -> ChatMemory:
         )
     return request.app.state.memory
 
+
 def get_supervisor(request: Request) -> Supervisor:
     if not hasattr(request.app.state, "supervisor") or request.app.state.supervisor is None:
         raise HTTPException(
@@ -71,6 +204,10 @@ def get_supervisor(request: Request) -> Supervisor:
         )
     return request.app.state.supervisor
 
+
+# ──────────────────────────────────────────────
+# 엔드포인트
+# ──────────────────────────────────────────────
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(
@@ -89,32 +226,17 @@ async def create_session(
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
 ) -> SessionCreateResponse:
-    """새 세션 생성
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-
-    Returns:
-        SessionCreateResponse: 생성된 세션 정보
-    """
+    """새 세션 생성"""
     user_id = current_user.id
-
     session_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
     success = await memory.init_session_async(session_id, user_id, client=client)
     if not success:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to create session"
-        )
+        raise HTTPException(status_code=500, detail="Failed to create session")
 
     logger.info(f"Created new session: {session_id}")
-
-    return SessionCreateResponse(
-        session_id=session_id,
-        created_at=created_at
-    )
+    return SessionCreateResponse(session_id=session_id, created_at=created_at)
 
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailResponse)
@@ -124,37 +246,21 @@ async def get_session_detail(
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
 ) -> SessionDetailResponse:
-    """세션 상세 정보 조회
-
-    Args:
-        session_id: 세션 ID
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-
-    Returns:
-        SessionDetailResponse: 세션 상세 정보
-    """
+    """세션 상세 정보 조회"""
     user_id = current_user.id
 
     try:
         message_count = await memory.get_message_count_async(session_id, user_id=user_id, client=client)
-        messages = await memory.get_messages_async(
-            session_id, user_id=user_id, client=client
-        )
+        messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
-        raise HTTPException(
-            status_code=404,
-            detail="Session not found or access denied"
-        )
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
 
     created_at, last_activity = _extract_timestamps(messages)
-
     return SessionDetailResponse(
         session_id=session_id,
         message_count=message_count,
         created_at=created_at,
-        last_activity=last_activity
+        last_activity=last_activity,
     )
 
 
@@ -168,22 +274,11 @@ async def send_message(
 ) -> Union[EventSourceResponse, ChatResponse]:
     """메시지 전송 (body.stream으로 스트리밍/JSON 구분)
 
-    Args:
-        session_id: 세션 ID
-        body: 메시지 요청 본문 (message, stream)
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-
-    Returns:
-        - stream: true → SSE 스트리밍 응답
-        - stream: false → JSON 응답
-
     Events (SSE):
         - token: LLM 토큰 출력
         - think: 생각 과정
-        - act: 도구 호출
-        - observe: 도구 결과
+        - act: 도구 호출 (tool_call_id, tool, args)
+        - observe: 도구 결과 (tool_call_id, content, is_error)
         - done: 스트림 완료
         - error: 에러 발생
     """
@@ -192,7 +287,7 @@ async def send_message(
     if body.stream:
         async def event_generator() -> AsyncGenerator[dict, None]:
             try:
-                kwargs = {}
+                kwargs: dict = {}
                 if user_id:
                     kwargs["user_id"] = user_id
 
@@ -200,58 +295,49 @@ async def send_message(
                     question=body.message,
                     session_id=session_id,
                     client=client,
-                    **kwargs
+                    **kwargs,
                 ):
                     event_type = event.get("type", "token")
 
                     if event_type == "token":
                         yield {
                             "event": "token",
-                            "data": json.dumps({"content": event.get("content", "")})
+                            "data": json.dumps({"content": event.get("content", "")}),
                         }
                     elif event_type == "think":
                         yield {
                             "event": "think",
-                            "data": json.dumps({"content": event.get("content", "")})
+                            "data": json.dumps({"content": event.get("content", "")}),
                         }
                     elif event_type == "act":
                         yield {
                             "event": "act",
                             "data": json.dumps({
                                 "tool": event.get("tool", ""),
-                                "args": event.get("args", {})
-                            })
+                                "args": event.get("args", {}),
+                                "tool_call_id": event.get("tool_call_id"),
+                            }),
                         }
                     elif event_type == "observe":
                         yield {
                             "event": "observe",
-                            "data": json.dumps({"content": event.get("content", "")})
+                            "data": json.dumps({
+                                "content": event.get("content", ""),
+                                "tool_call_id": event.get("tool_call_id"),
+                                "is_error": event.get("is_error", False),
+                            }),
                         }
 
-                yield {
-                    "event": "done",
-                    "data": json.dumps({"session_id": session_id})
-                }
+                yield {"event": "done", "data": json.dumps({"session_id": session_id})}
 
             except SessionAccessDenied:
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": "Session not found or access denied"})
-                }
-
+                yield {"event": "error", "data": json.dumps({"error": "Session not found or access denied"})}
             except ValueError:
                 logger.warning("Validation error in stream processing")
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": "잘못된 요청입니다."})
-                }
-
+                yield {"event": "error", "data": json.dumps({"error": "잘못된 요청입니다."})}
             except Exception:
                 logger.exception("Stream processing failed")
-                yield {
-                    "event": "error",
-                    "data": json.dumps({"error": "스트리밍 처리 중 오류가 발생했습니다."})
-                }
+                yield {"event": "error", "data": json.dumps({"error": "스트리밍 처리 중 오류가 발생했습니다."})}
 
         return EventSourceResponse(event_generator())
 
@@ -265,30 +351,17 @@ async def send_message(
                 question=body.message,
                 session_id=session_id,
                 client=client,
-                **kwargs
+                **kwargs,
             )
-            return ChatResponse(
-                answer=result.answer,
-                sources=result.sources,
-                session_id=session_id
-            )
+            return ChatResponse(answer=result.answer, sources=result.sources, session_id=session_id)
         except SessionAccessDenied:
-            raise HTTPException(
-                status_code=404,
-                detail="Session not found or access denied"
-            )
+            raise HTTPException(status_code=404, detail="Session not found or access denied")
         except ValueError:
             logger.warning("Validation error in chat processing")
-            raise HTTPException(
-                status_code=400,
-                detail="잘못된 요청입니다."
-            )
+            raise HTTPException(status_code=400, detail="잘못된 요청입니다.")
         except Exception:
             logger.exception("Chat processing failed")
-            raise HTTPException(
-                status_code=500,
-                detail="요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-            )
+            raise HTTPException(status_code=500, detail="요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -297,26 +370,18 @@ async def list_sessions(
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
 ) -> SessionListResponse:
-    """세션 목록 조회
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-    """
+    """세션 목록 조회"""
     user_id = current_user.id
-
     session_rows = await memory.list_sessions_async(user_id=user_id, client=client)
     sessions = [
         SessionInfo(
             session_id=row["id"],
             title=row.get("title"),
-            message_count=await memory.get_message_count_async(
-                row["id"], user_id=user_id, client=client
-            ),
+            message_count=await memory.get_message_count_async(row["id"], user_id=user_id, client=client),
             last_message_at=row.get("last_message_at"),
         )
         for row in session_rows
     ]
-
     return SessionListResponse(sessions=sessions)
 
 
@@ -328,89 +393,25 @@ async def get_session_messages(
     memory: ChatMemory = Depends(get_memory),
     supervisor: Supervisor = Depends(get_supervisor),
 ) -> SessionHistoryResponse:
-    """세션의 대화 히스토리 조회
+    """세션 대화 히스토리 조회 (Claude.ai 포맷)
 
-    Args:
-        session_id: 세션 ID
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
+    응답 구조:
+        messages[].sender: "human" | "assistant"
+        messages[].content: ContentItem 배열
+            - type "text": 텍스트
+            - type "tool_use": 도구 호출 (id, name, input, message, is_error)
+            - type "tool_result": 도구 결과 (tool_use_id, content, is_error)
     """
     user_id = current_user.id
 
-    # 소유권 검증 (sessions 테이블 기반)
     try:
         await memory._check_session_ownership_async(session_id, user_id, client)
     except SessionAccessDenied:
         raise HTTPException(status_code=404, detail="Session not found or access denied")
 
-    # checkpointer에서 전체 메시지 체인 로드
-    graph = supervisor.get_graph()
-    state = await graph.aget_state({"configurable": {"thread_id": session_id}})
-    messages: list = state.values.get("messages", []) if state.values else []
-
-    message_list = []
-    for msg in messages:
-        # AIMessageChunk.type은 "AIMessageChunk"을 반환하므로 isinstance로 role 결정
-        if isinstance(msg, AIMessage):
-            role = "ai"
-        elif isinstance(msg, HumanMessage):
-            role = "human"
-        else:
-            role = msg.type
-
-        # content에서 text/reasoning 분리 (Gemini: list, DeepSeek: additional_kwargs)
-        text_content = ""
-        reasoning_content = None
-
-        if isinstance(msg.content, str):
-            text_content = msg.content
-        elif isinstance(msg.content, list):
-            # Gemini 형식: [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}]
-            texts = []
-            thinkings = []
-            for item in msg.content:
-                if isinstance(item, dict):
-                    if item.get("type") == "thinking":
-                        thinkings.append(item.get("thinking", ""))
-                    else:
-                        texts.append(item.get("text", ""))
-                elif isinstance(item, str):
-                    texts.append(item)
-            text_content = "".join(texts)
-            if thinkings:
-                reasoning_content = "".join(thinkings)
-        else:
-            text_content = str(msg.content) if msg.content else ""
-
-        # DeepSeek: additional_kwargs.reasoning_content
-        if not reasoning_content and isinstance(msg, AIMessage):
-            reasoning_content = msg.additional_kwargs.get("reasoning_content")
-
-        info_kwargs: dict = {
-            "role": role,
-            "content": text_content,
-            "timestamp": msg.additional_kwargs.get("timestamp"),
-        }
-        if reasoning_content:
-            info_kwargs["reasoning"] = reasoning_content
-        # AIMessage with tool_calls
-        if hasattr(msg, "tool_calls") and msg.tool_calls:
-            info_kwargs["tool_calls"] = [
-                ToolCallInfo(id=tc["id"], name=tc["name"], args=tc["args"])
-                for tc in msg.tool_calls
-            ]
-        # ToolMessage
-        if msg.type == "tool":
-            info_kwargs["tool_call_id"] = getattr(msg, "tool_call_id", None)
-            info_kwargs["name"] = getattr(msg, "name", None)
-        message_list.append(MessageInfo(**info_kwargs))
-
-    return SessionHistoryResponse(
-        session_id=session_id,
-        messages=message_list
-    )
-
+    raw_messages = await supervisor.get_session_messages(session_id)
+    chat_messages = _group_to_chat_messages(raw_messages)
+    return SessionHistoryResponse(session_id=session_id, messages=chat_messages)
 
 
 @router.patch("/sessions/{session_id}")
@@ -421,25 +422,15 @@ async def update_session(
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
 ) -> Dict[str, str]:
-    """세션 정보 업데이트 (제목 등)
-
-    Args:
-        session_id: 세션 ID
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-    """
+    """세션 정보 업데이트"""
     user_id = current_user.id
-
     try:
         if body.title is not None:
-            await memory.update_session_title_async(
-                session_id, body.title, user_id=user_id, client=client
-            )
+            await memory.update_session_title_async(session_id, body.title, user_id=user_id, client=client)
     except SessionAccessDenied:
         raise HTTPException(status_code=404, detail="Session not found or access denied")
-
     return {"message": "Session updated", "session_id": session_id}
+
 
 @router.delete("/sessions/{session_id}")
 async def delete_session(
@@ -448,21 +439,12 @@ async def delete_session(
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
 ) -> Dict[str, str]:
-    """세션 삭제
-
-    Args:
-        session_id: 세션 ID
-
-    Headers:
-        Authorization: Bearer <token> (JWT required)
-    """
+    """세션 삭제"""
     user_id = current_user.id
-
     try:
         await memory.delete_session_async(session_id, user_id=user_id, client=client)
     except SessionAccessDenied:
         raise HTTPException(status_code=404, detail="Session not found or access denied")
-
     return {"message": "Session deleted", "session_id": session_id}
 
 
@@ -476,17 +458,12 @@ async def ai_chat(
 ):
     """Claude 방식 채팅 엔드포인트
 
-    클라이언트는 prompt + session_id만 전송.
-    서버가 히스토리를 관리합니다.
-    인증은 AuthMiddleware → verify_current_user 의존성으로 처리됩니다.
-
     Protocol: UI Message Stream (https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol)
     """
     user_text = body.prompt
     user_id = current_user.id
     session_id = body.session_id
 
-    # session_id가 제공되면 세션 초기화 (없으면 생성)
     if session_id:
         await memory.init_session_async(session_id, user_id, client=client)
 
@@ -497,11 +474,13 @@ async def ai_chat(
         reasoning_id = f"rsn_{uuid.uuid4().hex}"
         reasoning_started = False
         text_started = False
+        # tool_call_id: supervisor에서 온 실제 ID 또는 로컬 생성 ID
         current_tool_call_id = ""
+
         try:
             yield f"data: {json.dumps({'type': 'start', 'messageId': message_id})}\n\n"
 
-            kwargs = {}
+            kwargs: dict = {}
             if user_id:
                 kwargs["user_id"] = user_id
             if client:
@@ -532,13 +511,17 @@ async def ai_chat(
 
                     tool_name = event.get("tool", "")
                     tool_args = event.get("args", {})
-                    current_tool_call_id = f"call_{uuid.uuid4().hex}"
+                    # supervisor가 실제 tool_call_id를 제공하면 사용, 아니면 로컬 생성
+                    current_tool_call_id = event.get("tool_call_id") or f"call_{uuid.uuid4().hex}"
                     yield f"data: {json.dumps({'type': 'tool-input-start', 'toolCallId': current_tool_call_id, 'toolName': tool_name})}\n\n"
                     yield f"data: {json.dumps({'type': 'tool-input-available', 'toolCallId': current_tool_call_id, 'toolName': tool_name, 'input': tool_args})}\n\n"
 
                 elif event_type == "observe":
-                    if current_tool_call_id:
-                        yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': current_tool_call_id, 'output': content})}\n\n"
+                    # supervisor가 tool_call_id를 제공하면 우선 사용
+                    observe_tool_call_id = event.get("tool_call_id") or current_tool_call_id
+                    is_error = event.get("is_error", False)
+                    if observe_tool_call_id:
+                        yield f"data: {json.dumps({'type': 'tool-output-available', 'toolCallId': observe_tool_call_id, 'output': content, 'isError': is_error})}\n\n"
                         current_tool_call_id = ""
 
                 elif event_type == "token" and content:
@@ -569,5 +552,5 @@ async def ai_chat(
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Vercel-AI-UI-Message-Stream": "v1",
-        }
+        },
     )

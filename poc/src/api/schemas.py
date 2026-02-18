@@ -1,5 +1,5 @@
 """API 스키마 정의"""
-from typing import Optional, List
+from typing import Annotated, Optional, List, Union, Literal
 from pydantic import BaseModel, Field
 
 
@@ -43,37 +43,76 @@ class SessionListResponse(BaseModel):
     sessions: List[SessionInfo]
 
 
-class ToolCallInfo(BaseModel):
-    """도구 호출 정보"""
-    id: str = Field(..., description="Tool call ID")
-    name: str = Field(..., description="도구 이름")
-    args: dict = Field(default_factory=dict, description="도구 인자")
-
-
-class MessageInfo(BaseModel):
-    """메시지 정보"""
-    role: str = Field(..., description="메시지 역할 (human, ai, system, tool)")
-    content: str = Field(..., description="메시지 내용")
-    timestamp: Optional[str] = Field(None, description="메시지 생성 시간")
-    reasoning: Optional[str] = Field(None, description="사고 과정 (thinking/reasoning)")
-    tool_calls: Optional[List[ToolCallInfo]] = Field(None, description="도구 호출 목록 (AIMessage)")
-    tool_call_id: Optional[str] = Field(None, description="도구 호출 ID (ToolMessage)")
-    name: Optional[str] = Field(None, description="도구 이름 (ToolMessage)")
-
-
-class SessionHistoryResponse(BaseModel):
-    """세션 히스토리 응답"""
-    session_id: str
-    messages: List[MessageInfo]
-
-
 class HealthResponse(BaseModel):
     """헬스 체크 응답"""
     status: str = "ok"
     provider: str
 
 
+# ──────────────────────────────────────────────
+# Claude.ai 포맷 — Content Item 스키마
+# ──────────────────────────────────────────────
+
+class TextContentItem(BaseModel):
+    """텍스트 콘텐츠"""
+    type: Literal["text"] = "text"
+    text: str
+    start_timestamp: Optional[str] = None
+    stop_timestamp: Optional[str] = None
+    citations: List[dict] = Field(default_factory=list)
+
+
+class ToolUseContentItem(BaseModel):
+    """도구 호출 콘텐츠"""
+    type: Literal["tool_use"] = "tool_use"
+    id: str
+    name: str
+    input: dict = Field(default_factory=dict)
+    message: Optional[str] = None      # 표시용 텍스트 e.g. "Searching the web"
+    is_error: bool = False
+    start_timestamp: Optional[str] = None
+    stop_timestamp: Optional[str] = None
+
+
+class ToolResultContentItem(BaseModel):
+    """도구 결과 콘텐츠"""
+    type: Literal["tool_result"] = "tool_result"
+    tool_use_id: str
+    name: str
+    content: str
+    is_error: bool = False
+
+
+# discriminated union
+ContentItem = Annotated[
+    Union[TextContentItem, ToolUseContentItem, ToolResultContentItem],
+    Field(discriminator="type")
+]
+
+
+class ChatMessage(BaseModel):
+    """Claude.ai 포맷 단일 메시지
+
+    sender: "human" | "assistant"
+    content: content item 배열 (text / tool_use / tool_result)
+    """
+    uuid: Optional[str] = None
+    sender: str
+    content: List[ContentItem]
+    reasoning: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+class SessionHistoryResponse(BaseModel):
+    """세션 히스토리 응답 (Claude.ai 포맷)"""
+    session_id: str
+    messages: List[ChatMessage]
+
+
+# ──────────────────────────────────────────────
 # AI SDK 호환 스키마
+# ──────────────────────────────────────────────
+
 class AIChatPart(BaseModel):
     """AI SDK 메시지 파트"""
     type: str
