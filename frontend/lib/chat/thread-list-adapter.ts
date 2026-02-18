@@ -79,10 +79,8 @@ export class BackendThreadListAdapter {
   }
 
   async fetch(threadId: string): Promise<RemoteThreadMetadata> {
-    const res = await globalThis.fetch(`/api/sessions/${threadId}`);
-    if (!res.ok) {
-      throw new Error("Thread not found");
-    }
+    // 네트워크 호출 없이 메타데이터만 반환
+    // 세션 메시지 로딩은 useChatThreadRuntime에서 독립적으로 처리
     return {
       remoteId: threadId,
       status: "regular" as const,
