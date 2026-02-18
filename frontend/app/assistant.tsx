@@ -32,6 +32,107 @@ const topLevelRuntimeRef: { current: AssistantRuntime | null } = {
   current: null,
 };
 
+// switchToThread 후 remount 시 메시지 flash 방지용 캐시
+const sessionMessageCache = new Map<string, UIMessage[]>();
+// 동일 세션에 대한 중복 fetch 방지 (React Strict Mode 대응)
+const sessionFetchInFlight = new Map<string, Promise<UIMessage[] | null>>();
+
+// --- 백엔드 메시지 타입 ---
+type BackendTextItem = { type: "text"; text: string };
+type BackendToolUseItem = {
+  type: "tool_use"; id: string; name: string;
+  input: Record<string, unknown>; message?: string; is_error: boolean;
+};
+type BackendToolResultItem = {
+  type: "tool_result"; tool_use_id: string; content: string; is_error: boolean;
+};
+type BackendContentItem = BackendTextItem | BackendToolUseItem | BackendToolResultItem;
+type BackendChatMessage = {
+  sender: "human" | "assistant";
+  content: BackendContentItem[];
+  reasoning?: string;
+  created_at?: string;
+};
+
+/** 세션 메시지를 로드하고 캐싱/중복요청 방지 */
+function loadSessionMessages(sessionId: string): Promise<UIMessage[] | null> {
+  const cached = sessionMessageCache.get(sessionId);
+  if (cached) return Promise.resolve(cached);
+
+  const inFlight = sessionFetchInFlight.get(sessionId);
+  if (inFlight) return inFlight;
+
+  const promise = fetch(`/api/sessions/${sessionId}`)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      if (!data?.messages?.length) return null;
+
+      const uiMessages: UIMessage[] = [];
+      let msgIndex = 0;
+
+      for (const msg of data.messages as BackendChatMessage[]) {
+        if (msg.sender === "human") {
+          const textItem = msg.content.find(
+            (c): c is BackendTextItem => c.type === "text"
+          );
+          uiMessages.push({
+            id: `history-${sessionId}-${msgIndex++}`,
+            role: "user",
+            parts: [{ type: "text" as const, text: textItem?.text ?? "" }],
+          });
+        } else if (msg.sender === "assistant") {
+          const parts: UIMessage["parts"] = [];
+          if (msg.reasoning) {
+            parts.push({
+              type: "reasoning" as const,
+              text: msg.reasoning,
+              state: "done" as const,
+            });
+          }
+          for (const item of msg.content) {
+            if (item.type === "text") {
+              if (item.text) parts.push({ type: "text" as const, text: item.text });
+            } else if (item.type === "tool_use") {
+              parts.push({
+                type: "dynamic-tool" as const,
+                toolCallId: item.id,
+                toolName: item.name,
+                input: item.input,
+                state: "output-available" as const,
+                output: undefined as unknown,
+              });
+            } else if (item.type === "tool_result") {
+              const toolPart = parts.find(
+                (p): p is Extract<UIMessage["parts"][number], { type: "dynamic-tool" }> =>
+                  p.type === "dynamic-tool" &&
+                  (p as { toolCallId: string }).toolCallId === item.tool_use_id
+              );
+              if (toolPart) {
+                (toolPart as { output: unknown }).output = item.content;
+              }
+            }
+          }
+          if (parts.length === 0) parts.push({ type: "text" as const, text: "" });
+          uiMessages.push({
+            id: `history-${sessionId}-${msgIndex++}`,
+            role: "assistant",
+            parts,
+          });
+        }
+      }
+
+      sessionMessageCache.set(sessionId, uiMessages);
+      return uiMessages;
+    })
+    .catch(() => null)
+    .finally(() => {
+      sessionFetchInFlight.delete(sessionId);
+    });
+
+  sessionFetchInFlight.set(sessionId, promise);
+  return promise;
+}
+
 const useDynamicChatTransport = (
   transport: AssistantChatTransport<UIMessage>
 ) => {
@@ -59,6 +160,7 @@ const useDynamicChatTransport = (
 
 function useChatThreadRuntime() {
   const router = useRouter();
+  const pathname = usePathname();
 
   // 매 렌더마다 새 인스턴스가 생성되면 transport identity가 불안정해짐
   // useMemo로 인스턴스를 고정하여 viewport anchor 안정화
@@ -76,88 +178,29 @@ function useChatThreadRuntime() {
   const remoteId = threadItem?.remoteId;
   const isExistingThread = threadItem?.status === "regular";
 
-  // 기존 스레드 전환 시 백엔드에서 메시지 로드
+  // URL에서 세션 ID 직접 추출 — thread list 로딩 완료를 기다리지 않고 즉시 사용
+  const routeSessionId = useMemo(() => {
+    const match = pathname.match(/^\/chat\/([^/]+)$/);
+    return match?.[1] ?? null;
+  }, [pathname]);
+
+  // 세션 메시지 로드
+  // routeSessionId가 있으면 thread list(isExistingThread)를 기다리지 않고 즉시 로드
+  // routeSessionId가 없으면 기존 로직(remoteId + isExistingThread)으로 fallback
   const loadedRef = useRef<string | null>(null);
   const setMessagesRef = useRef(chat.setMessages);
   setMessagesRef.current = chat.setMessages;
 
   useEffect(() => {
-    if (!remoteId || !isExistingThread) return;
-    if (loadedRef.current === remoteId) return;
-    loadedRef.current = remoteId;
+    const sessionId = routeSessionId ?? (isExistingThread ? remoteId : null);
+    if (!sessionId) return;
+    if (loadedRef.current === sessionId) return;
+    loadedRef.current = sessionId;
 
-    fetch(`/api/sessions/${remoteId}`)
-      .then((res) => {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (!data?.messages?.length) return;
-
-        // Claude.ai 포맷: sender + content 배열
-        type TextItem = { type: "text"; text: string };
-        type ToolUseItem = { type: "tool_use"; id: string; name: string; input: Record<string, unknown>; message?: string; is_error: boolean };
-        type ToolResultItem = { type: "tool_result"; tool_use_id: string; content: string; is_error: boolean };
-        type ContentItem = TextItem | ToolUseItem | ToolResultItem;
-        interface BackendChatMessage {
-          sender: "human" | "assistant";
-          content: ContentItem[];
-          reasoning?: string;
-          created_at?: string;
-        }
-
-        const uiMessages: UIMessage[] = [];
-        let msgIndex = 0;
-
-        for (const msg of data.messages as BackendChatMessage[]) {
-          if (msg.sender === "human") {
-            const textItem = msg.content.find((c): c is TextItem => c.type === "text");
-            const text = textItem?.text ?? "";
-            uiMessages.push({
-              id: `history-${remoteId}-${msgIndex++}`,
-              role: "user",
-              parts: [{ type: "text" as const, text }],
-            });
-          } else if (msg.sender === "assistant") {
-            const parts: UIMessage["parts"] = [];
-            if (msg.reasoning) {
-              parts.push({ type: "reasoning" as const, text: msg.reasoning, state: "done" as const });
-            }
-            for (const item of msg.content) {
-              if (item.type === "text") {
-                if (item.text) parts.push({ type: "text" as const, text: item.text });
-              } else if (item.type === "tool_use") {
-                parts.push({
-                  type: "dynamic-tool" as const,
-                  toolCallId: item.id,
-                  toolName: item.name,
-                  input: item.input,
-                  state: "output-available" as const,
-                  output: undefined as unknown,
-                });
-              } else if (item.type === "tool_result") {
-                const toolPart = parts.find(
-                  (p): p is Extract<UIMessage["parts"][number], { type: "dynamic-tool" }> =>
-                    p.type === "dynamic-tool" && (p as { toolCallId: string }).toolCallId === item.tool_use_id
-                );
-                if (toolPart) {
-                  (toolPart as { output: unknown }).output = item.content;
-                }
-              }
-            }
-            if (parts.length === 0) parts.push({ type: "text" as const, text: "" });
-            uiMessages.push({
-              id: `history-${remoteId}-${msgIndex++}`,
-              role: "assistant",
-              parts,
-            });
-          }
-        }
-
-        setMessagesRef.current(uiMessages);
-      })
-      .catch(console.error);
-  }, [remoteId, isExistingThread]);
+    loadSessionMessages(sessionId).then((messages) => {
+      if (messages) setMessagesRef.current(messages);
+    });
+  }, [routeSessionId, remoteId, isExistingThread]);
 
   // 첫 메시지 전송 후 스레드가 초기화되면 URL을 /chat/[id]로 업데이트
   useEffect(() => {
@@ -198,7 +241,8 @@ export const Assistant = () => {
   const pathname = usePathname();
 
   // URL→thread: URL이 유일한 source of truth
-  // 리스트 로딩 완료 후 switchToThread 호출 (로딩 중 호출 시 사이드바가 비는 문제 방지)
+  // 세션 메시지 로딩은 useChatThreadRuntime의 routeSessionId로 독립 처리
+  // 여기서는 사이드바 하이라이트 동기화만 담당
   useEffect(() => {
     const match = pathname.match(/^\/chat\/([^/]+)$/);
     if (!match) return;
