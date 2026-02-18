@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Dict, List, Optional, Union
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, AIMessage, HumanMessage
 
 from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -28,6 +28,7 @@ from .schemas import (
     SessionListResponse,
     SessionHistoryResponse,
     MessageInfo,
+    ToolCallInfo,
     HealthResponse,
     SessionUpdateRequest,
 )
@@ -325,6 +326,7 @@ async def get_session_messages(
     current_user: User = Depends(verify_current_user),
     client: AsyncClient = Depends(get_user_scoped_client),
     memory: ChatMemory = Depends(get_memory),
+    supervisor: Supervisor = Depends(get_supervisor),
 ) -> SessionHistoryResponse:
     """세션의 대화 히스토리 조회
 
@@ -336,18 +338,73 @@ async def get_session_messages(
     """
     user_id = current_user.id
 
+    # 소유권 검증 (sessions 테이블 기반)
     try:
-        messages = await memory.get_messages_async(session_id, user_id=user_id, client=client)
+        await memory._check_session_ownership_async(session_id, user_id, client)
     except SessionAccessDenied:
         raise HTTPException(status_code=404, detail="Session not found or access denied")
 
+    # checkpointer에서 전체 메시지 체인 로드
+    graph = supervisor.get_graph()
+    state = await graph.aget_state({"configurable": {"thread_id": session_id}})
+    messages: list = state.values.get("messages", []) if state.values else []
+
     message_list = []
     for msg in messages:
-        message_list.append(MessageInfo(
-            role=msg.type,
-            content=msg.content,
-            timestamp=msg.additional_kwargs.get("timestamp")
-        ))
+        # AIMessageChunk.type은 "AIMessageChunk"을 반환하므로 isinstance로 role 결정
+        if isinstance(msg, AIMessage):
+            role = "ai"
+        elif isinstance(msg, HumanMessage):
+            role = "human"
+        else:
+            role = msg.type
+
+        # content에서 text/reasoning 분리 (Gemini: list, DeepSeek: additional_kwargs)
+        text_content = ""
+        reasoning_content = None
+
+        if isinstance(msg.content, str):
+            text_content = msg.content
+        elif isinstance(msg.content, list):
+            # Gemini 형식: [{"type": "thinking", "thinking": "..."}, {"type": "text", "text": "..."}]
+            texts = []
+            thinkings = []
+            for item in msg.content:
+                if isinstance(item, dict):
+                    if item.get("type") == "thinking":
+                        thinkings.append(item.get("thinking", ""))
+                    else:
+                        texts.append(item.get("text", ""))
+                elif isinstance(item, str):
+                    texts.append(item)
+            text_content = "".join(texts)
+            if thinkings:
+                reasoning_content = "".join(thinkings)
+        else:
+            text_content = str(msg.content) if msg.content else ""
+
+        # DeepSeek: additional_kwargs.reasoning_content
+        if not reasoning_content and isinstance(msg, AIMessage):
+            reasoning_content = msg.additional_kwargs.get("reasoning_content")
+
+        info_kwargs: dict = {
+            "role": role,
+            "content": text_content,
+            "timestamp": msg.additional_kwargs.get("timestamp"),
+        }
+        if reasoning_content:
+            info_kwargs["reasoning"] = reasoning_content
+        # AIMessage with tool_calls
+        if hasattr(msg, "tool_calls") and msg.tool_calls:
+            info_kwargs["tool_calls"] = [
+                ToolCallInfo(id=tc["id"], name=tc["name"], args=tc["args"])
+                for tc in msg.tool_calls
+            ]
+        # ToolMessage
+        if msg.type == "tool":
+            info_kwargs["tool_call_id"] = getattr(msg, "tool_call_id", None)
+            info_kwargs["name"] = getattr(msg, "name", None)
+        message_list.append(MessageInfo(**info_kwargs))
 
     return SessionHistoryResponse(
         session_id=session_id,

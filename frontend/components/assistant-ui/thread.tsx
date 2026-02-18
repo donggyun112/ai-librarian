@@ -40,10 +40,92 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import type { FC } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const escapeSelectorValue = (value: string): string => {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+    return CSS.escape(value);
+  }
+  return value.replace(/["\\]/g, "\\$&");
+};
+
+const alignUserMessageByIdToViewportTop = (messageId: string): boolean => {
+  const viewport = document.querySelector<HTMLElement>(".aui-thread-viewport");
+  if (!viewport) return false;
+
+  const selector = `.aui-user-message-root[data-message-id="${escapeSelectorValue(messageId)}"]`;
+  const target = viewport.querySelector<HTMLElement>(selector);
+  if (!target) return false;
+
+  target.scrollIntoView({
+    behavior: "auto",
+    block: "start",
+    inline: "nearest",
+  });
+
+  const viewportTop = viewport.getBoundingClientRect().top;
+  const targetTop = target.getBoundingClientRect().top;
+  const delta = targetTop - viewportTop;
+  if (Math.abs(delta) < 1) return true;
+
+  viewport.scrollTop += delta;
+  return true;
+};
+
+const scheduleAlignUserMessageByIdToTop = (messageId: string) => {
+  let tries = 0;
+
+  const tick = () => {
+    alignUserMessageByIdToViewportTop(messageId);
+    tries += 1;
+    if (tries < 28) {
+      requestAnimationFrame(tick);
+    }
+  };
+
+  requestAnimationFrame(tick);
+  window.setTimeout(() => {
+    alignUserMessageByIdToViewportTop(messageId);
+  }, 180);
+  window.setTimeout(() => {
+    alignUserMessageByIdToViewportTop(messageId);
+  }, 420);
+};
 
 export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
   const isSession = variant === "chat";
+  const userMessageCount = useAuiState(
+    (s) =>
+      s.thread.messages.filter((message) => message.role === "user").length,
+  );
+  const anchorUserMessageId = useAuiState((s) => {
+    const last = s.thread.messages.at(-1);
+    if (!last) return null;
+
+    if (last.role === "assistant") {
+      const previous = s.thread.messages.at(-2);
+      return previous?.role === "user" ? previous.id : null;
+    }
+
+    if (last.role === "user") {
+      return last.id;
+    }
+
+    return null;
+  });
+  const isThreadRunning = useAuiState((s) => s.thread.isRunning);
+  const previousUserMessageCountRef = useRef(userMessageCount);
+
+  useEffect(() => {
+    const prevCount = previousUserMessageCountRef.current;
+    const hasNewUserMessage = userMessageCount > prevCount;
+    previousUserMessageCountRef.current = userMessageCount;
+
+    if (!isSession || !anchorUserMessageId) return;
+    if (!hasNewUserMessage && !isThreadRunning) return;
+
+    scheduleAlignUserMessageByIdToTop(anchorUserMessageId);
+  }, [anchorUserMessageId, isSession, isThreadRunning, userMessageCount]);
 
   return (
     <ThreadPrimitive.Root
@@ -52,7 +134,11 @@ export const Thread: FC<{ variant: "home" | "chat" }> = ({ variant }) => {
         ["--thread-max-width" as string]: "44rem",
       }}
     >
-      <ThreadPrimitive.Viewport autoScroll turnAnchor="top" className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4">
+      <ThreadPrimitive.Viewport
+        autoScroll
+        turnAnchor="top"
+        className="aui-thread-viewport relative flex flex-1 flex-col overflow-x-auto overflow-y-scroll scroll-smooth px-4 pt-4"
+      >
         <AuiIf key="home" condition={(s) => !isSession && s.thread.isEmpty}>
           <div className="flex grow flex-col items-center justify-center">
             <GrokIcon className="mb-6 h-10 text-[#0d0d0d] dark:text-white" />
@@ -95,7 +181,6 @@ const ThreadScrollToBottom: FC = () => {
     </ThreadPrimitive.ScrollToBottom>
   );
 };
-
 
 const Composer: FC = () => {
   const isEmpty = useAuiState((s) => s.composer.isEmpty);
@@ -280,10 +365,13 @@ const AssistantActionBar: FC = () => {
 };
 
 const UserMessage: FC = () => {
+  const messageId = useAuiState((s) => s.message.id);
+
   return (
     <MessagePrimitive.Root
       className="aui-user-message-root fade-in slide-in-from-bottom-1 mx-auto flex w-full max-w-(--thread-max-width) animate-in flex-col items-end gap-y-2 px-2 p-3 duration-150"
       data-role="user"
+      data-message-id={messageId}
     >
       <UserMessageAttachments />
 

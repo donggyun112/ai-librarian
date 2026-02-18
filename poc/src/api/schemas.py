@@ -43,11 +43,22 @@ class SessionListResponse(BaseModel):
     sessions: List[SessionInfo]
 
 
+class ToolCallInfo(BaseModel):
+    """도구 호출 정보"""
+    id: str = Field(..., description="Tool call ID")
+    name: str = Field(..., description="도구 이름")
+    args: dict = Field(default_factory=dict, description="도구 인자")
+
+
 class MessageInfo(BaseModel):
     """메시지 정보"""
     role: str = Field(..., description="메시지 역할 (human, ai, system, tool)")
     content: str = Field(..., description="메시지 내용")
     timestamp: Optional[str] = Field(None, description="메시지 생성 시간")
+    reasoning: Optional[str] = Field(None, description="사고 과정 (thinking/reasoning)")
+    tool_calls: Optional[List[ToolCallInfo]] = Field(None, description="도구 호출 목록 (AIMessage)")
+    tool_call_id: Optional[str] = Field(None, description="도구 호출 ID (ToolMessage)")
+    name: Optional[str] = Field(None, description="도구 이름 (ToolMessage)")
 
 
 class SessionHistoryResponse(BaseModel):

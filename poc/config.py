@@ -29,6 +29,9 @@ class Config:
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+    # Postgres direct connection for LangGraph checkpointer
+    # e.g. postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres
+    DATABASE_URL = os.getenv("DATABASE_URL")
 
     # Supervisor 설정
     MAX_RETRIES = 2
